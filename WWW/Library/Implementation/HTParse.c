@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTParse.c,v 1.51 2009/01/03 01:11:14 tom Exp $
+ * $LynxId: HTParse.c,v 1.52 2009/08/27 18:43:30 tom Exp $
  *
  *		Parse HyperText Document Address		HTParse.c
  *		================================
@@ -21,7 +21,9 @@
 #endif /* __MINGW32__ */
 #endif
 
-#define MAX_URI_SIZE 8192
+#ifdef USE_IDNA
+#include <idna.h>
+#endif
 
 #define HEX_ESCAPE '%'
 
@@ -236,6 +238,58 @@ char *HTParsePort(char *host, int *portp)
     return result;
 }
 
+#ifdef USE_IDNA
+static int hex_decode(int ch)
+{
+    int result = 0;
+
+    if (ch >= '0' && ch <= '9')
+	result = (ch - '0');
+    else if (ch >= 'a' && ch <= 'f')
+	result = (ch - 'a') + 10;
+    else if (ch >= 'A' && ch <= 'F')
+	result = (ch - 'A') + 10;
+    return result;
+}
+
+/*
+ * Convert in-place the given hostname to IDNA form.  That requires up to 64
+ * characters, and we've allowed for that, with MIN_PARSE.
+ */
+static void convert_to_idna(char *host)
+{
+    char *buffer = malloc(strlen(host) + 1);
+    char *output = NULL;
+    char *src, *dst;
+    int code;
+
+    if (buffer != 0) {
+	for (dst = buffer, src = host; *src != '\0'; ++dst) {
+	    int ch = *src++;
+
+	    if (ch == HEX_ESCAPE) {
+		int hi = hex_decode(*src++);
+		int lo = hex_decode(*src++);
+
+		*dst = (hi << 4) | lo;
+	    } else {
+		*dst = ch;
+	    }
+	}
+	*dst = '\0';
+	code = idna_to_ascii_8z(buffer, &output, IDNA_USE_STD3_ASCII_RULES);
+	if (code == IDNA_SUCCESS) {
+	    strcpy(host, output);
+	    free(output);
+	}
+	free(buffer);
+    }
+}
+#define MIN_PARSE 80
+#else
+#define MIN_PARSE 8
+#endif
+
 /*	Parse a Name relative to another name.			HTParse()
  *	--------------------------------------
  *
@@ -257,8 +311,7 @@ char *HTParse(const char *aName,
     char *result = NULL;
     char *tail = NULL;		/* a pointer to the end of the 'result' string */
     char *return_value = NULL;
-    size_t len, len1, len2;
-    size_t need;
+    unsigned len, len1, len2;
     char *name = NULL;
     char *rel = NULL;
     char *p, *q;
@@ -291,15 +344,9 @@ char *HTParse(const char *aName,
      */
     len1 = strlen(aName) + 1;
     len2 = strlen(relatedName) + 1;
-    len = len1 + len2 + 8;	/* Lots of space: more than enough */
+    len = len1 + len2 + MIN_PARSE;	/* Lots of space: more than enough */
 
-    need = (len * 2 + len1 + len2);
-    if (need > MAX_URI_SIZE ||
-	len1 > MAX_URI_SIZE ||
-	len2 > MAX_URI_SIZE)
-	return StrAllocCopy(return_value, "");
-
-    result = tail = (char *) LYalloca(need);
+    result = tail = (char *) LYalloca(len * 2 + len1 + len2);
     if (result == NULL) {
 	outofmem(__FILE__, "HTParse");
     }
@@ -390,12 +437,14 @@ char *HTParse(const char *aName,
      * Handle the host field.
      */
     if (wanted & PARSE_HOST) {
+	char *host;
+
 	if (given.host || related.host) {
 	    if (wanted & PARSE_PUNCTUATION) {
 		*tail++ = '/';
 		*tail++ = '/';
 	    }
-	    strcpy(tail, given.host ? given.host : related.host);
+	    strcpy(host = tail, given.host ? given.host : related.host);
 #define CLEAN_URLS
 #ifdef CLEAN_URLS
 	    /*
@@ -455,6 +504,13 @@ char *HTParse(const char *aName,
 		    }
 		}
 	    }
+#ifdef USE_IDNA
+	    /*
+	     * Depending on locale-support, we could have a literal UTF-8
+	     * string as a host name, or a URL-encoded form of that.
+	     */
+	    convert_to_idna(host);
+#endif
 #endif /* CLEAN_URLS */
 	}
     }
@@ -640,7 +696,7 @@ char *HTParse(const char *aName,
 		    q[0] = q[-2];
 		    --q;
 		}
-		p[0] = '%';
+		p[0] = HEX_ESCAPE;
 		p[1] = '2';
 		p[2] = '0';
 	    } while ((p = strchr(result, ' ')) != 0);
@@ -683,26 +739,21 @@ const char *HTParseAnchor(const char *aName)
 	 * keeping in mind scan() peculiarities on schemes:
 	 */
 	struct struct_parts given;
-	size_t need = ((unsigned) ((p - aName) + (int) strlen(p) + 1));
-	char *name;
 
-	if (strlen(aName) > MAX_URI_SIZE) {
-	    p += strlen(p);
-	} else {
-	    name = (char *) LYalloca(need);
+	char *name = (char *) LYalloca((unsigned) ((p - aName)
+						   + (int) strlen(p) + 1));
 
-	    if (name == NULL) {
-		outofmem(__FILE__, "HTParseAnchor");
-	    }
-	    strcpy(name, aName);
-	    scan(name, &given);
-	    LYalloca_free(name);
+	if (name == NULL) {
+	    outofmem(__FILE__, "HTParseAnchor");
+	}
+	strcpy(name, aName);
+	scan(name, &given);
+	LYalloca_free(name);
 
-	    p++;		/*next to '#' */
-	    if (given.anchor == NULL) {
-		for (; *p; p++)	/*scroll to end '\0' */
-		    ;
-	    }
+	p++;			/*next to '#' */
+	if (given.anchor == NULL) {
+	    for (; *p; p++)	/*scroll to end '\0' */
+		;
 	}
     }
     return p;
