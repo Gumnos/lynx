@@ -1,5 +1,5 @@
 @echo off
-@rem $Id: develop.bat 1.1 Thu, 02 Aug 2007 16:24:27 -0700 dickey $
+@rem $LynxId: develop.bat,v 1.2 2007/06/29 00:22:25 tom Exp $
 @rem ensure that all IDE files are writable
 
 attrib -r *.bat /s

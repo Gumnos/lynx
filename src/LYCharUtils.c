@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYCharUtils.c,v 1.100 2009/05/30 11:56:03 tom Exp $
+ * $LynxId: LYCharUtils.c,v 1.102 2009/06/23 19:44:06 tom Exp $
  *
  *  Functions associated with LYCharSets.c and the Lynx version of HTML.c - FM
  *  ==========================================================================
@@ -2737,8 +2737,9 @@ void LYHandleSELECT(HTStructured * me, const BOOL *present,
 	 * Check for unclosed TEXTAREA.
 	 */
 	if (me->inTEXTAREA) {
-	    if (LYBadHTML(me))
-		CTRACE((tfp, "Bad HTML: Missing TEXTAREA end tag\n"));
+	    if (LYBadHTML(me)) {
+		LYShowBadHTML("Bad HTML: Missing TEXTAREA end tag\n");
+	    }
 	}
 
 	/*
@@ -2812,8 +2813,9 @@ void LYHandleSELECT(HTStructured * me, const BOOL *present,
 	 * Make sure we had a select start tag.
 	 */
 	if (!me->inSELECT) {
-	    if (LYBadHTML(me))
-		CTRACE((tfp, "Bad HTML: Unmatched SELECT end tag\n"));
+	    if (LYBadHTML(me)) {
+		LYShowBadHTML("Bad HTML: Unmatched SELECT end tag\n");
+	    }
 	    return;
 	}
 

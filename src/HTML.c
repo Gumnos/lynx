@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTML.c,v 1.126 2009/05/29 00:24:15 tom Exp $
+ * $LynxId: HTML.c,v 1.129 2009/06/23 19:47:33 tom Exp $
  *
  *		Structured stream to Rich hypertext converter
  *		============================================
@@ -46,6 +46,7 @@
 #include <LYMap.h>
 #include <LYList.h>
 #include <LYBookmark.h>
+#include <LYHistory.h>
 
 #ifdef VMS
 #include <LYCurses.h>
@@ -214,14 +215,56 @@ static void change_paragraph_style(HTStructured * me, HTStyle *style)
     me->in_word = NO;
 }
 
+/*
+ * Return true if we should write a message (to LYNXMESSAGES, or the trace
+ * file) telling about some bad HTML that we've found.
+ */
 BOOL LYBadHTML(HTStructured * me)
 {
-    if (!TRACE && !me->inBadHTML) {
-	HTUserMsg(BAD_HTML_USE_TRACE);
-	me->inBadHTML = TRUE;
-	return FALSE;
+    BOOL code = FALSE;
+
+    switch ((enumBadHtml) cfg_bad_html) {
+    case BAD_HTML_IGNORE:
+	break;
+    case BAD_HTML_TRACE:
+	code = TRUE;
+	break;
+    case BAD_HTML_MESSAGE:
+	code = TRUE;
+	break;
+    case BAD_HTML_WARN:
+	/*
+	 * If we're already tracing, do not add a warning.
+	 */
+	if (!TRACE && !me->inBadHTML) {
+	    HTUserMsg(BAD_HTML_USE_TRACE);
+	    me->inBadHTML = TRUE;
+	}
+	code = TRACE;
+	break;
     }
-    return TRUE;
+    return code;
+}
+
+/*
+ * Handle the formatted message.
+ */
+void LYShowBadHTML(const char *message)
+{
+    switch ((enumBadHtml) cfg_bad_html) {
+    case BAD_HTML_IGNORE:
+	break;
+    case BAD_HTML_TRACE:
+	CTRACE((tfp, "%s", message));
+	break;
+    case BAD_HTML_MESSAGE:
+	CTRACE((tfp, "%s", message));
+	LYstore_message(message);
+	break;
+    case BAD_HTML_WARN:
+	CTRACE((tfp, "%s", message));
+	break;
+    }
 }
 
 /*_________________________________________________________________________
@@ -4572,8 +4615,9 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	     * Check for an unclosed TEXTAREA.
 	     */
 	    if (me->inTEXTAREA) {
-		if (LYBadHTML(me))
-		    CTRACE((tfp, "Bad HTML: Missing TEXTAREA end tag.\n"));
+		if (LYBadHTML(me)) {
+		    LYShowBadHTML("Bad HTML: Missing TEXTAREA end tag.\n");
+		}
 	    }
 
 	    /*
@@ -5028,9 +5072,9 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	 * Check for an already open SELECT block.  - FM
 	 */
 	if (me->inSELECT) {
-	    if (LYBadHTML(me))
-		CTRACE((tfp,
-			"Bad HTML: SELECT start tag in SELECT element.  Faking SELECT end tag. *****\n"));
+	    if (LYBadHTML(me)) {
+		LYShowBadHTML("Bad HTML: SELECT start tag in SELECT element.  Faking SELECT end tag. *****\n");
+	    }
 	    if (me->sp->tag_number != HTML_SELECT) {
 		SET_SKIP_STACK(HTML_SELECT);
 	    }
@@ -5057,9 +5101,9 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	     * Make sure we're in a select tag.
 	     */
 	    if (!me->inSELECT) {
-		if (LYBadHTML(me))
-		    CTRACE((tfp,
-			    "Bad HTML: OPTION tag not within SELECT tag\n"));
+		if (LYBadHTML(me)) {
+		    LYShowBadHTML("Bad HTML: OPTION tag not within SELECT tag\n");
+		}
 
 		/*
 		 * Too likely to cause a crash, so we'll ignore it.  - FM
@@ -5811,8 +5855,9 @@ static int HTML_end_element(HTStructured * me, int element_number,
      * Check for unclosed TEXTAREA.  - FM
      */
     if (me->inTEXTAREA && element_number != HTML_TEXTAREA) {
-	if (LYBadHTML(me))
-	    CTRACE((tfp, "Bad HTML: Missing TEXTAREA end tag\n"));
+	if (LYBadHTML(me)) {
+	    LYShowBadHTML("Bad HTML: Missing TEXTAREA end tag\n");
+	}
     }
 
     if (!me->text && !LYMapsOnly) {
@@ -5826,16 +5871,21 @@ static int HTML_end_element(HTStructured * me, int element_number,
 
     case HTML_HTML:
 	if (me->inA || me->inSELECT || me->inTEXTAREA) {
-	    if (LYBadHTML(me))
-		CTRACE((tfp,
-			"Bad HTML: %s%s%s%s%s not closed before HTML end tag *****\n",
-			me->inSELECT ? "SELECT" : "",
-			(me->inSELECT && me->inTEXTAREA) ? ", " : "",
-			me->inTEXTAREA ? "TEXTAREA" : "",
-			(((me->inSELECT || me->inTEXTAREA) && me->inA)
-			 ? ", "
-			 : ""),
-			me->inA ? "A" : ""));
+	    if (LYBadHTML(me)) {
+		char *msg = NULL;
+
+		HTSprintf0(&msg,
+			   "Bad HTML: %s%s%s%s%s not closed before HTML end tag *****\n",
+			   me->inSELECT ? "SELECT" : "",
+			   (me->inSELECT && me->inTEXTAREA) ? ", " : "",
+			   me->inTEXTAREA ? "TEXTAREA" : "",
+			   (((me->inSELECT || me->inTEXTAREA) && me->inA)
+			    ? ", "
+			    : ""),
+			   me->inA ? "A" : "");
+		LYShowBadHTML(msg);
+		FREE(msg);
+	    }
 	}
 	break;
 
@@ -5931,16 +5981,21 @@ static int HTML_end_element(HTStructured * me, int element_number,
 
     case HTML_BODY:
 	if (me->inA || me->inSELECT || me->inTEXTAREA) {
-	    if (LYBadHTML(me))
-		CTRACE((tfp,
-			"Bad HTML: %s%s%s%s%s not closed before BODY end tag *****\n",
-			me->inSELECT ? "SELECT" : "",
-			(me->inSELECT && me->inTEXTAREA) ? ", " : "",
-			me->inTEXTAREA ? "TEXTAREA" : "",
-			(((me->inSELECT || me->inTEXTAREA) && me->inA)
-			 ? ", "
-			 : ""),
-			me->inA ? "A" : ""));
+	    if (LYBadHTML(me)) {
+		char *msg = NULL;
+
+		HTSprintf0(&msg,
+			   "Bad HTML: %s%s%s%s%s not closed before BODY end tag *****\n",
+			   me->inSELECT ? "SELECT" : "",
+			   (me->inSELECT && me->inTEXTAREA) ? ", " : "",
+			   me->inTEXTAREA ? "TEXTAREA" : "",
+			   (((me->inSELECT || me->inTEXTAREA) && me->inA)
+			    ? ", "
+			    : ""),
+			   me->inA ? "A" : "");
+		LYShowBadHTML(msg);
+		FREE(msg);
+	    }
 	}
 	break;
 
@@ -6306,10 +6361,15 @@ static int HTML_end_element(HTStructured * me, int element_number,
 		 * We had more end tags than start tags, so we have bad HTML or
 		 * otherwise misparsed.  - FM
 		 */
-		if (LYBadHTML(me))
-		    CTRACE((tfp,
-			    "Bad HTML: Unmatched OBJECT start and end tags.  Discarding content:\n%s\n",
-			    me->object.data));
+		if (LYBadHTML(me)) {
+		    char *msg = NULL;
+
+		    HTSprintf0(&msg,
+			       "Bad HTML: Unmatched OBJECT start and end tags.  Discarding content:\n%s\n",
+			       me->object.data);
+		    LYShowBadHTML(msg);
+		    FREE(msg);
+		}
 		goto End_Object;
 	    }
 	    if (s > e) {
@@ -6441,9 +6501,9 @@ static int HTML_end_element(HTStructured * me, int element_number,
 			goto End_Object;
 		    }
 		} else {
-		    if (LYBadHTML(me))
-			CTRACE((tfp,
-				"Bad HTML: Unmatched OBJECT start and end tags.  Discarding content.\n"));
+		    if (LYBadHTML(me)) {
+			LYShowBadHTML("Bad HTML: Unmatched OBJECT start and end tags.  Discarding content.\n");
+		    }
 		    goto End_Object;
 		}
 	    }
@@ -6680,8 +6740,9 @@ static int HTML_end_element(HTStructured * me, int element_number,
 	 * FORM-related globals in GridText.c are initialized.  - FM
 	 */
 	if (!me->inFORM) {
-	    if (LYBadHTML(me))
-		CTRACE((tfp, "Bad HTML: Unmatched FORM end tag\n"));
+	    if (LYBadHTML(me)) {
+		LYShowBadHTML("Bad HTML: Unmatched FORM end tag\n");
+	    }
 	}
 	EMIT_IFDEF_EXP_JUSTIFY_ELTS(form_in_htext = FALSE);
 
@@ -6695,9 +6756,9 @@ static int HTML_end_element(HTStructured * me, int element_number,
 	 * SELECT.  - kw
 	 */
 	if (me->inSELECT) {
-	    if (LYBadHTML(me))
-		CTRACE((tfp,
-			"Bad HTML: Open SELECT at FORM end. Faking SELECT end tag. *****\n"));
+	    if (LYBadHTML(me)) {
+		LYShowBadHTML("Bad HTML: Open SELECT at FORM end. Faking SELECT end tag. *****\n");
+	    }
 	    if (me->sp->tag_number != HTML_SELECT) {
 		SET_SKIP_STACK(HTML_SELECT);
 	    }
@@ -6748,8 +6809,9 @@ static int HTML_end_element(HTStructured * me, int element_number,
 	     * Make sure we had a textarea start tag.
 	     */
 	    if (!me->inTEXTAREA) {
-		if (LYBadHTML(me))
-		    CTRACE((tfp, "Bad HTML: Unmatched TEXTAREA end tag\n"));
+		if (LYBadHTML(me)) {
+		    LYShowBadHTML("Bad HTML: Unmatched TEXTAREA end tag\n");
+		}
 		break;
 	    }
 
@@ -6944,8 +7006,9 @@ static int HTML_end_element(HTStructured * me, int element_number,
 	     * Make sure we had a select start tag.
 	     */
 	    if (!me->inSELECT) {
-		if (LYBadHTML(me))
-		    CTRACE((tfp, "Bad HTML: Unmatched SELECT end tag *****\n"));
+		if (LYBadHTML(me)) {
+		    LYShowBadHTML("Bad HTML: Unmatched SELECT end tag *****\n");
+		}
 		break;
 	    }
 
@@ -6963,9 +7026,9 @@ static int HTML_end_element(HTStructured * me, int element_number,
 	     * Make sure we're in a form.
 	     */
 	    if (!me->inFORM) {
-		if (LYBadHTML(me))
-		    CTRACE((tfp,
-			    "Bad HTML: SELECT end tag not within FORM element *****\n"));
+		if (LYBadHTML(me)) {
+		    LYShowBadHTML("Bad HTML: SELECT end tag not within FORM element *****\n");
+		}
 		/*
 		 * Hopefully won't crash, so we'll ignore it.  - kw
 		 */
@@ -7276,9 +7339,9 @@ static void HTML_free(HTStructured * me)
 	     * close of a still-open form, something must have gone very wrong. 
 	     * - kw
 	     */
-	    if (LYBadHTML(me))
-		CTRACE((tfp,
-			"Bad HTML: SELECT or OPTION not ended properly *****\n"));
+	    if (LYBadHTML(me)) {
+		LYShowBadHTML("Bad HTML: SELECT or OPTION not ended properly *****\n");
+	    }
 	    HTChunkTerminate(&me->option);
 	    /*
 	     * Output the left-over data as text, maybe it was invalid markup
@@ -7295,9 +7358,9 @@ static void HTML_free(HTStructured * me)
 	     * close of a still-open form, something must have gone very wrong. 
 	     * - kw
 	     */
-	    if (LYBadHTML(me))
-		CTRACE((tfp,
-			"Bad HTML: TEXTAREA not used properly *****\n"));
+	    if (LYBadHTML(me)) {
+		LYShowBadHTML("Bad HTML: TEXTAREA not used properly *****\n");
+	    }
 	    HTChunkTerminate(&me->textarea);
 	    /*
 	     * Output the left-over data as text, maybe it was invalid markup
@@ -7341,9 +7404,9 @@ static void HTML_free(HTStructured * me)
 	 * If we still have data in the me->option chunk after forcing a close
 	 * of a still-open form, something must have gone very wrong.  - kw
 	 */
-	if (LYBadHTML(me))
-	    CTRACE((tfp,
-		    "Bad HTML: SELECT or OPTION not ended properly *****\n"));
+	if (LYBadHTML(me)) {
+	    LYShowBadHTML("Bad HTML: SELECT or OPTION not ended properly *****\n");
+	}
 	if (TRACE) {
 	    HTChunkTerminate(&me->option);
 	    CTRACE((tfp, "HTML_free: ***** leftover option data: %s\n",
@@ -7357,9 +7420,9 @@ static void HTML_free(HTStructured * me)
 	 * close of a still-open form, something must have gone very wrong.  -
 	 * kw
 	 */
-	if (LYBadHTML(me))
-	    CTRACE((tfp,
-		    "Bad HTML: TEXTAREA not used properly *****\n"));
+	if (LYBadHTML(me)) {
+	    LYShowBadHTML("Bad HTML: TEXTAREA not used properly *****\n");
+	}
 	if (TRACE) {
 	    HTChunkTerminate(&me->textarea);
 	    CTRACE((tfp, "HTML_free: ***** leftover textarea data: %s\n",
