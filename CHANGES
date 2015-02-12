@@ -1,7 +1,15 @@
--- $LynxId: CHANGES,v 1.766 2014/12/21 21:30:08 tom Exp $
+-- $LynxId: CHANGES,v 1.771 2015/01/05 09:17:08 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2015-01-05 (2.8.9dev.3)
+* correct shortcut for "Send To" link used in Inno Setup script, broken in
+  2.8.8dev.15 -TD
+* amend change made in 2.8.8dev.10 to LYLocal.c get_filename(), ensuring that
+  the bstring parameter can be (re)allocated within that function's call to 
+  LYgetBString() (report by Raoul Megelas) -TG
+* build-fixes for djgpp 2.04 and gcc 4.8.4 using Watt-32 -GV
 
 2014-12-21 (2.8.9dev.2)
 * correct an inconsistent check for reload using isLYNXCGI() in the
@@ -7915,7 +7923,7 @@ recently, FreeBSD 4.1, NetBSD 1.5 and OpenBSD 2.8 (curses/ncurses).
 * correct order of params for non-Unix use of HTAddParam in LYBookmark.c
   (reported by DK) -TD
 
-1998-12-31
+1998-12-31 (2.8.2dev.12a)
 * delete unused 'PREVAIL' color-style code from HTML.c, merge a couple of
   sections of logic with TrimColorClass, and change Style_className to
   a dynamically-allocated string - TD
@@ -8454,7 +8462,7 @@ recently, FreeBSD 4.1, NetBSD 1.5 and OpenBSD 2.8 (curses/ncurses).
 * first cut of integrating Jim Spath's changes to incorporate message library
   support - JES, TD
 
-1998-09-20
+1998-09-20 (2.8.1dev.29-intl)
 * edited files for language hooks (JES):
   src/HTAlert.c src/HTInit.c src/HTML.c src/LYBookmark.c src/LYCgi.c
   src/LYClean.c src/LYCookie.c src/LYCurses.c src/LYDownload.c src/LYEdit.c
