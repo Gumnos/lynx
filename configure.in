@@ -1,4 +1,4 @@
-dnl $LynxId: configure.in,v 1.206 2009/11/21 16:27:09 tom Exp $
+dnl $LynxId: configure.in,v 1.211 2010/04/20 22:46:04 tom Exp $
 dnl
 dnl Process this file with autoconf to produce a configure script.
 dnl
@@ -7,7 +7,7 @@ dnl by T.E.Dickey <dickey@invisible-island.net>
 dnl and Jim Spath <jspath@mail.bcpl.lib.md.us>
 dnl
 dnl ---------------------------------------------------------------------------
-dnl Copyright 1997-2008,2009 by Thomas E. Dickey
+dnl Copyright 1997-2009,2010 by Thomas E. Dickey
 dnl 
 dnl Permission to use, copy, modify, and distribute this software and its
 dnl documentation for any purpose and without fee is hereby granted,
@@ -29,7 +29,7 @@ dnl ---------------------------------------------------------------------------
 dnl
 dnl ask PRCS to plug-in the project-version for the configure-script.
 dnl $Format: "AC_REVISION($ProjectVersion$)"$
-AC_REVISION(2.8.8dev.2)
+AC_REVISION(2.8.8dev.3)
 
 # Save the original $CFLAGS so we can distinguish whether the user set those
 # in the environment, or whether autoconf added -O and -g options:
@@ -62,7 +62,7 @@ AC_ARG_WITH(system-type,
 PACKAGE=lynx
 dnl ask PRCS to plug-in the project-version for the packages.
 # $Format: "VERSION=$ProjectVersion$"$
-VERSION=2.8.8dev.2
+VERSION=2.8.8dev.3
 
 AC_SUBST(PACKAGE)
 AC_SUBST(VERSION)
@@ -414,7 +414,7 @@ fi
 fi
 
 dnl --------------------------------------------------------------------------
-CF_XOPEN_SOURCE(600,199506L)
+CF_XOPEN_SOURCE(500,199506L)
 CF_SIGWINCH
 
 dnl Collect tests for compiler options into one place
@@ -756,6 +756,7 @@ CF_CHECK_TYPE(socklen_t, int, [
 #include <sys/types.h>
 #include <sys/socket.h>
 ])
+CF_TYPE_LONG_LONG
 CF_TM_GMTOFF
 
 AC_CHECK_SIZEOF(int,4)
@@ -1481,6 +1482,9 @@ if test $use_scrollbar != no ; then
 		AC_DEFINE(USE_SCROLLBAR)
 	fi
 fi
+
+# use rpath for libraries in unusual places
+CF_DISABLE_RPATH_HACK
 
 ### Finally, build config.h and the makefiles
 test -z "$CONFIG_SHELL" && CONFIG_SHELL=/bin/sh

@@ -1,7 +1,33 @@
--- $LynxId: CHANGES,v 1.460 2009/11/25 10:31:39 tom Exp $
+-- $LynxId: CHANGES,v 1.472 2010/04/25 22:41:14 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2010-04-25 (2.8.8dev.3)
+* modify print_wwwfile_to_fd() to add field values to the printed form (Debian
+  #574940) -TD
+* add check for magic (header bytes) before trying to decompress, since zlib
+  does not provide this check (Redhat #503921) -TD
+* add workaround in CF_SSL configure macro for broken openssl pkg-config script
+  on Redhat, CentOS -TD
+* add configure option --disable-rpath-hack -TD
+* allow IPv6 addresses without "http://" prefix (Redhat #425879, patch by Kamil
+  Dudka)
+* build-fixes for OpenSolaris aka Solaris 11 -TD
+* add/use CF_RPATH_HACK, for constructing rpath references to libraries in
+  nonstandard locations -TD
+* improve configure macros CF_CURSES_TERM_H and CF_FIND_LINKAGE -TD
+* add synopsis entries for -get_data and -post_data options to lynx.man
+  (report by Dallas E. Legan II) -TD
+* fix a possible conflict between CF_HEADER_PATH and CF_LIBRARY_PATH by setting
+  their respective target variables, not appending -TD
+* improve configure macro CF_XOPEN_SOURCE by removing rather than undefining
+  preexisting symbols as they are added to the definitions -TD
+* add configure check for -lnetwork, from tin
+* when renaming/copying a bookmark file, e.g., to delete a bookmark, modify
+  its permissions for compatibility with IsOurFile() (Redhat #486070) -TD
+* fix most gcc writable-strings warnings -TD
+* update config.guess (2009-12-30), config.sub (2009-12-31)
 
 2009-11-25 (2.8.8dev.2)
 * modify trimming of URI in LYSetCookie() to eliminate trimming of final leaf

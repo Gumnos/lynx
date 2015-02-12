@@ -1,4 +1,4 @@
-# $LynxId: makefile.in,v 1.59 2009/03/09 22:43:29 Doug.Kaufman Exp $
+# $LynxId: makefile.in,v 1.61 2010/04/04 22:56:11 tom Exp $
 # template-makefile for Lynx src directory
 
 SHELL		= @CONFIG_SHELL@
@@ -37,7 +37,7 @@ BUILD_EXEEXT	= @BUILD_EXEEXT@
 YACC		= @YACC@
 
 LIBS		= @LIBS@ $(RESOLVLIB) $(WAISLIB) $(SITE_LIBS)
-LDFLAGS		= @LDFLAGS@
+LDFLAGS		= @EXTRA_LDFLAGS@ @LDFLAGS@
 
 # Symbols inherited from the top-level makefile
 RESOLVLIB	= # FIXME: set in parent makefile
@@ -91,11 +91,11 @@ all: lynx$x
 
 # yacc builds .c in target directory, not $(srcdir)
 .c$o:
-@RULE_CC@
+	@RULE_CC@
 	@ECHO_CC@$(CC) $(CC_OPTS) -c $<
 
 .c.i:
-@RULE_CC@
+	@RULE_CC@
 	@ECHO_CC@$(CPP) -C $(CPP_OPTS) $< >$@
 
 lynx$x:   message do_chartrans_stuff $(top_builddir)/LYHelp.h $(OBJS) $(WWWLIB)
