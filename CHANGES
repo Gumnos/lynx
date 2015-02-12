@@ -1,7 +1,21 @@
--- $LynxId: CHANGES,v 1.701 2013/11/29 01:16:04 tom Exp $
+-- $LynxId: CHANGES,v 1.713 2013/12/17 23:20:50 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2013-12-17 (2.8.8pre.2)
+* change makefile.msc and lynx-slang.iss to use dll for slang -TD
+* change URL for HELPFILE in lynx.cfg, etc., to omit version-specifics -TD
+* update example of options menu shown in user-guide -TD
+* restore ^Z maxscreen-toggle for Windows, omitted in 2.8.8dev.17 cleanup -TD
+* typographical fixes for manpage (Bjarni I. Gislason, Debian #732236).
+* allow fallback sleep() function to be used for MinGW -GV
+* remove special case in configure.in which added "-lcompat" to $LIBS
+  for OpenBSD, MirBSD and EkkoBSD (Christian Weisgerber, Thorsten Glaser).
+* build-fix for --disable-forms-options -TD
+* omit request for admin-access in NullSoft installer, since lynx could be
+  installed in user's directory -TD
+* change Windows default for LYNX_LSS_FILE to not use a directory-path -TD
 
 2013-11-28 (2.8.8pre.1)
 2013-11-28 (2.8.8dev.17)
