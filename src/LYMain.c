@@ -1,4 +1,4 @@
-/* $LynxId: LYMain.c,v 1.181 2008/02/17 19:30:56 Gisle.Vanem Exp $ */
+/* $LynxId: LYMain.c,v 1.183 2008/03/18 00:38:37 Paul.B.Mahol Exp $ */
 #include <HTUtils.h>
 #include <HTTP.h>
 #include <HTParse.h>
@@ -612,6 +612,7 @@ static BOOLEAN number_links = FALSE;
 static BOOLEAN number_fields = FALSE;
 static BOOLEAN LYPrependBase = FALSE;
 static HTList *LYStdinArgs = NULL;
+HTList *positionable_editor = NULL;
 
 #ifndef EXTENDED_OPTION_LOGIC
 /* if set then '--' will be recognized as the end of options */
@@ -800,6 +801,7 @@ static void free_lynx_globals(void)
 #if EXTENDED_STARTFILE_RECALL
     FREE(nonoption);
 #endif
+    LYFreeStringList(positionable_editor);
 
     return;
 }
@@ -2142,8 +2144,7 @@ int main(int argc,
 		    i + 1, HTList_count(Goto_URLs), startfile));
 	    status = mainloop();
 	    if (!no_list &&
-		!crawl &&	/* For -crawl it has already been done! */
-		links_are_numbered())
+		!crawl)		/* For -crawl it has already been done! */
 		printlist(stdout, FALSE);
 	    if (i != 0)
 		printf("\n");

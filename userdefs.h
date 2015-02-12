@@ -1414,11 +1414,11 @@
  * the version definition with the Project Version on checkout.  Just
  * ignore it. - kw */
 /* $Format: "#define LYNX_VERSION \"$ProjectVersion$\""$ */
-#define LYNX_VERSION "2.8.7dev.8"
+#define LYNX_VERSION "2.8.7dev.9"
 #define LYNX_WWW_HOME "http://lynx.isc.org/"
 #define LYNX_WWW_DIST "http://lynx.isc.org/current/"
 /* $Format: "#define LYNX_DATE \"$ProjectDate$\""$ */
-#define LYNX_DATE "Sun, 17 Feb 2008 14:00:58 -0800"
+#define LYNX_DATE "Sun, 27 Apr 2008 17:10:25 -0700"
 #define LYNX_DATE_OFF 5		/* truncate the automatically-generated date */
 #define LYNX_DATE_LEN 11	/* truncate the automatically-generated date */
 
