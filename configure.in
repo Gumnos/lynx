@@ -1,4 +1,4 @@
-dnl $LynxId: configure.in,v 1.211 2010/04/20 22:46:04 tom Exp $
+dnl $LynxId: configure.in,v 1.215 2010/06/20 18:09:14 tom Exp $
 dnl
 dnl Process this file with autoconf to produce a configure script.
 dnl
@@ -29,7 +29,7 @@ dnl ---------------------------------------------------------------------------
 dnl
 dnl ask PRCS to plug-in the project-version for the configure-script.
 dnl $Format: "AC_REVISION($ProjectVersion$)"$
-AC_REVISION(2.8.8dev.3)
+AC_REVISION(2.8.8dev.4)
 
 # Save the original $CFLAGS so we can distinguish whether the user set those
 # in the environment, or whether autoconf added -O and -g options:
@@ -62,7 +62,7 @@ AC_ARG_WITH(system-type,
 PACKAGE=lynx
 dnl ask PRCS to plug-in the project-version for the packages.
 # $Format: "VERSION=$ProjectVersion$"$
-VERSION=2.8.8dev.3
+VERSION=2.8.8dev.4
 
 AC_SUBST(PACKAGE)
 AC_SUBST(VERSION)
@@ -453,7 +453,7 @@ AC_ARG_WITH(gnutls,
 AC_CACHE_CHECK(if you want gnutls-openssl compat,cf_cv_gnutls_compat,[
 AC_ARG_ENABLE(gnutls-compat,
 	[  --enable-gnutls-compat  link with gnutls-openssl compat],
-	[cf_cv_gnutls_compat=$withval],
+	[cf_cv_gnutls_compat=$enableval],
 	[cf_cv_gnutls_compat=no])
 ])
 
@@ -1289,6 +1289,26 @@ AC_MSG_RESULT($use_ftp)
 test $use_ftp != "no" && AC_DEFINE(DISABLE_FTP)
 
 dnl --------------------------------------------------------------------------
+AC_MSG_CHECKING(if you want to include WAIS code)
+CF_ARG_ENABLE(wais,
+[  --enable-wais           enable WAIS logic],
+      [use_wais=yes],
+      [use_wais=no])
+AC_MSG_RESULT($use_wais)
+
+MAKE_WAIS="#"
+if test $use_wais != "no"
+then
+	AC_CHECK_LIB(wais,fs_free,[
+		CF_MATH_LIB
+		CF_ADD_LIB(wais)
+		AC_CHECK_HEADERS(wais.h)
+		MAKE_WAIS=
+		],[AC_MSG_WARN(could not find WAIS library)])
+fi
+AC_SUBST(MAKE_WAIS)
+
+dnl --------------------------------------------------------------------------
 dnl DirEd (directory-editor) options
 dnl --------------------------------------------------------------------------
 
@@ -1495,9 +1515,9 @@ srcdir="$srcdir"
 SRCDIR_CLEAN="#"
 if test -n "$srcdir" ; then
 	echo srcdir is $srcdir
-	$CONFIG_SHELL $MKINSTALLDIRS WWW/Library/Implementation
-	$CONFIG_SHELL $MKINSTALLDIRS src/chrtrans
-	test "$USE_INCLUDED_LIBINTL" = yes && $CONFIG_SHELL $MKINSTALLDIRS intl
+	mkdir -p WWW/Library/Implementation
+	mkdir -p src/chrtrans
+	test "$USE_INCLUDED_LIBINTL" = yes && mkdir -p intl
 	test "$srcdir" != "." && SRCDIR_CLEAN=""
 fi
 

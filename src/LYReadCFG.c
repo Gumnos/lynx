@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYReadCFG.c,v 1.145 2009/11/27 12:52:37 tom Exp $
+ * $LynxId: LYReadCFG.c,v 1.150 2010/06/18 00:11:35 tom Exp $
  */
 #ifndef NO_RULES
 #include <HTRules.h>
@@ -159,6 +159,9 @@ static void add_item_to_list(char *buffer,
 
 	if (cur_item == NULL)
 	    outofmem(__FILE__, "read_cfg");
+
+	assert(cur_item != NULL);
+
 	*list_ptr = cur_item;
 #ifdef LY_FIND_LEAKS
 	atexit(free_all_item_lists);
@@ -176,6 +179,8 @@ static void add_item_to_list(char *buffer,
 	    outofmem(__FILE__, "read_cfg");
 	else
 	    prev_item->next = cur_item;
+
+	assert(cur_item != NULL);
     }
     cur_item->next = NULL;
     cur_item->name = NULL;
@@ -405,10 +410,16 @@ static void parse_color(char *buffer)
     color = atoi(buffer);
     if (NULL == (fg = find_colon(buffer)))
 	exit_with_color_syntax(temp);
+
+    assert(fg != NULL);
+
     *fg++ = '\0';
 
     if (NULL == (bg = find_colon(fg)))
 	exit_with_color_syntax(temp);
+
+    assert(bg != NULL);
+
     *bg++ = '\0';
 
 #if defined(USE_SLANG)
@@ -550,6 +561,9 @@ static int assumed_color_fun(char *buffer)
 	 */
 	if (NULL == (bg = find_colon(fg)))
 	    exit_with_color_syntax(temp);
+
+	assert(bg != NULL);
+
 	*bg++ = '\0';
 
 	default_fg = check_color(fg, default_fg);
@@ -1100,8 +1114,8 @@ static int parse_charset_choice(char *p,
 	    if ((!strcasecomp(p, LYchar_set_names[i])) ||
 		(!strcasecomp(p, LYCharSet_UC[i].MIMEname))) {
 		matched_charset_choice(display_charset, i);
-		CTRACE((tfp, " - OK\n"));
 		++matches;
+		CTRACE((tfp, " - OK, %d matches\n", matches));
 		return 0;
 	    }
 	}
@@ -1152,6 +1166,9 @@ static int parse_html_src_spec(HTlexeme lexeme_code, char *value,
     ts2 = strchr(value, ':');
     if (!ts2)
 	BS();
+
+    assert(ts2 != NULL);
+
     *ts2 = '\0';
 
     CTRACE2(TRACE_CFG, (tfp,
@@ -1320,7 +1337,7 @@ static Config_Type Config_Table [] =
      PARSE_LST(RC_BROKEN_FTP_RETR,      broken_ftp_retr),
 #endif
      PARSE_PRG(RC_BZIP2_PATH,           ppBZIP2),
-     PARSE_SET(RC_CASE_SENSITIVE_ALWAYS_ON, case_sensitive),
+     PARSE_SET(RC_CASE_SENSITIVE_ALWAYS_ON, LYcase_sensitive),
      PARSE_FUN(RC_CHARACTER_SET,        character_set_fun),
 #ifdef CAN_SWITCH_DISPLAY_CHARSET
      PARSE_STR(RC_CHARSET_SWITCH_RULES, charset_switch_rules),
@@ -1464,6 +1481,7 @@ static Config_Type Config_Table [] =
      PARSE_INT(RC_MAX_COOKIES_BUFFER,   max_cookies_buffer),
      PARSE_INT(RC_MAX_COOKIES_DOMAIN,   max_cookies_domain),
      PARSE_INT(RC_MAX_COOKIES_GLOBAL,   max_cookies_global),
+     PARSE_INT(RC_MAX_URI_SIZE,         max_uri_size),
      PARSE_TIM(RC_MESSAGESECS,          MessageSecs),
      PARSE_SET(RC_MINIMAL_COMMENTS,     minimal_comments),
      PARSE_PRG(RC_MKDIR_PATH,           ppMKDIR),
@@ -1926,7 +1944,6 @@ static void do_read_cfg(const char *cfg_filename,
 	char *name, *value;
 	char *cp;
 	Config_Type *tbl;
-	ParseUnionPtr q;
 
 	/* Most lines in the config file are comment lines.  Weed them out
 	 * now.  Also, leading whitespace is ok, so trim it.
@@ -1987,7 +2004,7 @@ static void do_read_cfg(const char *cfg_filename,
 	    continue;
 	}
 
-	q = ParseUnionOf(tbl);
+	(void) ParseUnionOf(tbl);
 	switch ((fp0 != 0 && tbl->type != CONF_INCLUDE)
 		? CONF_NIL
 		: tbl->type) {

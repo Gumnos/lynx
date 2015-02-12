@@ -1,5 +1,5 @@
 /*
- * $LynxId: userdefs.h,v 1.253 2009/11/21 16:35:19 tom Exp $
+ * $LynxId: userdefs.h,v 1.256 2010/06/19 18:23:03 tom Exp $
  *
  * Lynx - Hypertext navigation system
  *
@@ -242,6 +242,12 @@
 #ifndef LYNX_LSS_FILE
 #define LYNX_LSS_FILE "Lynx_Dir:lynx.lss"
 #endif /* LYNX_LSS_FILE */
+
+/*
+ * FTP_FORMAT uses the same codes as LIST_FORMAT, but applies to files shown
+ * in an ftp listing.
+ */
+#define FTP_FORMAT "%d  %-16.16t %a  %K"
 
 /*******************************************************************
  * Things you must change  -  non-VMS specific
@@ -1426,11 +1432,11 @@
  * the version definition with the Project Version on checkout.  Just
  * ignore it. - kw */
 /* $Format: "#define LYNX_VERSION \"$ProjectVersion$\""$ */
-#define LYNX_VERSION "2.8.8dev.3"
+#define LYNX_VERSION "2.8.8dev.4"
 #define LYNX_WWW_HOME "http://lynx.isc.org/"
 #define LYNX_WWW_DIST "http://lynx.isc.org/current/"
 /* $Format: "#define LYNX_DATE \"$ProjectDate$\""$ */
-#define LYNX_DATE "Sun, 25 Apr 2010 16:44:30 -0700"
+#define LYNX_DATE "Mon, 21 Jun 2010 02:44:55 -0700"
 #define LYNX_DATE_OFF 5		/* truncate the automatically-generated date */
 #define LYNX_DATE_LEN 11	/* truncate the automatically-generated date */
 

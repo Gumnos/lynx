@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMail.c,v 1.72 2009/11/21 17:05:33 Bela.Lubkin Exp $
+ * $LynxId: LYMail.c,v 1.73 2010/04/29 09:16:49 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTParse.h>
@@ -551,7 +551,7 @@ void mailform(const char *mailto_address,
     char subject[MAX_SUBJECT + 10];
     char *searchpart = NULL;
     char buf[512];
-    int ch, len, i;
+    int len, i;
 
 #if USE_VMS_MAILER
     static char *cmd;
@@ -654,7 +654,7 @@ void mailform(const char *mailto_address,
 	}
     }
     _statusline(SUBJECT_PROMPT);
-    if ((ch = LYgetstr(subject, VISIBLE, MAX_SUBJECT, NORECALL)) < 0) {
+    if (LYgetstr(subject, VISIBLE, MAX_SUBJECT, NORECALL) < 0) {
 	/*
 	 * User cancelled via ^G. - FM
 	 */
@@ -669,7 +669,7 @@ void mailform(const char *mailto_address,
 	sprintf(self, "%.*s", MAX_SUBJECT,
 		isEmpty(personal_mail_address) ? "" : personal_mail_address);
 	_statusline("Cc: ");
-	if ((ch = LYgetstr(self, VISIBLE, MAX_SUBJECT, NORECALL)) < 0) {
+	if (LYgetstr(self, VISIBLE, MAX_SUBJECT, NORECALL) < 0) {
 	    /*
 	     * User cancelled via ^G. - FM
 	     */

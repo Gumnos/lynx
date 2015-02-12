@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTFWriter.c,v 1.91 2009/01/01 22:58:59 tom Exp $
+ * $LynxId: HTFWriter.c,v 1.93 2010/04/30 00:01:09 tom Exp $
  *
  *		FILE WRITER				HTFWrite.h
  *		===========
@@ -153,11 +153,11 @@ static void HTFWriter_free(HTStream *me)
     int len;
     char *path = NULL;
     char *addr = NULL;
-    int status;
     BOOL use_zread = NO;
     BOOLEAN found = FALSE;
 
 #ifdef WIN_EX
+    int status;
     HANDLE cur_handle;
 
     cur_handle = GetForegroundWindow();
@@ -370,10 +370,10 @@ static void HTFWriter_free(HTStream *me)
 #endif
 			}
 		    } else {
-			status = HTLoadFile(addr,
-					    me->anchor,
-					    me->output_format,
-					    me->sink);
+			(void) HTLoadFile(addr,
+					  me->anchor,
+					  me->output_format,
+					  me->sink);
 		    }
 		    if (dump_output_immediately &&
 			me->output_format == HTAtom_for("www/present")) {
@@ -534,6 +534,9 @@ HTStream *HTFWriter_new(FILE *fp)
     me = typecalloc(HTStream);
     if (me == NULL)
 	outofmem(__FILE__, "HTFWriter_new");
+
+    assert(me != NULL);
+
     me->isa = &HTFWriter;
 
     me->fp = fp;
@@ -630,6 +633,9 @@ HTStream *HTSaveAndExecute(HTPresentation *pres,
     me = typecalloc(HTStream);
     if (me == NULL)
 	outofmem(__FILE__, "HTSaveAndExecute");
+
+    assert(me != NULL);
+
     me->isa = &HTFWriter;
     me->input_format = pres->rep;
     me->output_format = pres->rep_out;
@@ -758,12 +764,18 @@ HTStream *HTSaveToFile(HTPresentation *pres,
     const char *suffix;
     char *cp;
     int c = 0;
+
+#ifdef VMS
     BOOL IsBinary = TRUE;
+#endif
 
     ret_obj = typecalloc(HTStream);
 
     if (ret_obj == NULL)
 	outofmem(__FILE__, "HTSaveToFile");
+
+    assert(ret_obj != NULL);
+
     ret_obj->isa = &HTFWriter;
     ret_obj->remove_command = NULL;
     ret_obj->end_command = NULL;
@@ -871,7 +883,9 @@ HTStream *HTSaveToFile(HTPresentation *pres,
 	 * It's a text file requested via 'd'ownload.  Keep adding others to
 	 * the above list, 'til we add a configurable procedure.  - FM
 	 */
+#ifdef VMS
 	IsBinary = FALSE;
+#endif
 
     /*
      * Any "application/foo" or other non-"text/foo" types that are actually
@@ -1116,6 +1130,9 @@ HTStream *HTCompressed(HTPresentation *pres,
     me = typecalloc(HTStream);
     if (me == NULL)
 	outofmem(__FILE__, "HTCompressed");
+
+    assert(me != NULL);
+
     me->isa = &HTFWriter;
     me->input_format = pres->rep;
     me->output_format = pres->rep_out;
@@ -1260,6 +1277,9 @@ HTStream *HTDumpToStdout(HTPresentation *pres GCC_UNUSED,
 
     if (ret_obj == NULL)
 	outofmem(__FILE__, "HTDumpToStdout");
+
+    assert(ret_obj != NULL);
+
     ret_obj->isa = &HTFWriter;
     ret_obj->remove_command = NULL;
     ret_obj->end_command = NULL;

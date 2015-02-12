@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTChunk.c,v 1.21 2009/02/01 12:49:24 tom Exp $
+ * $LynxId: HTChunk.c,v 1.24 2010/06/16 23:32:22 tom Exp $
  *
  *		Chunk handling:	Flexible arrays
  *		===============================
@@ -47,6 +47,9 @@ HTChunk *HTChunkCreateMayFail(int grow, int failok)
 	    return ch;
 	}
     }
+
+    assert(ch != NULL);
+
     HTChunkInit(ch, grow);
     ch->failok = failok;
     return ch;
@@ -62,10 +65,12 @@ HTChunk *HTChunkCreate2(int grow, size_t needed)
     if (ch == NULL)
 	outofmem(__FILE__, "HTChunkCreate2");
 
+    assert(ch != NULL);
+
     HTChunkInit(ch, grow);
-    if (needed > 0) {
+    if (needed-- > 0) {
 	/* Round up */
-	ch->allocated = (int) (needed - 1 - ((needed - 1) % ch->growby)
+	ch->allocated = (int) (needed - (needed % (size_t) ch->growby)
 			       + (unsigned) ch->growby);
 	CTRACE((tfp, "HTChunkCreate2: requested %d, allocate %u\n",
 		(int) needed, (unsigned) ch->allocated));
@@ -129,13 +134,13 @@ BOOL HTChunkRealloc(HTChunk *ch, int growby)
 /*	Append a character
  *	------------------
  */
-void HTChunkPutc(HTChunk *ch, char c)
+void HTChunkPutc(HTChunk *ch, unsigned char c)
 {
     if (ch->size >= ch->allocated) {
 	if (!HTChunkRealloc(ch, ch->growby))
 	    return;
     }
-    ch->data[ch->size++] = c;
+    ch->data[ch->size++] = (char) c;
 }
 
 /* like above but no realloc: extend to another chunk if necessary */
@@ -145,7 +150,7 @@ HTChunk *HTChunkPutc2(HTChunk *ch, char c)
 	HTChunk *chunk = HTChunkCreateMayFail(ch->growby, ch->failok);
 
 	ch->next = chunk;
-	HTChunkPutc(chunk, c);
+	HTChunkPutc(chunk, UCH(c));
 	return chunk;
     }
     ch->data[ch->size++] = c;

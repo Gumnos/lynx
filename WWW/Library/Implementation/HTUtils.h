@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTUtils.h,v 1.97 2010/04/25 20:36:13 tom Exp $
+ * $LynxId: HTUtils.h,v 1.98 2010/04/29 09:13:44 tom Exp $
  *
  * Utility macros for the W3 code library
  * MACROS FOR GENERAL USE
@@ -127,6 +127,8 @@ char *alloca();
 #endif
 
 #endif /* HAVE_CONFIG_H */
+
+#include <assert.h>
 
 /* suppress inadvertant use of gettext in makeuctb when cross-compiling */
 #ifdef DONT_USE_GETTEXT

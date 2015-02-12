@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYCharUtils.c,v 1.104 2009/11/21 17:05:33 Bela.Lubkin Exp $
+ * $LynxId: LYCharUtils.c,v 1.105 2010/04/29 20:53:31 tom Exp $
  *
  *  Functions associated with LYCharSets.c and the Lynx version of HTML.c - FM
  *  ==========================================================================
@@ -119,6 +119,10 @@ void LYEntify(char **str,
 		     + (unsigned)(3 * gts) + 1));
     if ((cp = q) == NULL)
 	outofmem(__FILE__, "LYEntify");
+
+    assert(cp != NULL);
+    assert(q != NULL);
+
     for (p = *str; *p; p++) {
 #ifdef CJK_EX
 	if (IS_CJK_TTY) {
@@ -1639,10 +1643,10 @@ char **LYUCFullyTranslateString(char **str,
 		/*
 		 * Not found; look for replacement string.
 		 */
-		       (uck = UCTransUniCharStr(replace_buf,
-						60, code,
-						cs_to,
-						0) >= 0)) {
+		       UCTransUniCharStr(replace_buf,
+					 60, code,
+					 cs_to,
+					 0) >= 0) {
 		state = S_got_outstring;
 		break;
 	    }
@@ -2373,7 +2377,7 @@ void LYHandleMETA(HTStructured * me, const BOOL *present,
 		/*
 		 * We found a URL field, so check it out.  - FM
 		 */
-		if (!(url_type = LYLegitimizeHREF(me, &href, TRUE, FALSE))) {
+		if (!LYLegitimizeHREF(me, &href, TRUE, FALSE)) {
 		    /*
 		     * The specs require a complete URL, but this is a
 		     * Netscapism, so don't expect the author to know that.  -
@@ -3268,7 +3272,7 @@ BOOLEAN LYCheckForCSI(HTParentAnchor *anchor,
 BOOLEAN LYCommentHacks(HTParentAnchor *anchor,
 		       const char *comment)
 {
-    const char *cp = comment;
+    const char *cp;
     size_t len;
 
     if (comment == NULL)
@@ -3388,6 +3392,9 @@ void LYformTitle(char **dst,
 
 	if ((tmp_buffer = (char *) malloc(strlen(src) + 1)) == 0)
 	    outofmem(__FILE__, "LYformTitle");
+
+	assert(tmp_buffer != NULL);
+
 	switch (kanji_code) {	/* 1997/11/22 (Sat) 09:28:00 */
 	case EUC:
 	    TO_EUC((const unsigned char *) src, (unsigned char *) tmp_buffer);

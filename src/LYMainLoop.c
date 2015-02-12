@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMainLoop.c,v 1.162 2009/11/22 17:27:48 tom Exp $
+ * $LynxId: LYMainLoop.c,v 1.166 2010/06/18 10:56:54 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTAccess.h>
@@ -1453,9 +1453,12 @@ static int handle_LYK_ACTIVATE(int *c,
 			 !strcmp(curdoc.title, HISTORY_PAGE_TITLE))) ||
 		       curdoc.bookmark != NULL ||
 		       (lynxjumpfile &&
+			curdoc.address &&
 			!strcmp(lynxjumpfile, curdoc.address))) {
 		LYUserSpecifiedURL = TRUE;
-	    } else if (no_filereferer == TRUE && isFILE_URL(curdoc.address)) {
+	    } else if (no_filereferer == TRUE &&
+		       curdoc.address != NULL &&
+		       isFILE_URL(curdoc.address)) {
 		LYNoRefererForThis = TRUE;
 	    }
 	    newdoc.link = 0;
@@ -2532,8 +2535,6 @@ static void handle_LYK_EDIT_TEXTAREA(BOOLEAN *refresh_screen,
 				     int *old_c,
 				     int real_c)
 {
-    int n;
-
     if (no_editor) {
 	if (*old_c != real_c) {
 	    *old_c = real_c;
@@ -2553,7 +2554,7 @@ static void handle_LYK_EDIT_TEXTAREA(BOOLEAN *refresh_screen,
 	/* stop screen */
 	stop_curses();
 
-	n = HText_ExtEditForm(&links[curdoc.link]);
+	(void) HText_ExtEditForm(&links[curdoc.link]);
 
 	/*
 	 * TODO:
@@ -3331,8 +3332,6 @@ static void handle_LYK_INSERT_FILE(BOOLEAN *refresh_screen,
 				   int *old_c,
 				   int real_c)
 {
-    int n;
-
     /*
      * See if the current link is in a form TEXTAREA.
      */
@@ -3360,7 +3359,7 @@ static void handle_LYK_INSERT_FILE(BOOLEAN *refresh_screen,
 	    return;
 	}
 
-	n = HText_InsertFile(&links[curdoc.link]);
+	(void) HText_InsertFile(&links[curdoc.link]);
 
 	/*
 	 * TODO:
@@ -3954,7 +3953,6 @@ static int handle_PREV_DOC(int *cmd,
 	 */
 	DocAddress WWWDoc;
 	HTParentAnchor *tmpanchor;
-	HText *text;
 	BOOLEAN conf = FALSE, first = TRUE;
 
 	HTLastConfirmCancelled();	/* reset flag */
@@ -3974,7 +3972,7 @@ static int handle_PREV_DOC(int *cmd,
 	    if (HTAnchor_safe(tmpanchor)) {
 		break;
 	    }
-	    if (((text = (HText *) HTAnchor_document(tmpanchor)) == NULL &&
+	    if ((HTAnchor_document(tmpanchor) == NULL &&
 		 (isLYNXIMGMAP(WWWDoc.address) ||
 		  (conf = confirm_post_resub(WWWDoc.address,
 					     HDOC(nhist_1).title,
@@ -4823,10 +4821,10 @@ void handle_LYK_WHEREIS(int cmd,
 	       curdoc.link >= 0 && nlinks > 0 &&
 	       links[curdoc.link].ly >= (display_lines / 3)) {
 	*refresh_screen = TRUE;
-    } else if ((case_sensitive && 0 != strcmp(prev_target,
-					      remember_old_target)) ||
-	       (!case_sensitive && 0 != strcasecomp8(prev_target,
-						     remember_old_target))) {
+    } else if ((LYcase_sensitive && 0 != strcmp(prev_target,
+						remember_old_target)) ||
+	       (!LYcase_sensitive && 0 != strcasecomp8(prev_target,
+						       remember_old_target))) {
 	*refresh_screen = TRUE;
     }
     FREE(remember_old_target);

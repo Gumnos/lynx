@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYStyle.c,v 1.66 2009/11/27 14:39:27 tom Exp $
+ * $LynxId: LYStyle.c,v 1.67 2010/05/02 22:23:21 tom Exp $
  *
  * character level styles for Lynx
  * (c) 1996 Rob Partington -- donated to the Lyncei (if they want it :-)
@@ -621,7 +621,6 @@ static int style_readFromFileREC(char *lss_filename,
 {
     FILE *fh;
     char *buffer = NULL;
-    int len;
 
     CTRACE2(TRACE_STYLE, (tfp, "CSS:Reading styles from file: %s\n",
 			  lss_filename ? lss_filename : "?!? empty ?!?"));
@@ -644,7 +643,7 @@ static int style_readFromFileREC(char *lss_filename,
 	LYTrimHead(buffer);
 	if (!strncasecomp(buffer, "include:", 8))
 	    style_readFromFileREC(LYSkipBlanks(buffer + 8), lss_filename);
-	else if (buffer[0] != '#' && (len = (int) strlen(buffer)) > 0)
+	else if (buffer[0] != '#' && strlen(buffer) != 0)
 	    HStyle_addStyle(buffer);
     }
 

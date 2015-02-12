@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTAABrow.c,v 1.30 2009/11/21 17:05:33 Bela.Lubkin Exp $
+ * $LynxId: HTAABrow.c,v 1.32 2010/06/17 00:37:22 tom Exp $
  *
  * MODULE							HTAABrow.c
  *		BROWSER SIDE ACCESS AUTHORIZATION MODULE
@@ -150,6 +150,8 @@ void HTAAForwardAuth_set(const char *scheme_name,
     if ((HTAAForwardAuth = typecallocn(char, len)) == 0)
 	  outofmem(__FILE__, "HTAAForwardAuth_set");
 
+    assert(HTAAForwardAuth != 0);
+
     strcpy(HTAAForwardAuth, "Authorization: ");
     if (scheme_name) {
 	strcat(HTAAForwardAuth, scheme_name);
@@ -193,6 +195,8 @@ static HTAAServer *HTAAServer_new(const char *hostname,
 
     if ((server = typecalloc(HTAAServer)) == 0)
 	  outofmem(__FILE__, "HTAAServer_new");
+
+    assert(server != NULL);
 
     server->hostname = NULL;
     server->portnumber = (portnumber > 0 ? portnumber : 80);
@@ -395,6 +399,8 @@ static HTAASetup *HTAASetup_new(HTAAServer *server, char *ctemplate,
     if ((setup = typecalloc(HTAASetup)) == 0)
 	outofmem(__FILE__, "HTAASetup_new");
 
+    assert(setup != NULL);
+
     setup->retry = NO;
     setup->server = server;
     setup->ctemplate = NULL;
@@ -517,6 +523,8 @@ static HTAARealm *HTAARealm_new(HTList *realm_table,
 	if ((realm = typecalloc(HTAARealm)) == 0)
 	      outofmem(__FILE__, "HTAARealm_new");
 
+	assert(realm != NULL);
+
 	realm->realmname = NULL;
 	realm->username = NULL;
 	realm->password = NULL;
@@ -623,9 +631,6 @@ static char *compose_auth_string(HTAAScheme scheme, HTAASetup * setup, BOOL IsPr
 	 * prompting function, but the password is NULL-ed and always replaced. 
 	 * - FM
 	 */
-	len = (strlen(realm->realmname) +
-	       strlen(theHost ?
-		      theHost : "??") + 50);
 	HTSprintf0(&msg, gettext("Username for '%s' at %s '%s%s':"),
 		   realm->realmname,
 		   (IsProxy ? "proxy" : "server"),
@@ -673,6 +678,8 @@ static char *compose_auth_string(HTAAScheme scheme, HTAASetup * setup, BOOL IsPr
 
     if ((cleartext = typecallocn(char, len)) == 0)
 	  outofmem(__FILE__, "compose_auth_string");
+
+    assert(cleartext != NULL);
 
     if (realm->username)
 	strcpy(cleartext, realm->username);
@@ -920,6 +927,8 @@ char *HTAA_composeAuth(const char *hostname,
 	if ((HTAA_composeAuthResult = typecallocn(char, len)) == 0)
 	      outofmem(__FILE__, "HTAA_composeAuth");
 
+	assert(HTAA_composeAuthResult != NULL);
+
 	strcpy(HTAA_composeAuthResult, "Proxy-Authorization: ");
 
     } else {
@@ -998,6 +1007,8 @@ char *HTAA_composeAuth(const char *hostname,
 	if ((HTAA_composeAuthResult = typecallocn(char, len)) == 0)
 	      outofmem(__FILE__, "HTAA_composeAuth");
 
+	assert(HTAA_composeAuthResult != NULL);
+
 	strcpy(HTAA_composeAuthResult, "Authorization: ");
     }
 
@@ -1036,7 +1047,7 @@ char *HTAA_composeAuth(const char *hostname,
  *			NO, otherwise.
  */
 BOOL HTAA_shouldRetryWithAuth(char *start_of_headers,
-			      int length,
+			      size_t length,
 			      int soc,
 			      BOOL IsProxy)
 {
@@ -1096,6 +1107,9 @@ BOOL HTAA_shouldRetryWithAuth(char *start_of_headers,
 
 			if (!scheme_specifics)
 			    outofmem(__FILE__, "HTAA_shouldRetryWithAuth");
+
+			assert(scheme_specifics != NULL);
+
 			for (i = 0; i < HTAA_MAX_SCHEMES; i++)
 			    scheme_specifics[i] = NULL;
 		    }

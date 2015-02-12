@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTString.c,v 1.59 2010/04/25 19:42:04 tom Exp $
+ * $LynxId: HTString.c,v 1.62 2010/06/17 21:33:51 tom Exp $
  *
  *	Case-independent string comparison		HTString.c
  *
@@ -184,7 +184,6 @@ int strcasecomp_asterisk(const char *a, const char *b)
 		    break;
 		} else if (strcasecomp_asterisk(a + 1, p)) {
 		    ++p;
-		    result = 1;	/* could not match */
 		} else {
 		    b = p - 1;
 		    result = 0;	/* found a match starting at 'p' */
@@ -307,6 +306,7 @@ char *HTSACopy(char **dest,
 	    *dest = (char *) malloc(size);
 	    if (*dest == NULL)
 		outofmem(__FILE__, "HTSACopy");
+	    assert(*dest != NULL);
 	    memcpy(*dest, src, size);
 	}
     } else {
@@ -327,11 +327,13 @@ char *HTSACat(char **dest,
 	    *dest = (char *) realloc(*dest, length + strlen(src) + 1);
 	    if (*dest == NULL)
 		outofmem(__FILE__, "HTSACat");
+	    assert(*dest != NULL);
 	    strcpy(*dest + length, src);
 	} else {
 	    *dest = (char *) malloc(strlen(src) + 1);
 	    if (*dest == NULL)
 		outofmem(__FILE__, "HTSACat");
+	    assert(*dest != NULL);
 	    strcpy(*dest, src);
 	}
     }
@@ -359,12 +361,13 @@ char *HTSACopy_extra(char **dest,
 	if (*dest != 0) {
 	    size = *(EXTRA_TYPE *) ((*dest) - EXTRA_SIZE);
 	}
-	if (size < srcsize) {
+	if ((*dest == 0) || (size < srcsize)) {
 	    FREE_extra(*dest);
 	    size = srcsize * 2;	/* x2 step */
 	    *dest = (char *) malloc(size + EXTRA_SIZE);
 	    if (*dest == NULL)
 		outofmem(__FILE__, "HTSACopy_extra");
+	    assert(*dest != NULL);
 	    *(EXTRA_TYPE *) (*dest) = size;
 	    *dest += EXTRA_SIZE;
 	}
@@ -582,6 +585,7 @@ static char *HTAlloc(char *ptr, size_t length)
 	ptr = (char *) malloc(length);
     if (ptr == 0)
 	outofmem(__FILE__, "HTAlloc");
+    assert(ptr != NULL);
     return ptr;
 }
 
@@ -639,8 +643,8 @@ PUBLIC_IF_FIND_LEAKS char *StrAllocVsprintf(char **pstr,
 
     if (vasprintf(&temp, fmt, *ap) >= 0) {
 	if (dst_len != 0) {
-	    int src_len = strlen(temp);
-	    int new_len = dst_len + src_len + 1;
+	    size_t src_len = strlen(temp);
+	    size_t new_len = dst_len + src_len + 1;
 
 	    result = HTAlloc(pstr ? *pstr : 0, new_len);
 	    if (result != 0) {
@@ -694,6 +698,8 @@ PUBLIC_IF_FIND_LEAKS char *StrAllocVsprintf(char **pstr,
     if ((fmt_ptr = malloc(need * NUM_WIDTH)) == 0
 	|| (tmp_ptr = malloc(tmp_len)) == 0) {
 	outofmem(__FILE__, "StrAllocVsprintf");
+	assert(fmt_ptr != NULL);
+	assert(tmp_ptr != NULL);
     }
 #endif /* SAVE_TIME_NOT_SPACE */
 
@@ -965,6 +971,8 @@ char *HTQuoteParameter(const char *parameter)
     if (result == NULL)
 	outofmem(__FILE__, "HTQuoteParameter");
 
+    assert(result != NULL);
+
     n = 0;
 #if (USE_QUOTED_PARAMETER == 1)
     /*
@@ -1070,8 +1078,10 @@ void HTAddXpand(char **result,
 	while (next[0] != 0) {
 	    if (HTIsParam(next)) {
 		if (next != last) {
-		    size_t len = (next - last)
-		    + ((*result != 0) ? strlen(*result) : 0);
+		    size_t len = ((size_t) (next - last)
+				  + ((*result != 0)
+				     ? strlen(*result)
+				     : 0));
 
 		    HTSACat(result, last);
 		    (*result)[len] = 0;
@@ -1113,8 +1123,10 @@ void HTAddToCmd(char **result,
 	while (next[0] != 0) {
 	    if (HTIsParam(next)) {
 		if (next != last) {
-		    size_t len = (next - last)
-		    + ((*result != 0) ? strlen(*result) : 0);
+		    size_t len = ((size_t) (next - last)
+				  + ((*result != 0)
+				     ? strlen(*result)
+				     : 0));
 
 		    HTSACat(result, last);
 		    (*result)[len] = 0;
@@ -1181,7 +1193,7 @@ void HTSABCopy(bstring **dest, const char *src,
 	       int len)
 {
     bstring *t;
-    unsigned need = len + 1;
+    unsigned need = (unsigned) (len + 1);
 
     CTRACE2(TRACE_BSTRING,
 	    (tfp, "HTSABCopy(%p, %p, %d)\n",
@@ -1196,9 +1208,14 @@ void HTSABCopy(bstring **dest, const char *src,
 	if ((t = (bstring *) malloc(sizeof(bstring))) == NULL)
 	      outofmem(__FILE__, "HTSABCopy");
 
+	assert(t != NULL);
+
 	if ((t->str = (char *) malloc(need)) == NULL)
 	    outofmem(__FILE__, "HTSABCopy");
-	memcpy(t->str, src, len);
+
+	assert(t->str != NULL);
+
+	memcpy(t->str, src, (size_t) len);
 	t->len = len;
 	t->str[t->len] = '\0';
 	*dest = t;
@@ -1215,7 +1232,7 @@ void HTSABCopy(bstring **dest, const char *src,
  */
 void HTSABCopy0(bstring **dest, const char *src)
 {
-    HTSABCopy(dest, src, strlen(src));
+    HTSABCopy(dest, src, (int) strlen(src));
 }
 
 /*
@@ -1230,7 +1247,7 @@ void HTSABCat(bstring **dest, const char *src,
 	    (tfp, "HTSABCat(%p, %p, %d)\n",
 	     (void *) dest, (const void *) src, len));
     if (src) {
-	unsigned need = len + 1;
+	unsigned need = (unsigned) (len + 1);
 
 	if (TRACE_BSTRING) {
 	    CTRACE((tfp, "===    %4d:", len));
@@ -1238,19 +1255,23 @@ void HTSABCat(bstring **dest, const char *src,
 	    CTRACE((tfp, "\n"));
 	}
 	if (t) {
-	    unsigned length = t->len + need;
+	    unsigned length = (unsigned) t->len + need;
 
-	    if ((t->str = (char *) realloc(t->str, length)) == NULL)
-		outofmem(__FILE__, "HTSACat");
+	    t->str = (char *) realloc(t->str, length);
 	} else {
 	    if ((t = typecalloc(bstring)) == NULL)
 		  outofmem(__FILE__, "HTSACat");
+
+	    assert(t != NULL);
 
 	    t->str = (char *) malloc(need);
 	}
 	if (t->str == NULL)
 	    outofmem(__FILE__, "HTSACat");
-	memcpy(t->str + t->len, src, len);
+
+	assert(t->str != NULL);
+
+	memcpy(t->str + t->len, src, (size_t) len);
 	t->len += len;
 	t->str[t->len] = '\0';
 	*dest = t;
@@ -1267,7 +1288,7 @@ void HTSABCat(bstring **dest, const char *src,
  */
 void HTSABCat0(bstring **dest, const char *src)
 {
-    HTSABCat(dest, src, strlen(src));
+    HTSABCat(dest, src, (int) strlen(src));
 }
 
 /*
@@ -1275,12 +1296,12 @@ void HTSABCat0(bstring **dest, const char *src)
  */
 BOOL HTSABEql(bstring *a, bstring *b)
 {
-    unsigned len_a = (a != 0) ? a->len : 0;
-    unsigned len_b = (b != 0) ? b->len : 0;
+    unsigned len_a = (unsigned) ((a != 0) ? a->len : 0);
+    unsigned len_b = (unsigned) ((b != 0) ? b->len : 0);
 
     if (len_a == len_b) {
 	if (len_a == 0
-	    || memcmp(a->str, b->str, a->len) == 0)
+	    || memcmp(a->str, b->str, (size_t) a->len) == 0)
 	    return TRUE;
     }
     return FALSE;
@@ -1312,7 +1333,7 @@ bstring *HTBprintf(bstring **pstr, const char *fmt,...)
     {
 	temp = StrAllocVsprintf(&temp, 0, fmt, &ap);
 	if (non_empty(temp)) {
-	    HTSABCat(pstr, temp, strlen(temp));
+	    HTSABCat(pstr, temp, (int) strlen(temp));
 	}
 	FREE(temp);
 	result = *pstr;

@@ -1,7 +1,62 @@
--- $LynxId: CHANGES,v 1.472 2010/04/25 22:41:14 tom Exp $
+-- $LynxId: CHANGES,v 1.491 2010/06/21 08:36:29 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2010-06-21 (2.8.8dev.4)
+* check for SSL error when reading response from "GET".  This incidentally
+  exposes a longstanding bug in GNUTLS:
+    https://savannah.gnu.org/support/index.php?106987
+  (google the message "A TLS packet with unexpected length was received")
+  which prevents connection to
+    https://www.mynortonaccount.com/amsweb/default.do
+  (report by Ignac Vucko) -TD
+* fix ifdef/define's in LYMain.c to show GNUTLS version in user-agent when
+  built with tidy_tls.c -TD
+* improve format of X509_NAME_oneline() in tidy_tls.c, making it compatible
+  with the OpenSSL function so that no post-processing is needed -TD
+* correct typo in configure --enable-gnutls-compat option, which sometimes made
+  it enabled as a side-effect of setting --with-gnutls -TD
+* add configure option --enable-wais, for test-compiles with freeWAIS -TD
+* fixes to build with VMS -Christoph J Gartmann
+  + created [.src]multinet_ucx.opt with a single line
+    multinet_root:[multinet.library]ucx$ipc/LIBRARY
+  + modified build.com to have an additional option "Multinet with
+    UCX emulation"
+  + modified libmake.com for the same reason
+  + modified [.www.library.implementation]www_tcp.h for the same reason
+  + provide definition of IS_CJK_TTY for HTWAIS.c by adding include of
+    LYStrings.h
+* fix typo in users's guide -PBM
+* drop mkdirs.sh and MKINSTALLDIRS symbol from makefiles, using "mkdir -p" -TD
+* limit parsed URIs with new config parameter MAX_URI_SIZE, default 8192
+  (RedHat #605286, forwarded by Vincent Danen). For arbitrarily long URIs,
+  alloca() could run out of stack space -TD
+* several changes to configure script, from ongoing work on xterm, etc -TD
+  + workaround for broken ".pc" file for X Toolkit, which omits the ICE
+    library.
+  + modify CF_NCURSES_CONFIG to use CF_CURSES_HEADER to pick out the particular
+    flavor of ncurses.h, e.g., <ncursesw/curses.h>
+  + add parameter to CF_CURSES_HEADER to allow looking for specific
+    subdirectory ncurses/ncursesw/etc + restructured CF_X_ATHENA to use
+    pkg-config, if available.
+  + use CF_ADD_LIB/CF_ADD_LIBS
+  + CF_GNUTLS eliminates duplicate libraries when configuring with pkg-config
+  + modified several macros to quote params of ifelse()
+  + CF_AR_FLAGS allows $ARFLAGS to override the choice of ar-flags, in
+    particular check if a given choice is part of the current $ARFLAGS
+  + workaround CF_XOPEN_CURSES for (temporary) problem with ncurses headers,
+    which did not account for the fact that _XOPEN_SOURCE_EXTENDED may be
+    defined in a system header.
+* remove redundant updates for CFLAGS and LIBS in configure script which are
+  now done in CF_FIND_LINKAGE macro -TD
+* fix a problem with configure script which broke "--with-gnutls=/usr" (report
+  by Atsuhito Kohda) -TD
+* resolve warnings from "clang --analyze", tested with Fedora 12 and clang
+  2.6-0.5.pre1.fc12, 2.7-1.fc12 -TD
+* further improvements to print_wwwfile_to_fd() -TD
+  + corrected length used for radio/checkboxes.
+  + fill in wrapped fields.
 
 2010-04-25 (2.8.8dev.3)
 * modify print_wwwfile_to_fd() to add field values to the printed form (Debian
@@ -23,7 +78,7 @@ Changes since Lynx 2.8 release
   their respective target variables, not appending -TD
 * improve configure macro CF_XOPEN_SOURCE by removing rather than undefining
   preexisting symbols as they are added to the definitions -TD
-* add configure check for -lnetwork, from tin
+* add configure check for -lnetwork, from tin -TD
 * when renaming/copying a bookmark file, e.g., to delete a bookmark, modify
   its permissions for compatibility with IsOurFile() (Redhat #486070) -TD
 * fix most gcc writable-strings warnings -TD
@@ -34,8 +89,8 @@ Changes since Lynx 2.8 release
   (Debian #460108) -TD
 * document the various xxx_PATH settings in lynx.cfg -TD
 * modify cfg2html.pl to improve formatting of cattoc.html -TD
-* split-up top-level makefile install-html rule to allow generating the htmlized
-  cfg without doing an install -TD
+* split-up top-level makefile install-html rule to allow generating the
+  htmlized cfg without doing an install -TD
 * suppress positioning for editor when using it to edit files via dired -TD
 * modify samples/lynx-demo.cfg to suppress external file-utilities, since the
   intent is to make the installer work standalone, but allow extension -TD

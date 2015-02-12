@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYBookmark.c,v 1.63 2010/01/13 01:35:24 tom Exp $
+ * $LynxId: LYBookmark.c,v 1.65 2010/04/30 09:45:08 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTAlert.h>
@@ -519,7 +519,7 @@ void remove_bookmark_link(int cur,
 	}
 
     } else {
-	char *cp, *cp2;
+	char *cp;
 	BOOLEAN retain;
 	int seen;
 
@@ -530,7 +530,7 @@ void remove_bookmark_link(int cur,
 	    retain = TRUE;
 	    seen = 0;
 	    cp = buf;
-	    if ((cur == 0) && (cp2 = LYstrstr(cp, "<ol><LI>")))
+	    if ((cur == 0) && LYstrstr(cp, "<ol><LI>"))
 		keep_ol = TRUE;	/* Do not erase, this corrects a bug in an
 				   older version */
 	    while (n < cur && (cp = LYstrstr(cp, "<a href="))) {
@@ -1078,27 +1078,29 @@ static char *title_convert8bit(const char *Title)
 	}
     }
 
-    /*
-     * Cleanup comment, collapse multiple dashes into one dash, skip '>'.
-     */
-    for (q = p0 = comment; *p0; p0++) {
-	if (UCH(TOASCII(*p0)) >= 32 &&
-	    *p0 != '>' &&
-	    (q == comment || *p0 != '-' || *(q - 1) != '-')) {
-	    *q++ = *p0;
+    if (comment != NULL) {
+	/*
+	 * Cleanup comment, collapse multiple dashes into one dash, skip '>'.
+	 */
+	for (q = p0 = comment; *p0; p0++) {
+	    if (UCH(TOASCII(*p0)) >= 32 &&
+		*p0 != '>' &&
+		(q == comment || *p0 != '-' || *(q - 1) != '-')) {
+		*q++ = *p0;
+	    }
 	}
+	*q = '\0';
+
+	/*
+	 * valid bookmark should be a single line (no linebreaks!).
+	 */
+	StrAllocCat(buf, "<!-- ");
+	StrAllocCat(buf, comment);
+	StrAllocCat(buf, " -->");
+	StrAllocCat(buf, ncr);
+
+	FREE(comment);
     }
-    *q = '\0';
-
-    /*
-     * valid bookmark should be a single line (no linebreaks!).
-     */
-    StrAllocCat(buf, "<!-- ");
-    StrAllocCat(buf, comment);
-    StrAllocCat(buf, " -->");
-    StrAllocCat(buf, ncr);
-
-    FREE(comment);
     FREE(ncr);
     return (buf);
 }

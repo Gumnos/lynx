@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMain.c,v 1.210 2009/11/21 17:05:33 Bela.Lubkin Exp $
+ * $LynxId: LYMain.c,v 1.215 2010/06/20 20:03:00 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTP.h>
@@ -201,7 +201,7 @@ BOOLEAN LYxhtml_parsing = FALSE;
 BOOLEAN bold_H1 = FALSE;
 BOOLEAN bold_headers = FALSE;
 BOOLEAN bold_name_anchors = FALSE;
-BOOLEAN case_sensitive = CASE_SENSITIVE_ALWAYS_ON;
+BOOLEAN LYcase_sensitive = CASE_SENSITIVE_ALWAYS_ON;
 BOOLEAN check_mail = CHECKMAIL;
 BOOLEAN child_lynx = FALSE;
 BOOLEAN dump_links_only = FALSE;
@@ -494,6 +494,7 @@ int lynx_temp_subspace = 0;	/* > 0 if we made temp-directory */
 int max_cookies_domain = 50;
 int max_cookies_global = 500;
 int max_cookies_buffer = 4096;
+int max_uri_size = 8192;
 int nlinks = 0;			/* number of links in memory */
 int outgoing_mail_charset = -1;	/* translate mail to this charset */
 
@@ -906,14 +907,10 @@ static void append_ssl_version(char **target,
 
 #if defined(SSLEAY_VERSION)
 #define LYNX_SSL_VERSION SSLeay_version(SSLEAY_VERSION)
-#else
-#if defined(OPENSSL_VERSION_TEXT)
+#elif defined(OPENSSL_VERSION_TEXT)
 #define LYNX_SSL_VERSION OPENSSL_VERSION_TEXT
-#else
-#if defined(GNUTLS_VERSION)
-#define LYNX_SSL_VERSION GNUTLS_VERSION
-#endif /* GNUTLS_VERSION */
-#endif /* OPENSSL_VERSION_TEXT */
+#elif defined(GNUTLS_VERSION)
+#define LYNX_SSL_VERSION "GNUTLS " GNUTLS_VERSION " "
 #endif
 
 #ifdef LYNX_SSL_VERSION
@@ -1620,9 +1617,8 @@ int main(int argc,
 	&& !isatty(fileno(stdin))
 	&& (isatty(fileno(stdout) || isatty(fileno(stderr))))) {
 	int ignored = 0;
-	int ch;
 
-	while ((ch = fgetc(stdin)) != EOF) {
+	while (fgetc(stdin) != EOF) {
 	    ++ignored;
 	}
 	if (ignored) {
@@ -3319,7 +3315,7 @@ outputs for -source dumps"
       "=NUMBER\nNUMBER of documents cached in memory"
    ),
    PARSE_SET(
-      "case",		4|SET_ARG,		case_sensitive,
+      "case",		4|SET_ARG,		LYcase_sensitive,
       "enable case sensitive user searching"
    ),
    PARSE_SET(
@@ -4210,7 +4206,7 @@ static BOOL parse_arg(char **argv,
 #if EXTENDED_OPTION_LOGIC
     if (strcmp(arg_name, "--") == 0) {
 	no_options_further = TRUE;
-	nof_index = *countp;
+	nof_index = countp ? *countp : -1;
 	return TRUE;
     }
 #endif

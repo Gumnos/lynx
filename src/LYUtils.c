@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYUtils.c,v 1.194 2010/04/07 22:26:15 Kamil.Dudka Exp $
+ * $LynxId: LYUtils.c,v 1.195 2010/04/29 20:52:32 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTCP.h>
@@ -559,7 +559,6 @@ static BOOL show_whereis_targets(int flag,
 		    }
 		    tmp[1] = '\0';
 		    written += (int) (utf_extra + 1);
-		    utf_extra = 0;
 		} else if (IS_CJK_TTY && is8bits(tmp[0])) {
 		    /*
 		     * For CJK strings, by Masanobu Kimura.
@@ -633,7 +632,6 @@ static BOOL show_whereis_targets(int flag,
 			}
 			tmp[1] = '\0';
 			written += (int) (utf_extra + 1);
-			utf_extra = 0;
 		    } else if (IS_CJK_TTY && is8bits(tmp[0])) {
 			/*
 			 * For CJK strings, by Masanobu Kimura.
@@ -760,7 +758,6 @@ static BOOL show_whereis_targets(int flag,
 		    }
 		    tmp[1] = '\0';
 		    written += (int) (utf_extra + 1);
-		    utf_extra = 0;
 		} else if (IS_CJK_TTY && is8bits(tmp[0])) {
 		    /*
 		     * For CJK strings, by Masanobu Kimura.
@@ -835,7 +832,6 @@ static BOOL show_whereis_targets(int flag,
 			}
 			tmp[1] = '\0';
 			written += (int) (utf_extra + 1);
-			utf_extra = 0;
 		    } else if (IS_CJK_TTY && is8bits(tmp[0])) {
 			/*
 			 * For CJK strings, by Masanobu Kimura.
@@ -956,7 +952,6 @@ static BOOL show_whereis_targets(int flag,
 				}
 				tmp[1] = '\0';
 				written += (int) (utf_extra + 1);
-				utf_extra = 0;
 			    } else if (IS_CJK_TTY && is8bits(tmp[0])) {
 				/*
 				 * For CJK strings, by Masanobu Kimura.
@@ -1148,7 +1143,7 @@ void LYhighlight(int flag,
 #endif
 
 	if (links[cur].type == WWW_FORM_LINK_TYPE) {
-	    int len, gllen;
+	    int len;
 	    int avail_space = (LYcolLimit - LXP) + (LYcolLimit * (LYlines - LYP));
 	    const char *text = LYGetHiliteStr(cur, 0);
 
@@ -1158,7 +1153,6 @@ void LYhighlight(int flag,
 	    if (avail_space > links[cur].l_form->size)
 		avail_space = links[cur].l_form->size;
 
-	    gllen = LYmbcsstrlen(text, utf_flag, YES);
 	    len = LYmbcs_skip_cells(text, avail_space, utf_flag) - text;
 	    LYwaddnstr(LYwin, text, (unsigned) len);
 	    while (len++ < avail_space)
@@ -1385,7 +1379,7 @@ void statusline(const char *text)
     LYstrncpy(text_buff, text, sizeof(text_buff) - 1);
     p = strchr(text_buff, '\n');
     if (p)
-	p = '\0';
+	*p = '\0';
 
     /*
      * Deal with any CJK escape sequences and Kanji if we have a CJK character
@@ -1402,6 +1396,8 @@ void statusline(const char *text)
 	 */
 	if ((temp = typecallocn(unsigned char, strlen(text_buff) + 1)) == NULL)
 	      outofmem(__FILE__, "statusline");
+
+	assert(temp != NULL);
 
 	if (kanji_code == EUC) {
 	    TO_EUC((const unsigned char *) text_buff, temp);
@@ -1917,13 +1913,12 @@ int HTCheckForInterrupt(void)
 	    case LYK_FASTFORW_LINK:
 		if (HText_canScrollDown()) {
 		    /* This is not an exact science... - kw */
-		    if ((res =
-			 HTGetLinkOrFieldStart(HText_LinksInLines(HTMainText,
-								  Newline_partial,
-								  display_lines)
-					       - 1,
-					       &Newline_partial, NULL,
-					       1, TRUE)) == LINK_LINE_FOUND) {
+		    if (HTGetLinkOrFieldStart(HText_LinksInLines(HTMainText,
+								 Newline_partial,
+								 display_lines)
+					      - 1,
+					      &Newline_partial, NULL,
+					      1, TRUE) == LINK_LINE_FOUND) {
 			Newline_partial++;
 		    }
 		}
@@ -5288,7 +5283,7 @@ BOOLEAN LYPathOffHomeOK(char *fbuffer,
     if (LYIsTilde(cp[0])) {
 	if (LYIsPathSep(cp[1])) {
 	    if (cp[2] != '\0') {
-		if ((cp1 = strchr((cp + 2), '/')) != NULL) {
+		if (strchr((cp + 2), '/') != NULL) {
 		    /*
 		     * Convert "~/subdir(s)/file" to "./subdir(s)/file".  - FM
 		     */
@@ -5310,7 +5305,7 @@ BOOLEAN LYPathOffHomeOK(char *fbuffer,
 		   (cp1 = strchr((cp + 1), '/')) != NULL) {
 	    cp = (cp1 - 1);
 	    if (*(cp + 2) != '\0') {
-		if ((cp1 = strchr((cp + 2), '/')) != NULL) {
+		if (strchr((cp + 2), '/') != NULL) {
 		    /*
 		     * Convert "~user/subdir(s)/file" to "./subdir(s)/file". 
 		     * If user is someone else, we covered a spoof.  Otherwise,
@@ -5365,7 +5360,7 @@ BOOLEAN LYPathOffHomeOK(char *fbuffer,
      * Check if it has a pointless "./".  - FM
      */
     if (!strncmp(cp, "./", 2)) {
-	if ((cp1 = strchr((cp + 2), '/')) == NULL) {
+	if (strchr((cp + 2), '/') == NULL) {
 	    cp += 2;
 	}
     }
@@ -5727,10 +5722,12 @@ static BOOL IsOurSymlink(const char *name)
 	    if (buffer == 0)
 		break;
 	}
-	if (used > 0) {
-	    buffer[used] = '\0';
-	} else {
-	    FREE(buffer);
+	if (buffer != 0) {
+	    if (used > 0) {
+		buffer[used] = '\0';
+	    } else {
+		FREE(buffer);
+	    }
 	}
     }
     if (buffer != 0) {

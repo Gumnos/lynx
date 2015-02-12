@@ -1,5 +1,5 @@
 /*
- * $LynxId: TRSTable.c,v 1.24 2009/01/01 22:15:35 tom Exp $
+ * $LynxId: TRSTable.c,v 1.25 2010/04/29 20:51:14 tom Exp $
  *		Simple table object
  *		===================
  * Authors
@@ -1028,10 +1028,10 @@ static int Stbl_reserveCellsInTable(STable_info *me, int icell,
 	 i < (rowspan == 0 ? me->allocated_rows : me->nrows + rowspan - 1);
 	 i++) {
 	if (!me->rows[i].allocated) {
-	    me->rows[i].cells = typecallocn(STable_cellinfo, (unsigned)
-									      HTMAX(1,
-									      icell
-									      + colspan));
+	    me->rows[i].cells = typecallocn(STable_cellinfo,
+					      (unsigned) HTMAX(1,
+							       icell
+							       + colspan));
 
 	    if (!me->rows[i].cells)
 		return 0;	/* fail silently */
@@ -1159,13 +1159,11 @@ static int Stbl_finishRowInTable(STable_info *me)
 {
     STable_rowinfo *lastrow;
     STable_states *s = &me->s;
-    int ncells;
 
     CTRACE2(TRACE_TRST, (tfp, "TRST:Stbl_finishRowInTable()\n"));
     if (!me->rows || !me->nrows)
 	return -1;		/* no row started! */
     lastrow = me->rows + (me->nrows - 1);
-    ncells = lastrow->ncells;
     lastrow->ended = ROW_ended_by_endtr;
     if (lastrow->ncells > 0) {
 	if (s->pending_len > 0)

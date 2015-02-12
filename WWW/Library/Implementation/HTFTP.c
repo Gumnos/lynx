@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTFTP.c,v 1.90 2009/09/07 23:36:28 tom Exp $
+ * $LynxId: HTFTP.c,v 1.94 2010/06/17 00:44:49 tom Exp $
  *
  *			File Transfer Protocol (FTP) Client
  *			for a WorldWideWeb browser
@@ -290,6 +290,10 @@ char *HTVMS_name(const char *nn,
 
     if (!filename || !nodename)
 	outofmem(__FILE__, "HTVMSname");
+
+    assert(filename != NULL);
+    assert(nodename != NULL);
+
     strcpy(filename, fn);
     strcpy(nodename, "");	/* On same node?  Yes if node names match */
     if (strncmp(nn, "localhost", 9)) {
@@ -793,6 +797,8 @@ static int get_connection(const char *arg,
 	con = typecalloc(connection);
 	if (con == NULL)
 	    outofmem(__FILE__, "get_connection");
+
+	assert(con != NULL);
     }
     con->socket = -1;
 
@@ -1008,7 +1014,7 @@ static int get_connection(const char *arg,
     if (server_type != NETPRESENZ_SERVER)
 	server_type = GENERIC_SERVER;	/* reset */
     use_list = FALSE;		/* reset */
-    if ((status = response("SYST\r\n")) == 2) {
+    if (response("SYST\r\n") == 2) {
 	/* we got a line -- what kind of server are we talking to? */
 	if (strncmp(response_text + 4,
 		    "UNIX Type: L8 MAC-OS MachTen", 28) == 0) {
@@ -1509,14 +1515,12 @@ static BOOLEAN is_ls_date(char *s)
 
     /* space or HT_NON_BREAK_SPACE */
     if (!(*s == ' ' || *s == HT_NON_BREAK_SPACE)) {
-	s++;
 	return FALSE;
     }
     s++;
 
     /* space or digit */
     if (!(*s == ' ' || isdigit(UCH(*s)))) {
-	s++;
 	return FALSE;
     }
     s++;
@@ -1531,7 +1535,6 @@ static BOOLEAN is_ls_date(char *s)
 
     /* space or digit */
     if (!(*s == ' ' || isdigit(UCH(*s)))) {
-	s++;
 	return FALSE;
     }
     s++;
@@ -1542,7 +1545,6 @@ static BOOLEAN is_ls_date(char *s)
 
     /* colon or digit */
     if (!(*s == ':' || isdigit(UCH(*s)))) {
-	s++;
 	return FALSE;
     }
     s++;
@@ -1553,13 +1555,12 @@ static BOOLEAN is_ls_date(char *s)
 
     /* space or digit */
     if (!(*s == ' ' || isdigit(UCH(*s)))) {
-	s++;
 	return FALSE;
     }
     s++;
 
     /* space */
-    if (*s++ != ' ')
+    if (*s != ' ')
 	return FALSE;
 
     return TRUE;
@@ -1672,44 +1673,45 @@ static void parse_ls_line(char *line,
     /*
      * Extract the file-permissions, as a string.
      */
-    if ((cp = strchr(line, ' ')) != 0
-	&& (cp - line) == 10) {
-	*cp = '\0';
-	StrAllocCopy(entry->file_mode, line);
-	*cp = ' ';
-    }
+    if ((cp = strchr(line, ' ')) != 0) {
+	if ((cp - line) == 10) {
+	    *cp = '\0';
+	    StrAllocCopy(entry->file_mode, line);
+	    *cp = ' ';
+	}
 
-    /*
-     * Next is the link-count.
-     */
-    next = 0;
-    entry->file_links = (unsigned long) strtol(cp, &next, 10);
-    if (next == 0 || *next != ' ') {
-	entry->file_links = 0;
-	next = cp;
-    } else {
-	cp = next;
-    }
-    /*
-     * Next is the user-name.
-     */
-    while (isspace(UCH(*cp)))
-	++cp;
-    if ((next = strchr(cp, ' ')) != 0)
-	*next = '\0';
-    if (*cp != '\0')
-	StrAllocCopy(entry->file_user, cp);
-    /*
-     * Next is the group-name (perhaps).
-     */
-    if (next != NULL) {
-	cp = (next + 1);
+	/*
+	 * Next is the link-count.
+	 */
+	next = 0;
+	entry->file_links = (unsigned long) strtol(cp, &next, 10);
+	if (next == 0 || *next != ' ') {
+	    entry->file_links = 0;
+	    next = cp;
+	} else {
+	    cp = next;
+	}
+	/*
+	 * Next is the user-name.
+	 */
 	while (isspace(UCH(*cp)))
 	    ++cp;
 	if ((next = strchr(cp, ' ')) != 0)
 	    *next = '\0';
 	if (*cp != '\0')
-	    StrAllocCopy(entry->file_group, cp);
+	    StrAllocCopy(entry->file_user, cp);
+	/*
+	 * Next is the group-name (perhaps).
+	 */
+	if (next != NULL) {
+	    cp = (next + 1);
+	    while (isspace(UCH(*cp)))
+		++cp;
+	    if ((next = strchr(cp, ' ')) != 0)
+		*next = '\0';
+	    if (*cp != '\0')
+		StrAllocCopy(entry->file_group, cp);
+	}
     }
 #endif
 }
@@ -1936,7 +1938,7 @@ static void parse_vms_dir_entry(char *line,
 	if (entry_info->size <= ialloc)
 	    entry_info->size *= 512;
 
-    } else if ((cps = strtok(cp, sp)) != NULL) {
+    } else if (strtok(cp, sp) != NULL) {
 	/* We just initialized on the version number */
 	/* Now let's hunt for a lone, size number    */
 	while ((cps = strtok(NULL, sp)) != NULL) {
@@ -2299,6 +2301,9 @@ static EntryInfo *parse_dir_entry(char *entry,
 
     if (entry_info == NULL)
 	outofmem(__FILE__, "parse_dir_entry");
+
+    assert(entry_info != NULL);
+
     entry_info->display = TRUE;
 
     switch (server_type) {
@@ -2414,7 +2419,6 @@ static EntryInfo *parse_dir_entry(char *entry,
 		  (entry[i - 3] != ' ')); i--) ;	/* null body */
 	    if (i > 3) {
 		entry[i - 3] = '\0';
-		len = i - 3;
 		StrAllocCopy(entry_info->linkname, LYSkipBlanks(entry + i));
 	    }
 	}
@@ -2968,7 +2972,6 @@ static int read_directory(HTParentAnchor *parent,
     EntryInfo *entry_info;
     BOOLEAN first = TRUE;
     char *lastpath = NULL;	/* prefix for link, either "" (for root) or xxx  */
-    BOOL need_parent_link = FALSE;
     BOOL tildeIsTop = FALSE;
 
 #ifndef LONG_LIST
@@ -2995,7 +2998,7 @@ static int read_directory(HTParentAnchor *parent,
      * directory listings if LONG_LIST was defined on compilation, but we could
      * someday set up an equivalent listing for Unix ftp servers.  - FM
      */
-    need_parent_link = HTDirTitles(target, parent, format_out, tildeIsTop);
+    (void) HTDirTitles(target, parent, format_out, tildeIsTop);
 
     data_read_pointer = data_write_pointer = data_buffer;
 
@@ -3103,7 +3106,7 @@ static int read_directory(HTParentAnchor *parent,
 		} else if (ic == EOF) {
 		    break;	/* End of file */
 		} else {
-		    HTChunkPutc(chunk, (char) ic);
+		    HTChunkPutc(chunk, ic);
 		}
 	    }
 	    HTChunkTerminate(chunk);
@@ -3396,7 +3399,7 @@ static int setup_connection(const char *name,
 		/*
 		 * EPSV bla (|||port|)
 		 */
-		for (p = response_text; *p && !isspace(*p); p++) {
+		for (p = response_text; *p && !isspace(UCH(*p)); p++) {
 		    ;		/* null body */
 		}
 		for ( /*nothing */ ;

@@ -1,5 +1,5 @@
 /*
- * $LynxId: UCAux.c,v 1.40 2009/03/10 21:13:12 tom Exp $
+ * $LynxId: UCAux.c,v 1.41 2010/04/29 09:10:58 tom Exp $
  */
 #include <HTUtils.h>
 
@@ -212,9 +212,7 @@ void UCSetTransParams(UCTransParams * pT, int cs_in,
 	     * Set up the structure for a CJK input with
 	     * a CJK output (IS_CJK_TTY).  - FM
 	     */
-	    intm_ucs = FALSE;
 	    pT->trans_to_uni = FALSE;
-	    use_ucs = FALSE;
 	    pT->do_8bitraw = FALSE;
 	    pT->pass_160_173_raw = TRUE;
 	    pT->use_raw_char_in = FALSE;	/* Not used for CJK. - KW */

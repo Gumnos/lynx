@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYPrint.c,v 1.85 2009/05/24 22:28:27 tom Exp $
+ * $LynxId: LYPrint.c,v 1.87 2010/04/29 23:46:07 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTAccess.h>
@@ -523,9 +523,13 @@ static void send_file_to_mail(DocInfo *newdoc,
     use_cte = HTLoadedDocumentEightbit();
     if (!(use_cte && strncasecomp(disp_charset, "x-", 2))) {
 	disp_charset = NULL;
+#if USE_VMS_MAILER
 	use_cte = FALSE;
+#endif
     }
+#if USE_VMS_MAILER
     use_type = (BOOL) (disp_charset || HTisDocumentSource());
+#endif
 
     /*
      * Use newdoc->title as a subject instead of sug_filename:  MORE readable
@@ -1005,7 +1009,6 @@ static void send_file_to_screen(DocInfo *newdoc,
 	printf("\n\014");	/* Form feed */
 	printf("\033[4i");
 	fflush(stdout);		/* refresh to screen */
-	Lpansi = FALSE;
     } else {
 	fprintf(stdout, "\n\n%s", PRESS_RETURN_TO_FINISH);
 	fflush(stdout);		/* refresh to screen */
@@ -1442,6 +1445,8 @@ char *GetFileName(void)
      */
     if ((fn = typecallocn(char, strlen(tbuf) + 1)) == NULL)
 	  outofmem(__FILE__, "GetFileName");
+
+    assert(fn != NULL);
 
     return (strcpy(fn, tbuf));
 

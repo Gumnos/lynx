@@ -1,4 +1,4 @@
-/* $LynxId: LYGetFile.c,v 1.79 2009/04/12 17:24:06 tom Exp $ */
+/* $LynxId: LYGetFile.c,v 1.80 2010/04/29 09:16:49 tom Exp $ */
 #include <HTUtils.h>
 #include <HTTP.h>
 #include <HTAnchor.h>		/* Anchor class */
@@ -1342,6 +1342,9 @@ void add_trusted(char *str,
     tp = (struct trust *) malloc(sizeof(*tp));
     if (tp == NULL)
 	outofmem(__FILE__, "add_trusted");
+
+    assert(tp != NULL);
+
     tp->src = NULL;
     tp->path = NULL;
     tp->type = Type;
@@ -1492,7 +1495,6 @@ static int fix_httplike_urls(DocInfo *doc, UrlTypes type)
      */
     if (type == FTP_URL_TYPE &&
 	LYIsHtmlSep(doc->address[strlen(doc->address) - 1])) {
-	char *proxy;
 	char *path = HTParse(doc->address, "", PARSE_PATH | PARSE_PUNCTUATION);
 
 	/*
@@ -1509,7 +1511,7 @@ static int fix_httplike_urls(DocInfo *doc, UrlTypes type)
 	/*
 	 * If we're proxying ftp, don't trim anything.  - KW
 	 */
-	if (((proxy = LYGetEnv("ftp_proxy")) != NULL) &&
+	if ((LYGetEnv("ftp_proxy") != NULL) &&
 	    !override_proxy(doc->address))
 	    return 0;
 

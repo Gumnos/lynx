@@ -1,5 +1,5 @@
 /*
- * $LynxId: dtd_util.c,v 1.73 2009/11/21 15:24:48 tom Exp $
+ * $LynxId: dtd_util.c,v 1.74 2010/04/29 09:31:08 tom Exp $
  *
  * Given a SGML_dtd structure, write a corresponding flat file, or "C" source.
  * Given the flat-file, write the "C" source.
@@ -370,7 +370,7 @@ static void sort_uniq_AttrList(attr * data)
     /*
      * Eliminate duplicates
      */
-    for (j = k = 0; j < have; ++j) {
+    for (j = 0; j < have; ++j) {
 	for (k = j; data[k].name; ++k) {
 	    if (data[k + 1].name == 0)
 		break;

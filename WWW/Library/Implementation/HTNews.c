@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTNews.c,v 1.61 2010/04/25 19:46:01 tom Exp $
+ * $LynxId: HTNews.c,v 1.63 2010/06/17 00:10:46 tom Exp $
  *
  *			NEWS ACCESS				HTNews.c
  *			===========
@@ -297,7 +297,7 @@ static int response(char *command)
 
     if (command) {
 	int status;
-	int length = strlen(command);
+	int length = (int) strlen(command);
 
 	CTRACE((tfp, "NNTP command to be sent: %s", command));
 #ifdef NOT_ASCII
@@ -767,11 +767,14 @@ static void write_anchor(const char *text, const char *addr)
     const char *p;
     char *q;
 
-    for (p = addr; *p && (*p != '>') && !WHITE(*p) && (*p != ','); p++) ;
-    if (strlen(NewsHREF) + (p - addr) + 1 < sizeof(href)) {
+    for (p = addr; *p && (*p != '>') && !WHITE(*p) && (*p != ','); p++) {
+	;
+    }
+    if (strlen(NewsHREF) + (size_t) (p - addr) + 1 < sizeof(href)) {
 	q = href;
 	strcpy(q, NewsHREF);
-	strncat(q, addr, p - addr);	/* Make complete hypertext reference */
+	/* Make complete hypertext reference */
+	strncat(q, addr, (size_t) (p - addr));
     } else {
 	q = NULL;
 	HTSprintf0(&q, "%s%.*s", NewsHREF, (int) (p - addr), addr);
@@ -917,7 +920,7 @@ static void post_article(char *postfile)
 	    strcat(buf, ".");
 	    blen++;
 	}
-	llen = strlen(line);
+	llen = (int) strlen(line);
 	if (in_header && !strncasecomp(line, "From:", 5)) {
 	    seen_header = 1;
 	    seen_fromline = 1;
@@ -1403,7 +1406,7 @@ static int read_article(HTParentAnchor *thisanchor)
 	    return (HT_LOADED);	/* End of file on response */
 	}
 	if (((char) ich == LF) || (p == &line[LINE_LENGTH])) {
-	    *p++ = '\0';	/* Terminate the string */
+	    *p = '\0';		/* Terminate the string */
 	    CTRACE((tfp, "B %s", line));
 #ifdef NEWS_DEBUG		/* 1997/11/09 (Sun) 15:56:11 */
 	    debug_print(line);	/* @@@ */
@@ -1413,7 +1416,6 @@ static int read_article(HTParentAnchor *thisanchor)
 		 * End of article?
 		 */
 		if (UCH(line[1]) < ' ') {
-		    done = YES;
 		    break;
 		} else {	/* Line starts with dot */
 		    if (rawtext) {
@@ -1571,7 +1573,7 @@ static int read_list(char *arg)
 	    pattern[strlen(pattern) - 1] = '\0';
 	}
 	if (tail || head) {
-	    len = strlen(pattern);
+	    len = (int) strlen(pattern);
 	}
 
     }
@@ -1652,7 +1654,6 @@ static int read_list(char *arg)
 		 * End of article?
 		 */
 		if (UCH(line[1]) < ' ') {
-		    done = YES;
 		    break;
 		} else {	/* Line starts with dot */
 		    START(HTML_DT);
@@ -2179,7 +2180,7 @@ static int HTLoadNews(const char *arg,
     proxycmd[sizeof(proxycmd) - 1] = '\0';
 
     {
-	const char *p1 = arg;
+	const char *p1;
 
 	/*
 	 * We will ask for the document, omitting the host name & anchor.
@@ -2486,8 +2487,8 @@ static int HTLoadNews(const char *arg,
 	    }
 	    SnipIn(command, "GROUP %.*s", 9, groupName);
 	} else {
-	    int add_open = (strchr(p1, '<') == 0);
-	    int add_close = (strchr(p1, '>') == 0);
+	    size_t add_open = (strchr(p1, '<') == 0);
+	    size_t add_close = (strchr(p1, '>') == 0);
 
 	    if (strlen(p1) + add_open + add_close >= 252) {
 		FREE(ProxyHost);
@@ -2510,7 +2511,7 @@ static int HTLoadNews(const char *arg,
 	     */
 	    *p++ = CR;		/* Macros to be correct on Mac */
 	    *p++ = LF;
-	    *p++ = 0;
+	    *p = 0;
 	}
 	StrAllocCopy(ListArg, p1);
     }				/* scope of p1 */
@@ -2825,7 +2826,7 @@ static int HTLoadNews(const char *arg,
 		if (auth_result != NNTPAUTH_OK) {
 		    break;
 		}
-		if ((status = response(buffer)) == HT_INTERRUPTED) {
+		if (response(buffer) == HT_INTERRUPTED) {
 		    _HTProgress(CONNECTION_INTERRUPTED);
 		    break;
 		}

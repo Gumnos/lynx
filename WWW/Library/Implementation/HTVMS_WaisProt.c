@@ -1,4 +1,7 @@
-/*							HTVMS_WAISProt.c
+/*
+ * $LynxId: HTVMS_WaisProt.c,v 1.8 2010/04/29 23:56:46 tom Exp $
+ *
+ *							  HTVMS_WAISProt.c
  *
  *	Adaptation for Lynx by F.Macrides (macrides@sci.wfeb.edu)
  *
@@ -479,7 +482,6 @@ static char *readDocObj(DocObj **doc,
 	    buf = readNum(&((*doc)->ChunkEnd.Pos), buf);
 	    break;
 	case CT_paragraph:
-	    readParagraphs = true;
 	    buf = readAny(&((*doc)->ChunkStart.ID), buf);
 	    buf = readAny(&((*doc)->ChunkEnd.ID), buf);
 	    break;

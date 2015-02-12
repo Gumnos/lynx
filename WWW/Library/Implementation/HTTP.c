@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTTP.c,v 1.112 2009/11/21 17:05:33 Bela.Lubkin Exp $
+ * $LynxId: HTTP.c,v 1.117 2010/06/20 22:11:16 tom Exp $
  *
  * HyperText Tranfer Protocol	- Client implementation		HTTP.c
  * ==========================
@@ -512,7 +512,10 @@ static int HTLoadHTTP(const char *arg,
 
     char *line_buffer;
     char *line_kept_clean;
+
+#ifdef SH_EX			/* FIX BUG by kaz@maczuka.hitachi.ibaraki.jp */
     int real_length_of_line = 0;
+#endif
     BOOL extensions;		/* Assume good HTTP server */
     char *linebuf = NULL;
     char temp[80];
@@ -522,11 +525,12 @@ static int HTLoadHTTP(const char *arg,
     BOOL auth_proxy = NO;	/* Generate a proxy authorization. - AJL */
 
     int length, rawlength, rv;
-    int server_status;
+    int server_status = 0;
     BOOL doing_redirect, already_retrying = FALSE;
     int len = 0;
 
 #ifdef USE_SSL
+    unsigned long SSLerror;
     BOOL do_connect = FALSE;	/* ARE WE going to use a proxy tunnel ? */
     BOOL did_connect = FALSE;	/* ARE WE actually using a proxy tunnel ? */
     const char *connect_url = NULL;	/* The URL being proxied */
@@ -687,8 +691,6 @@ static int HTLoadHTTP(const char *arg,
 		    HTTP_NETCLOSE(s, handle);
 		goto try_again;
 	    } else {
-		unsigned long SSLerror;
-
 		CTRACE((tfp,
 			"HTTP: Unable to complete SSL handshake for '%s', SSL_connect=%d, SSL error stack dump follows\n",
 			url, status));
@@ -755,10 +757,11 @@ static int HTLoadHTTP(const char *arg,
 #endif
 
 	peer_cert = SSL_get_peer_certificate(handle);
+#if defined(USE_OPENSSL_INCL) || defined(USE_GNUTLS_FUNCS)
 	X509_NAME_oneline(X509_get_subject_name(peer_cert),
-#ifndef USE_GNUTLS_INCL
 			  ssl_dn, sizeof(ssl_dn));
-#else
+#elif defined(USE_GNUTLS_INCL)
+	X509_NAME_oneline(X509_get_subject_name(peer_cert),
 			  ssl_dn + 1, sizeof(ssl_dn) - 1);
 
 	/* Iterate over DN in incompatible GnuTLS format to bring it into OpenSSL format */
@@ -1063,8 +1066,6 @@ static int HTLoadHTTP(const char *arg,
 	HTBprintf(&command, "%s*/*;q=0.01%c%c",
 		  (first_Accept ?
 		   "Accept: " : ", "), CR, LF);
-	first_Accept = FALSE;
-	len = 0;
 
 	/*
 	 * FIXME:  suppressing the "Accept-Encoding" in this case is done to
@@ -1378,7 +1379,6 @@ static int HTLoadHTTP(const char *arg,
 	    FREE(hostname);
 	    FREE(docname);
 	}
-	auth_proxy = NO;
     }
 
     if (
@@ -1533,7 +1533,19 @@ static int HTLoadHTTP(const char *arg,
 		    already_retrying = TRUE;
 		    _HTProgress(RETRYING_AS_HTTP0);
 		    goto try_again;
-		} else {
+		}
+#ifdef USE_SSL
+		else if ((SSLerror = ERR_get_error()) != 0) {
+		    CTRACE((tfp,
+			    "HTTP: Hit unexpected network read error; aborting connection; status %d:%s.\n",
+			    status, ERR_error_string(SSLerror, NULL)));
+		    HTAlert(gettext("Unexpected network read error; connection aborted."));
+		    HTTP_NETCLOSE(s, handle);
+		    status = -1;
+		    goto clean_up;
+		}
+#endif
+		else {
 		    CTRACE((tfp,
 			    "HTTP: Hit unexpected network read error; aborting connection; status %d.\n",
 			    status));
@@ -1563,7 +1575,6 @@ static int HTLoadHTTP(const char *arg,
 	    if (status == 0)
 #endif
 	    {
-		end_of_file = YES;
 		break;
 	    }
 	    line_buffer[length + status] = 0;
@@ -1576,7 +1587,9 @@ static int HTLoadHTTP(const char *arg,
 		if (line_kept_clean == NULL)
 		    outofmem(__FILE__, "HTLoadHTTP");
 		memcpy(line_kept_clean, line_buffer, (unsigned) buffer_length);
+#ifdef SH_EX			/* FIX BUG by kaz@maczuka.hitachi.ibaraki.jp */
 		real_length_of_line = length + status;
+#endif
 	    }
 
 	    eol = strchr(line_buffer + length, LF);
@@ -1810,7 +1823,6 @@ static int HTLoadHTTP(const char *arg,
 			did_connect = TRUE;
 			already_retrying = TRUE;
 			eol = 0;
-			bytes_already_read = 0;
 			length = 0;
 			doing_redirect = FALSE;
 			permanent_redirection = FALSE;
@@ -1987,7 +1999,8 @@ static int HTLoadHTTP(const char *arg,
 		     */
 		    if (show_401)
 			break;
-		    if (HTAA_shouldRetryWithAuth(start_of_data, length, s, NO)) {
+		    if (HTAA_shouldRetryWithAuth(start_of_data, (size_t)
+						 length, s, NO)) {
 
 			HTTP_NETCLOSE(s, handle);
 			if (dump_output_immediately && !authentication_info[0]) {
@@ -2037,7 +2050,8 @@ static int HTLoadHTTP(const char *arg,
 		     */
 		    if (!using_proxy || show_407)
 			break;
-		    if (HTAA_shouldRetryWithAuth(start_of_data, length, s, YES)) {
+		    if (HTAA_shouldRetryWithAuth(start_of_data, (size_t)
+						 length, s, YES)) {
 
 			HTTP_NETCLOSE(s, handle);
 			if (dump_output_immediately && !proxyauth_info[0]) {
@@ -2380,7 +2394,6 @@ static int HTLoadHTTP(const char *arg,
 		 * User failed to confirm.  Abort the fetch.
 		 */
 	    case 0:
-		doing_redirect = FALSE;
 		FREE(redirecting_url);
 		status = HT_NO_DATA;
 		goto clean_up;
@@ -2430,12 +2443,8 @@ static int HTLoadHTTP(const char *arg,
     /*
      * Clear out on exit, just in case.
      */
-    do_head = FALSE;
-    do_post = FALSE;
     reloading = FALSE;
 #ifdef USE_SSL
-    do_connect = FALSE;
-    did_connect = FALSE;
     FREE(connect_host);
     if (handle) {
 	SSL_free(handle);

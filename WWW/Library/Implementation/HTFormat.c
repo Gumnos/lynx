@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTFormat.c,v 1.68 2009/05/10 23:07:26 tom Exp $
+ * $LynxId: HTFormat.c,v 1.70 2010/06/17 00:25:03 tom Exp $
  *
  *		Manage different file formats			HTFormat.c
  *		=============================
@@ -101,6 +101,9 @@ void HTSetPresentation(const char *representation,
     if (pres == NULL)
 	outofmem(__FILE__, "HTSetPresentation");
 
+    assert(pres != NULL);
+    assert(representation != NULL);
+
     CTRACE2(TRACE_CFG,
 	    (tfp,
 	     "HTSetPresentation rep=%s, command=%s, test=%s, qual=%f\n",
@@ -160,6 +163,8 @@ void HTSetConversion(const char *representation_in,
 
     if (pres == NULL)
 	outofmem(__FILE__, "HTSetConversion");
+
+    assert(pres != NULL);
 
     CTRACE2(TRACE_CFG,
 	    (tfp,
@@ -338,7 +343,7 @@ static int half_match(char *trial_type, char *target)
 	    trial_type, target));
 
     /* main type matches */
-    if (!strncmp(trial_type, target, (cp - trial_type) - 1))
+    if (!strncmp(trial_type, target, (size_t) ((cp - trial_type) - 1)))
 	return 1;
 
     return 0;
@@ -629,8 +634,10 @@ float HTStackValue(HTFormat rep_in,
 		float value = initial_value * pres->quality;
 
 		if (HTMaxSecs > 0.0)
-		    value = value - (length * pres->secs_per_byte + pres->secs)
-			/ HTMaxSecs;
+		    value = (value
+			     - ((float) length * pres->secs_per_byte
+				+ pres->secs)
+			     / HTMaxSecs);
 		return value;
 	    }
 	}
@@ -820,7 +827,6 @@ int HTCopy(HTParentAnchor *anchor,
 		    HTAlert("Unexpected server disconnect.");
 		    CTRACE((tfp,
 			    "HTCopy: Unexpected server disconnect. Treating as completed.\n"));
-		    status = 0;
 #else /* !UNIX */
 		    /*
 		     * Treat what we've gotten already as the complete
@@ -925,7 +931,7 @@ int HTFileCopy(FILE *fp, HTStream *sink)
      */
     HTReadProgress(bytes = 0, 0);
     for (;;) {
-	status = fread(input_buffer, 1, INPUT_BUFFER_SIZE, fp);
+	status = (int) fread(input_buffer, 1, INPUT_BUFFER_SIZE, fp);
 	if (status == 0) {	/* EOF or error */
 	    if (ferror(fp) == 0) {
 		rv = HT_LOADED;
@@ -1170,11 +1176,12 @@ static int HTZzFileCopy(FILE *zzfp, HTStream *sink)
     for (;;) {
 	if (s.avail_in == 0) {
 	    s.next_in = (Bytef *) input_buffer;
-	    len = s.avail_in = fread(input_buffer, 1, INPUT_BUFFER_SIZE, zzfp);
+	    s.avail_in = fread(input_buffer, 1, INPUT_BUFFER_SIZE, zzfp);
+	    len = (int) s.avail_in;
 	}
 	status = inflate(&s, flush);
 	if (status == Z_STREAM_END || status == Z_BUF_ERROR) {
-	    len = sizeof(output_buffer) - s.avail_out;
+	    len = (int) sizeof(output_buffer) - (int) s.avail_out;
 	    if (len > 0) {
 		(*targetClass.put_block) (sink, output_buffer, len);
 		bytes += len;
@@ -1192,9 +1199,9 @@ static int HTZzFileCopy(FILE *zzfp, HTStream *sink)
 	    }
 	    s.next_in = (Bytef *) dummy_head;
 	    s.avail_in = sizeof(dummy_head);
-	    status = inflate(&s, flush);
+	    (void) inflate(&s, flush);
 	    s.next_in = (Bytef *) input_buffer;
-	    s.avail_in = len;
+	    s.avail_in = (unsigned) len;
 	    continue;
 	} else if (status != Z_OK) {
 	    CTRACE((tfp, "HTZzFileCopy inflate() %s\n", zError(status)));
@@ -1333,7 +1340,7 @@ void HTCopyNoCR(HTParentAnchor *anchor GCC_UNUSED,
 	character = HTGetCharacter();
 	if (character == EOF)
 	    break;
-	(*targetClass.put_character) (sink, UCH(character));
+	(*targetClass.put_character) (sink, (char) character);
     }
 }
 
@@ -1526,7 +1533,7 @@ int HTParseMem(HTFormat rep_in,
     /* Push the data down the stream
      */
     targetClass = *(stream->isa);
-    rv = HTMemCopy(chunk, stream);
+    (void) HTMemCopy(chunk, stream);
     (*targetClass._free) (stream);
     return HT_LOADED;
 }
@@ -1839,6 +1846,9 @@ HTStream *HTNetToText(HTStream *sink)
 
     if (me == NULL)
 	outofmem(__FILE__, "NetToText");
+
+    assert(me != NULL);
+
     me->isa = &NetToTextClass;
 
     me->had_cr = NO;

@@ -1,4 +1,4 @@
-# $LynxId: makefile.in,v 1.107 2009/11/24 09:54:56 tom Exp $
+# $LynxId: makefile.in,v 1.109 2010/06/19 10:56:15 tom Exp $
 ##makefile for lynx
 
 SHELL		= @CONFIG_SHELL@
@@ -29,8 +29,6 @@ INSTALL_PROGRAM	= @INSTALL_PROGRAM@
 INSTALL_DATA	= @INSTALL_DATA@
 
 LN_S		= @LN_S@
-
-MKINSTALLDIRS	= @MKINSTALLDIRS@
 
 TAR		= @TAR@
 TAR_UP		= $(TAR) @TAR_UP_OPTIONS@ @TAR_PIPE_OPTIONS@
@@ -197,6 +195,7 @@ all lynx$x: cfg_defs.h LYHelp.h
 lint:
 	cd $(WWW_DIR) && $(MAKE_RECUR) LINT="$(LINT)" $(WWW_CFLAGS) $@
 	cd $(SRC_DIR) && $(MAKE_RECUR) LINT="$(LINT)" $(SRC_CFLAGS) $@
+	cd $(CHR_DIR) && $(MAKE_RECUR) LINT="$(LINT)" $@
 
 help:
 	@echo
@@ -453,6 +452,6 @@ $(MANDIR) \
 $(SYSCONFDIR) \
 $(HELPDIR) \
 $(DOCDIR) :
-	$(SHELL) $(MKINSTALLDIRS) $@
+	mkdir -p $@
 etags:
 	etags -r "/\(PRIVATE\|PUBLIC\)[ \t]+\([a-zA-Z_][a-zA-Z_0-1]*[ \t*]+\)*\([a-zA-Z_][a-zA-Z_0-1]*\)[ \t]+\(ARGS[0-9]\|NOARGS\)/\3/" *.[ch] */*.[ch] */*/*.[ch] */*/*/*.[ch]

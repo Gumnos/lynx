@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTInit.c,v 1.70 2009/01/01 22:58:06 tom Exp $
+ * $LynxId: HTInit.c,v 1.73 2010/06/17 08:13:52 tom Exp $
  *
  *		Configuration-specific Initialization		HTInit.c
  *		----------------------------------------
@@ -98,7 +98,6 @@ void HTFormatInit(void)
     /*
      * Add our header handlers.
      */
-    media = mediaINT;
     SET_INTERNL("message/x-http-redirection", "*", HTMIMERedirect, 2.0);
     SET_INTERNL("message/x-http-redirection", "www/present", HTMIMERedirect, 2.0);
     SET_INTERNL("message/x-http-redirection", "www/debug", HTMIMERedirect, 1.0);
@@ -248,6 +247,8 @@ static char *GetCommand(char *s, char **t)
     if (!s2)
 	ExitWithError(MEMORY_EXHAUSTED_ABORT);
 
+    assert(s2 != NULL);
+
     *t = s2;
     while (non_empty(s)) {
 	if (quoted) {
@@ -344,6 +345,9 @@ static int ProcessMailcapEntry(FILE *fp, struct MailcapEntry *mc, AcceptMedia me
     rawentry = (char *) malloc(rawentryalloc);
     if (!rawentry)
 	ExitWithError(MEMORY_EXHAUSTED_ABORT);
+
+    assert(rawentry != NULL);
+
     *rawentry = '\0';
     while (LYSafeGets(&LineBuf, fp) != 0) {
 	LYTrimNewline(LineBuf);
@@ -357,6 +361,8 @@ static int ProcessMailcapEntry(FILE *fp, struct MailcapEntry *mc, AcceptMedia me
 
 	    if (!rawentry)
 		ExitWithError(MEMORY_EXHAUSTED_ABORT);
+
+	    assert(rawentry != NULL);
 	}
 	if (len > 0 && LineBuf[len - 1] == '\\') {
 	    LineBuf[len - 1] = '\0';
@@ -670,14 +676,14 @@ static int BuildCommand(HTChunk *cmd,
     for (from = controlstring; *from != '\0'; from++) {
 	if (escaped) {
 	    escaped = 0;
-	    HTChunkPutc(cmd, *from);
+	    HTChunkPutc(cmd, UCH(*from));
 	} else if (*from == '\\') {
 	    escaped = 1;
 	} else if (prefixed) {
 	    prefixed = 0;
 	    switch (*from) {
 	    case '%':		/* not defined */
-		HTChunkPutc(cmd, *from);
+		HTChunkPutc(cmd, UCH(*from));
 		break;
 	    case 'n':
 		/* FALLTHRU */
@@ -730,7 +736,7 @@ static int BuildCommand(HTChunk *cmd,
 	} else if (*from == '%') {
 	    prefixed = 1;
 	} else {
-	    HTChunkPutc(cmd, *from);
+	    HTChunkPutc(cmd, UCH(*from));
 	}
     }
     HTChunkTerminate(cmd);
@@ -759,7 +765,7 @@ int LYTestMailcapCommand(const char *testcommand,
 	TmpFileName[0] = '\0';
     }
     expanded = HTChunkCreate(1024);
-    if ((result = BuildCommand(expanded, testcommand, TmpFileName, params)) != 0) {
+    if (BuildCommand(expanded, testcommand, TmpFileName, params) != 0) {
 	result = 1;
 	CTrace((tfp, "PassesTest: Deferring test command: %s\n", expanded->data));
     } else {
@@ -825,6 +831,9 @@ static int RememberTestResult(int mode, char *cmd, int result)
 
 	if (cur == NULL)
 	    outofmem(__FILE__, "RememberTestResult");
+
+	assert(cur != NULL);
+
 	cur->next = cmdlist;
 	StrAllocCopy(cur->cmd, cmd);
 	cur->result = result;

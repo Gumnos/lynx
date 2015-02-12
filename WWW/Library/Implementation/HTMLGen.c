@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTMLGen.c,v 1.28 2009/01/03 01:27:53 tom Exp $
+ * $LynxId: HTMLGen.c,v 1.30 2010/05/02 22:26:02 tom Exp $
  *
  *		HTML Generator
  *		==============
@@ -393,8 +393,7 @@ static int HTMLGen_start_element(HTStructured * me, int element_number,
 		 */
 		if (LYPreparsedSource &&
 		    element_number == HTML_LINK && !title &&
-		    present[HTML_LINK_CLASS] &&
-		    value && *value[HTML_LINK_CLASS] != '\0' &&
+		    present[HTML_LINK_CLASS] && *value[HTML_LINK_CLASS] &&
 		    !present[HTML_LINK_REV] &&
 		    (present[HTML_LINK_REL] || present[HTML_LINK_HREF])) {
 		    if (present[HTML_LINK_TITLE] && *value[HTML_LINK_TITLE]) {
@@ -632,6 +631,9 @@ HTStructured *HTMLGenerator(HTStream *output)
 
     if (me == NULL)
 	outofmem(__FILE__, "HTMLGenerator");
+
+    assert(me != NULL);
+
     me->isa = &HTMLGeneration;
 
     me->target = output;
@@ -714,6 +716,9 @@ HTStream *HTPlainToHTML(HTPresentation *pres GCC_UNUSED,
 
     if (me == NULL)
 	outofmem(__FILE__, "PlainToHTML");
+
+    assert(me != NULL);
+
     me->isa = (const HTStructuredClass *) &PlainToHTMLConversion;
 
     /*

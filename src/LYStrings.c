@@ -1,4 +1,4 @@
-/* $LynxId: LYStrings.c,v 1.168 2009/11/21 17:06:11 Bela.Lubkin Exp $ */
+/* $LynxId: LYStrings.c,v 1.173 2010/06/17 10:50:14 tom Exp $ */
 #include <HTUtils.h>
 #include <HTCJK.h>
 #include <UCAux.h>
@@ -319,7 +319,7 @@ static char *LYFindInCloset(RecallType recall, char *base)
 
     while (!HTList_isEmpty(list)) {
 	data = (char *) HTList_nextObject(list);
-	if (!strncmp(base, data, len))
+	if (data != NULL && !strncmp(base, data, len))
 	    return (data);
     }
 
@@ -1120,7 +1120,10 @@ static void unescaped_char(const char *parse, int *keysym)
     char buf[BUFSIZ];
 
     if (len >= 3) {
-	expand_substring(buf, parse + 1, parse + len - 1, buf + sizeof(buf) - 1);
+	(void) expand_substring(buf,
+				parse + 1,
+				parse + len - 1,
+				buf + sizeof(buf) - 1);
 	if (strlen(buf) == 1)
 	    *keysym = *buf;
     }
@@ -1194,10 +1197,10 @@ int map_string_to_keysym(const char *str, int *keysym)
 	    if (*str == '^' || *str == '\\') {
 		char buf[BUFSIZ];
 
-		expand_substring(buf,
-				 str,
-				 str + HTMIN(len, 28),
-				 buf + sizeof(buf) - 1);
+		(void) expand_substring(buf,
+					str,
+					str + HTMIN(len, 28),
+					buf + sizeof(buf) - 1);
 		if (strlen(buf) <= 1)
 		    return (*keysym = (UCH(buf[0])) | modifier);
 	    }
@@ -3630,11 +3633,14 @@ void LYRefreshEdit(EDREC * edit)
     int lft_cells;		/* number of cells before display (on left) */
     int pos_cells;		/* number of display-cells up to Pos */
 
-#ifdef SUPPORT_MULTIBYTE_EDIT
-    int all_chars;
+#if defined(SUPPORT_MULTIBYTE_EDIT)
     int dpy_chars;
     int lft_chars;
+
+#if defined(DEBUG_EDIT)
+    int all_chars;
     int pos_chars;
+#endif
 #endif
 
     /* other data */
@@ -3665,7 +3671,7 @@ void LYRefreshEdit(EDREC * edit)
     all_cells = LYstrCells(Buf);
     pos_cells = LYstrExtent2(Buf, Pos);
 
-#ifdef SUPPORT_MULTIBYTE_EDIT
+#if defined(SUPPORT_MULTIBYTE_EDIT) && defined(DEBUG_EDIT)
     lft_chars = mbcs_glyphs(Buf, DspStart);
     pos_chars = mbcs_glyphs(Buf, Pos);
     all_chars = mbcs_glyphs(Buf, all_bytes);
@@ -3794,7 +3800,7 @@ void LYRefreshEdit(EDREC * edit)
     if (estyle != NOSTYLE) {
 	curses_style(estyle, STACK_ON);
     } else {
-	wattrset(LYwin, A_NORMAL);	/* need to do something about colors? */
+	(void) wattrset(LYwin, A_NORMAL);	/* need to do something about colors? */
     }
 #endif
     if (IsHidden) {
@@ -3924,6 +3930,8 @@ static char **sortedList(HTList *list, BOOL ignorecase)
 
     if (result == 0)
 	outofmem(__FILE__, "sortedList");
+
+    assert(result != 0);
 
     while (!HTList_isEmpty(list))
 	result[j++] = (char *) HTList_nextObject(list);
@@ -4890,7 +4898,7 @@ int LYhandlePopupList(int cur_choice,
 	     */
 	    for (j = 1; Cptr[i + j] != NULL; j++) {
 		FormatChoiceNum(buffer, max_choices, (i + j), Cptr[i + j]);
-		if (case_sensitive) {
+		if (LYcase_sensitive) {
 		    if (strstr(buffer, prev_target_buffer) != NULL)
 			break;
 		} else {
@@ -4928,7 +4936,7 @@ int LYhandlePopupList(int cur_choice,
 	     */
 	    for (j = 0; j < cur_choice; j++) {
 		FormatChoiceNum(buffer, max_choices, (j + 1), Cptr[j]);
-		if (case_sensitive) {
+		if (LYcase_sensitive) {
 		    if (strstr(buffer, prev_target_buffer) != NULL)
 			break;
 		} else {
@@ -5838,6 +5846,7 @@ char *SNACopy(char **dest,
 	if (*dest == NULL) {
 	    CTRACE((tfp, "Tried to malloc %d bytes\n", n));
 	    outofmem(__FILE__, "SNACopy");
+	    assert(*dest != NULL);
 	}
 	strncpy(*dest, src, (unsigned) n);
 	*(*dest + n) = '\0';	/* terminate */
@@ -5859,6 +5868,7 @@ char *SNACat(char **dest,
 	    *dest = (char *) realloc(*dest, (unsigned) (length + n + 1));
 	    if (*dest == NULL)
 		outofmem(__FILE__, "SNACat");
+	    assert(*dest != NULL);
 	    strncpy(*dest + length, src, (unsigned) n);
 	    *(*dest + length + n) = '\0';	/* terminate */
 	} else {
@@ -5866,6 +5876,7 @@ char *SNACat(char **dest,
 
 	    if (*dest == NULL)
 		outofmem(__FILE__, "SNACat");
+	    assert(*dest != NULL);
 	    memcpy(*dest, src, (unsigned) n);
 	    (*dest)[n] = '\0';	/* terminate */
 	}
@@ -6038,13 +6049,12 @@ int LYReadCmdKey(int mode)
 	char *buffer = 0;
 	char *src;
 	char *tmp;
-	unsigned len;
 
 	while ((ch < 0) && LYSafeGets(&buffer, cmd_script) != 0) {
 	    LYTrimTrailing(buffer);
 	    src = LYSkipBlanks(buffer);
 	    tmp = LYSkipNonBlanks(src);
-	    switch (len = (unsigned) (tmp - src)) {
+	    switch ((unsigned) (tmp - src)) {
 	    case 4:
 		if (!strncasecomp(src, "exit", 4))
 		    exit_immediately(0);

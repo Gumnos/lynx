@@ -78,9 +78,15 @@ HTAtom *HTAtom_for(const char *string)
     a = (HTAtom *) malloc(sizeof(*a));
     if (a == NULL)
 	outofmem(__FILE__, "HTAtom_for");
+
+    assert(a != NULL);
+
     a->name = (char *) malloc(strlen(string) + 1);
     if (a->name == NULL)
 	outofmem(__FILE__, "HTAtom_for");
+
+    assert(a->name != NULL);
+
     strcpy(a->name, string);
     a->next = hash_table[hash];	/* Put onto the head of list */
     hash_table[hash] = a;

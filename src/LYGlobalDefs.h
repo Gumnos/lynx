@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYGlobalDefs.h,v 1.122 2009/11/21 15:24:48 tom Exp $
+ * $LynxId: LYGlobalDefs.h,v 1.124 2010/06/18 00:12:13 tom Exp $
  *
  * global variable definitions
  */
@@ -228,7 +228,7 @@ extern "C" {
     extern BOOLEAN bold_H1;
     extern BOOLEAN bold_headers;
     extern BOOLEAN bold_name_anchors;
-    extern BOOLEAN case_sensitive;	/* TRUE to turn on case sensitive search */
+    extern BOOLEAN LYcase_sensitive;	/* TRUE to turn on case sensitive search */
     extern BOOLEAN check_mail;	/* TRUE to report unread/new mail messages */
     extern BOOLEAN child_lynx;	/* TRUE to exit with an arrow */
     extern BOOLEAN dump_links_only;
@@ -305,6 +305,7 @@ extern "C" {
     extern int max_cookies_buffer;
     extern int max_cookies_domain;
     extern int max_cookies_global;
+    extern int max_uri_size;
 #ifdef USE_SESSIONS
     extern short session_limit;	/* maximal entries saved/restored
 				   in session file */

@@ -1,5 +1,5 @@
 /*
- * $LynxId: UCdomap.c,v 1.77 2009/03/18 00:33:22 tom Exp $
+ * $LynxId: UCdomap.c,v 1.79 2010/06/17 09:44:47 tom Exp $
  *
  *  UCdomap.c
  *  =========
@@ -895,7 +895,7 @@ int UCTransUniCharStr(char *outbuf,
 		      int charset_out,
 		      int chk_single_flag)
 {
-    int rc = ucUnknown, src = 0, ignore_err;
+    int rc = ucUnknown, src = 0;
     int UChndl_out;
     int isdefault, trydefault = 0;
     struct unimapdesc_str *repl;
@@ -937,7 +937,7 @@ int UCTransUniCharStr(char *outbuf,
     if (!isdefault) {
 	if (repl != UC_current_unitable_str) {
 	    con_clear_unimap_str(0);
-	    ignore_err = UC_con_set_unimap_str(repl->entry_ct, repl->entries, 0);
+	    (void) UC_con_set_unimap_str(repl->entry_ct, repl->entries, 0);
 	    UC_current_unitable_str = repl;
 	}
 	rc = conv_uni_to_str(outbuf, buflen, unicode, 0);
@@ -1149,7 +1149,7 @@ long int UCTransJPToUni(char *inbuf,
 			int charset_in)
 {
     char outbuf[3], *pin, *pout;
-    size_t rc, ilen, olen;
+    size_t ilen, olen;
     iconv_t cd;
 
     pin = inbuf;
@@ -1158,7 +1158,7 @@ long int UCTransJPToUni(char *inbuf,
     olen = (size_t) buflen;
 
     cd = iconv_open("UTF-16BE", LYCharSet_UC[charset_in].MIMEname);
-    rc = iconv(cd, (ICONV_CONST char **) &pin, &ilen, &pout, &olen);
+    (void) iconv(cd, (ICONV_CONST char **) &pin, &ilen, &pout, &olen);
     iconv_close(cd);
     if ((ilen == 0) && (olen == 0)) {
 	return (((unsigned char) outbuf[0]) << 8) + (unsigned char) outbuf[1];
@@ -1215,7 +1215,7 @@ long int UCTransToUni(char ch_in,
     if ((strcmp(LYCharSet_UC[charset_in].MIMEname, "shift_jis") == 0) ||
 	(strcmp(LYCharSet_UC[charset_in].MIMEname, "euc-jp") == 0)) {
 	char obuffer[3], *pin, *pout;
-	size_t rc, ilen, olen;
+	size_t ilen, olen;
 	iconv_t cd;
 
 	pin = buffer;
@@ -1235,7 +1235,7 @@ long int UCTransToUni(char ch_in,
 		    buffer[2] = 0;
 
 		    cd = iconv_open("UTF-16BE", "Shift_JIS");
-		    rc = iconv(cd, (ICONV_CONST char **) &pin, &ilen, &pout, &olen);
+		    (void) iconv(cd, (ICONV_CONST char **) &pin, &ilen, &pout, &olen);
 		    iconv_close(cd);
 		    inx = 0;
 		    if ((ilen == 0) && (olen == 0)) {
@@ -1257,7 +1257,7 @@ long int UCTransToUni(char ch_in,
 		    buffer[2] = 0;
 
 		    cd = iconv_open("UTF-16BE", "EUC-JP");
-		    rc = iconv(cd, (ICONV_CONST char **) &pin, &ilen, &pout, &olen);
+		    (void) iconv(cd, (ICONV_CONST char **) &pin, &ilen, &pout, &olen);
 		    iconv_close(cd);
 		    inx = 0;
 		    if ((ilen == 0) && (olen == 0)) {
@@ -1359,7 +1359,7 @@ int UCTransCharStr(char *outbuf,
 		   int chk_single_flag)
 {
     int unicode, Gn;
-    int rc = ucUnknown, src = 0, ignore_err;
+    int rc = ucUnknown, src = 0;
     int UChndl_in, UChndl_out;
     int isdefault, trydefault = 0;
     struct unimapdesc_str *repl;
@@ -1424,7 +1424,7 @@ int UCTransCharStr(char *outbuf,
     if (!isdefault) {
 	if (repl != UC_current_unitable_str) {
 	    con_clear_unimap_str(0);
-	    ignore_err = UC_con_set_unimap_str(repl->entry_ct, repl->entries, 0);
+	    (void) UC_con_set_unimap_str(repl->entry_ct, repl->entries, 0);
 	    UC_current_unitable_str = repl;
 	}
 	rc = conv_uni_to_str(outbuf, buflen, unicode, 0);
@@ -1804,7 +1804,7 @@ static const char **UC_setup_LYCharSets_repl(int UC_charset_in_hndl,
 	     * one valid eightbit latin1 char.
 	     */
 	    if (ti[UCH(*s8) - 160] >= UCH(lowest8) &&
-		!(s7[0] == ti[UCH(*s8) - 160] &&
+		!(UCH(s7[0]) == ti[UCH(*s8) - 160] &&
 		  s7[1] == '\0')) {
 		/*
 		 * ...which in turn is mapped, by our "new method",

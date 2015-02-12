@@ -1,4 +1,4 @@
-/* $LynxId: LYForms.c,v 1.82 2009/11/21 17:05:33 Bela.Lubkin Exp $ */
+/* $LynxId: LYForms.c,v 1.84 2010/04/30 00:00:55 tom Exp $ */
 #include <HTUtils.h>
 #include <HTCJK.h>
 #include <HTTP.h>
@@ -69,7 +69,6 @@ int change_form_link_ex(int cur,
     char *link_value = form->value;
     int newdoc_changed = 0;
     int c = DO_NOTHING;
-    int OrigNumValue;
     int title_adjust = (no_title ? -TITLE_LINES : 0);
     char **my_data = 0;
 
@@ -102,16 +101,14 @@ int change_form_link_ex(int cur,
 	}
 
 	if (form->disabled == YES) {
-	    int dummy;
-
-	    dummy = LYhandlePopupList(form->num_value,
-				      links[cur].ly,
-				      links[cur].lx,
-				      (const char **) my_data,
-				      form->size,
-				      form->size_l,
-				      form->disabled,
-				      FALSE);
+	    (void) LYhandlePopupList(form->num_value,
+				     links[cur].ly,
+				     links[cur].lx,
+				     (const char **) my_data,
+				     form->size,
+				     form->size_l,
+				     form->disabled,
+				     FALSE);
 #if CTRL_W_HACK != DO_NOTHING
 	    if (!enable_scrollback)
 		c = CTRL_W_HACK;	/* CTRL-W refresh without clearok */
@@ -120,7 +117,6 @@ int change_form_link_ex(int cur,
 		c = 12;		/* CTRL-L for repaint */
 	    break;
 	}
-	OrigNumValue = form->num_value;
 	form->num_value = LYhandlePopupList(form->num_value,
 					    links[cur].ly,
 					    links[cur].lx,
@@ -531,7 +527,6 @@ static int form_getstr(int cur,
 		 */
 		MyEdit.dirty = TRUE;
 	    }
-	    last_xlkc = -1;
 	} else
 #  endif			/* NCURSES || PDCURSES */
 #endif /* USE_MOUSE */
@@ -543,7 +538,6 @@ static int form_getstr(int cur,
 	    if (last_xlkc != -1) {
 		if (ch == last_xlkc)
 		    ch |= LKC_MOD3;
-		last_xlkc = -1;	/* consumed */
 	    }
 	}
 	if (peek_mouse_link() != -1)

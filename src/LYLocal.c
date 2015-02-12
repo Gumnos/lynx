@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYLocal.c,v 1.104 2009/11/22 16:23:43 tom Exp $
+ * $LynxId: LYLocal.c,v 1.108 2010/06/17 21:18:00 tom Exp $
  *
  *  Routines to manipulate the local filesystem.
  *  Written by: Rick Mallett, Carleton University
@@ -1500,8 +1500,9 @@ static int permit_location(char *destpath,
 		     */
 		    if (!no_change_exec_perms
 			|| strchr(cp + 5, 'X') == NULL
-			|| S_ISDIR(dir_info.st_mode))
-			new_mode |= mask;
+			|| S_ISDIR(dir_info.st_mode)) {
+			new_mode |= (mode_t) mask;
+		    }
 		} else {
 		    HTAlert(gettext("Invalid mode format."));
 		    return code;
@@ -1889,7 +1890,7 @@ int local_dired(DocInfo *doc)
     StrAllocCopy(line, line_url);
     HTUnEscape(line);		/* _file_ (not URL) syntax, for those functions
 				   that need it.  Don't forget to FREE it. */
-    if ((arg = match_op("CHDIR", line)) != 0) {
+    if (match_op("CHDIR", line) != 0) {
 #ifdef SUPPORT_CHDIR
 	handle_LYK_CHDIR();
 	do_pop_doc = FALSE;
@@ -1941,10 +1942,10 @@ int local_dired(DocInfo *doc)
     } else if ((arg = match_op("REMOVE_SINGLE", line)) != 0) {
 	if (remove_single(arg) > 0)
 	    LYforce_no_cache = TRUE;
-    } else if ((arg = match_op("REMOVE_TAGGED", line)) != 0) {
+    } else if (match_op("REMOVE_TAGGED", line) != 0) {
 	if (remove_tagged())
 	    LYforce_no_cache = TRUE;
-    } else if ((arg = match_op("CLEAR_TAGGED", line)) != 0) {
+    } else if (match_op("CLEAR_TAGGED", line) != 0) {
 	clear_tags();
     } else if ((arg = match_op("UPLOAD", line)) != 0) {
 	/*
@@ -2032,6 +2033,7 @@ int dired_options(DocInfo *doc, char **newfile)
 
     } else {
 	StrAllocCopy(path, "");
+	memset(&dir_info, 0, sizeof(dir_info));
     }
 
     dir = HTfullURL_toFile(doc->address);
@@ -2465,6 +2467,8 @@ void add_menu_item(char *str)
     if (tmp == NULL)
 	outofmem(__FILE__, "add_menu_item");
 
+    assert(tmp != NULL);
+
     /*
      * Conditional on tagged != NULL ?
      */
@@ -2503,8 +2507,11 @@ void add_menu_item(char *str)
     StrAllocCopy(tmp->href, cp);
 
     if (menu_head) {
-	for (mp = menu_head; mp && mp->next != NULL; mp = mp->next) ;
-	mp->next = tmp;
+	for (mp = menu_head; mp && mp->next != NULL; mp = mp->next) {
+	    ;
+	}
+	if (mp != NULL)
+	    mp->next = tmp;
     } else
 	menu_head = tmp;
 }

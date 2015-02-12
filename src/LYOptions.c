@@ -1,4 +1,4 @@
-/* $LynxId: LYOptions.c,v 1.134 2009/11/21 15:52:05 tom Exp $ */
+/* $LynxId: LYOptions.c,v 1.137 2010/05/05 09:48:38 tom Exp $ */
 #include <HTUtils.h>
 #include <HTFTP.h>
 #include <HTTP.h>		/* 'reloading' flag */
@@ -352,7 +352,11 @@ void LYoptions(void)
     BOOLEAN CurrentRawMode = LYRawMode;
     BOOLEAN AddValueAccepted = FALSE;
     char *cp = NULL;
-    BOOL use_assume_charset, old_use_assume_charset;
+    BOOL use_assume_charset;
+
+#if defined(VMS) || defined(USE_SLANG)
+    BOOL old_use_assume_charset;
+#endif
 
 #ifdef DIRED_SUPPORT
 #ifdef ENABLE_OPTS_CHANGE_EXEC
@@ -395,12 +399,13 @@ void LYoptions(void)
 #endif /* USE_SLANG || COLOR_CURSES */
     }
 
-    old_use_assume_charset =
-	use_assume_charset = (BOOLEAN) (user_mode == ADVANCED_MODE);
+    use_assume_charset = (BOOLEAN) (user_mode == ADVANCED_MODE);
 
   draw_options:
 
+#if defined(VMS) || defined(USE_SLANG)
     old_use_assume_charset = use_assume_charset;
+#endif
     /*
      * NOTE that printw() should be avoided for strings that might have
      * non-ASCII or multibyte/CJK characters.  - FM
@@ -456,7 +461,7 @@ void LYoptions(void)
 
     LYmove(L_SSEARCH, 5);
     addlbl("(S)earching type             : ");
-    LYaddstr(case_sensitive ? "CASE SENSITIVE  " : "CASE INSENSITIVE");
+    LYaddstr(LYcase_sensitive ? "CASE SENSITIVE  " : "CASE INSENSITIVE");
 
     LYmove(L_Charset, 5);
     addlbl("display (C)haracter set      : ");
@@ -897,9 +902,9 @@ void LYoptions(void)
 	    break;
 
 	case 'S':		/* Change case sensitivity for searches. */
-	    case_sensitive = LYChooseBoolean(case_sensitive,
-					     L_SSEARCH, -1,
-					     caseless_choices);
+	    LYcase_sensitive = LYChooseBoolean(LYcase_sensitive,
+					       L_SSEARCH, -1,
+					       caseless_choices);
 	    response = ' ';
 	    break;
 
@@ -1772,7 +1777,7 @@ static void terminate_options(int sig GCC_UNUSED)
  */
 void edit_bookmarks(void)
 {
-    int response = 0, def_response = 0, ch;
+    int response = 0, def_response = 0;
     int MBM_current = 1;
 
 #define MULTI_OFFSET 8
@@ -1980,8 +1985,8 @@ void edit_bookmarks(void)
 			      (!MBM_A_subdescript[a] ?
 			       "" : MBM_A_subdescript[a]),
 			      sizeof(MBM_tmp_line) - 1);
-		    ch = LYgetstr(MBM_tmp_line, VISIBLE,
-				  sizeof(MBM_tmp_line), NORECALL);
+		    (void) LYgetstr(MBM_tmp_line, VISIBLE,
+				    sizeof(MBM_tmp_line), NORECALL);
 		    lynx_stop_bold();
 
 		    if (strlen(MBM_tmp_line) < 1) {
@@ -2017,8 +2022,8 @@ void edit_bookmarks(void)
 		LYstrncpy(MBM_tmp_line,
 			  NonNull(MBM_A_subbookmark[a]),
 			  sizeof(MBM_tmp_line) - 1);
-		ch = LYgetstr(MBM_tmp_line, VISIBLE,
-			      sizeof(MBM_tmp_line), NORECALL);
+		(void) LYgetstr(MBM_tmp_line, VISIBLE,
+				sizeof(MBM_tmp_line), NORECALL);
 		lynx_stop_bold();
 
 		if (*MBM_tmp_line == '\0') {
@@ -2515,6 +2520,8 @@ static PostPair *break_data(bstring *data)
     if (q == NULL)
 	outofmem(__FILE__, "break_data(calloc)");
 
+    assert(q != NULL);
+
     do {
 	/*
 	 * First, break up on '&', sliding 'p' on down the line.
@@ -2568,6 +2575,9 @@ static PostPair *break_data(bstring *data)
 	q = typeRealloc(PostPair, q, (unsigned) (count + 1));
 	if (q == NULL)
 	    outofmem(__FILE__, "break_data(realloc)");
+
+	assert(q != NULL);
+
 	q[count].tag = NULL;
     } while (p != NULL && p[0] != '\0');
     return q;
@@ -2848,7 +2858,7 @@ int postoptions(DocInfo *newdoc)
 	/* Search Type: SELECT */
 	if (!strcmp(data[i].tag, search_type_string)
 	    && GetOptValues(search_type_values, data[i].value, &code)) {
-	    case_sensitive = (BOOLEAN) code;
+	    LYcase_sensitive = (BOOLEAN) code;
 	}
 
 	/* HTML error tolerance: SELECT */
@@ -3554,7 +3564,7 @@ static int gen_options(char **newfile)
     /* Search Type: SELECT */
     PutLabel(fp0, gettext("Type of Search"), search_type_string);
     BeginSelect(fp0, search_type_string);
-    PutOptValues(fp0, case_sensitive, search_type_values);
+    PutOptValues(fp0, LYcase_sensitive, search_type_values);
     EndSelect(fp0);
 
     PutHeader(fp0, gettext("Security and Privacy"));

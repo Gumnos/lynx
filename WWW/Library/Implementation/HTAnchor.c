@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTAnchor.c,v 1.63 2009/04/08 19:55:12 tom Exp $
+ * $LynxId: HTAnchor.c,v 1.67 2010/06/18 09:39:24 tom Exp $
  *
  *	Hypertext "Anchor" Object				HTAnchor.c
  *	==========================
@@ -53,7 +53,7 @@ static HASH_TYPE HASH_FUNCTION(const char *cp_address)
     const unsigned char *p;
 
     for (p = (const unsigned char *) cp_address, hash = 0; *p; p++)
-	hash = (int) (hash * 3 + (*(const unsigned char *) p)) % HASH_SIZE;
+	hash = (HASH_TYPE) (hash * 3 + (*(const unsigned char *) p)) % HASH_SIZE;
 
     return (hash);
 }
@@ -86,6 +86,8 @@ static HTParentAnchor0 *HTParentAnchor0_new(const char *address,
     if (newAnchor == NULL)
 	outofmem(__FILE__, "HTParentAnchor0_new");
 
+    assert(newAnchor != NULL);
+
     newAnchor->parent = newAnchor;	/* self */
     StrAllocCopy(newAnchor->address, address);
     newAnchor->adult_hash = hash;
@@ -99,6 +101,8 @@ static HTParentAnchor *HTParentAnchor_new(HTParentAnchor0 *parent)
 
     if (newAnchor == NULL)
 	outofmem(__FILE__, "HTParentAnchor_new");
+
+    assert(newAnchor != NULL);
 
     newAnchor->parent = parent;	/* cross reference */
     parent->info = newAnchor;	/* cross reference */
@@ -120,6 +124,8 @@ static HTChildAnchor *HTChildAnchor_new(HTParentAnchor0 *parent)
     if (p == NULL)
 	outofmem(__FILE__, "HTChildAnchor_new");
 
+    assert(p != NULL);
+
     p->parent = parent;		/* parent reference */
     return p;
 }
@@ -131,6 +137,8 @@ static HTChildAnchor *HText_pool_ChildAnchor_new(HTParentAnchor *parent)
 
     if (p == NULL)
 	outofmem(__FILE__, "HText_pool_ChildAnchor_new");
+
+    assert(p != NULL);
 
     p->parent = parent->parent;	/* parent reference */
     return p;
@@ -399,7 +407,6 @@ HTParentAnchor *HTAnchor_findAddress(const DocAddress *newdoc)
     if (*tag) {
 	DocAddress parsed_doc;
 	HTParentAnchor0 *foundParent;
-	HTChildAnchor *foundAnchor;
 
 	parsed_doc.address = HTParse(newdoc->address, "",
 				     PARSE_ALL_WITHOUT_ANCHOR);
@@ -410,7 +417,7 @@ HTParentAnchor *HTAnchor_findAddress(const DocAddress *newdoc)
 	parsed_doc.safe = newdoc->safe;
 
 	foundParent = HTAnchor_findAddress_in_adult_table(&parsed_doc);
-	foundAnchor = HTAnchor_findNamedChild(foundParent, tag);
+	(void) HTAnchor_findNamedChild(foundParent, tag);
 	FREE(parsed_doc.address);
 	return HTAnchor_parent((HTAnchor *) foundParent);
     }
@@ -578,7 +585,9 @@ static void deleteLinks(HTChildAnchor *me)
 	 * Recursive call.  Test here to avoid calling overhead.  Don't delete
 	 * if document is loaded or being loaded.
 	 */
-	if ((me->parent != parent) && !parent->underway &&
+	if ((me->parent != parent) &&
+	    parent != NULL &&
+	    !parent->underway &&
 	    (!parent->info || !parent->info->document)) {
 	    HTAnchor_delete(parent);
 	}
@@ -901,9 +910,9 @@ void HTAnchor_setPrompt(HTParentAnchor *me,
 
 BOOL HTAnchor_isIndex(HTParentAnchor *me)
 {
-    return (me
-	    ? (BOOL) me->isIndex
-	    : NO);
+    return (BOOL) (me
+		   ? me->isIndex
+		   : NO);
 }
 
 /*	Whether Anchor has been designated as an ISMAP link
@@ -911,9 +920,9 @@ BOOL HTAnchor_isIndex(HTParentAnchor *me)
  */
 BOOL HTAnchor_isISMAPScript(HTAnchor * me)
 {
-    return ((me && me->parent->info)
-	    ? (BOOL) me->parent->info->isISMAPScript
-	    : NO);
+    return (BOOL) ((me && me->parent->info)
+		   ? me->parent->info->isISMAPScript
+		   : NO);
 }
 
 #if defined(USE_COLOR_STYLE)
@@ -1259,6 +1268,9 @@ LYUCcharset *HTAnchor_getUCInfoStage(HTParentAnchor *me,
 
 	if (stages == NULL)
 	    outofmem(__FILE__, "HTAnchor_getUCInfoStage");
+
+	assert(stages != NULL);
+
 	for (i = 0; i < UCT_STAGEMAX; i++) {
 	    stages->s[i].C.MIMEname = "";
 	    stages->s[i].LYhndl = -1;

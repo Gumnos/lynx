@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTParse.c,v 1.54 2009/11/27 13:11:30 tom Exp $
+ * $LynxId: HTParse.c,v 1.59 2010/06/20 23:02:58 tom Exp $
  *
  *		Parse HyperText Document Address		HTParse.c
  *		================================
@@ -12,6 +12,7 @@
 #include <LYLeaks.h>
 #include <LYStrings.h>
 #include <LYCharUtils.h>
+#include <LYGlobalDefs.h>
 
 #ifdef HAVE_ALLOCA_H
 #include <alloca.h>
@@ -64,9 +65,11 @@ static void show_parts(const char *name, struct struct_parts *parts, int line)
 char *HTStrip(char *s)
 {
 #define SPACE(c) ((c == ' ') || (c == '\t') || (c == '\n'))
-    char *p = s;
+    char *p;
 
-    for (p = s; *p; p++) ;	/* Find end of string */
+    for (p = s; *p; p++) {	/* Find end of string */
+	;
+    }
     for (p--; p >= s; p--) {
 	if (SPACE(*p))
 	    *p = '\0';		/* Zap trailing blanks */
@@ -311,7 +314,8 @@ char *HTParse(const char *aName,
     char *result = NULL;
     char *tail = NULL;		/* a pointer to the end of the 'result' string */
     char *return_value = NULL;
-    unsigned len, len1, len2;
+    size_t len, len1, len2;
+    size_t need;
     char *name = NULL;
     char *rel = NULL;
     char *p, *q;
@@ -346,9 +350,17 @@ char *HTParse(const char *aName,
     len2 = strlen(relatedName) + 1;
     len = len1 + len2 + MIN_PARSE;	/* Lots of space: more than enough */
 
-    result = tail = (char *) LYalloca(len * 2 + len1 + len2);
+    need = (len * 2 + len1 + len2);
+    if (need > (size_t) max_uri_size ||
+	(int) need < (int) len1 ||
+	(int) need < (int) len2)
+	return StrAllocCopy(return_value, "");
+
+    result = tail = (char *) LYalloca(need);
     if (result == NULL) {
 	outofmem(__FILE__, "HTParse");
+
+	assert(result != NULL);
     }
     *result = '\0';
     name = result + len;
@@ -391,7 +403,6 @@ char *HTParse(const char *aName,
 	if (!strcmp(given.access, "http") ||
 	    !strcmp(given.access, "https") ||
 	    !strcmp(given.access, "ftp")) {
-	    static char empty_string[] = "";
 
 	    /*
 	     * Assume root.
@@ -739,21 +750,28 @@ const char *HTParseAnchor(const char *aName)
 	 * keeping in mind scan() peculiarities on schemes:
 	 */
 	struct struct_parts given;
+	size_t need = ((unsigned) ((p - aName) + (int) strlen(p) + 1));
+	char *name;
 
-	char *name = (char *) LYalloca((unsigned) ((p - aName)
-						   + (int) strlen(p) + 1));
+	if (need > (size_t) max_uri_size) {
+	    p += strlen(p);
+	} else {
+	    name = (char *) LYalloca(need);
 
-	if (name == NULL) {
-	    outofmem(__FILE__, "HTParseAnchor");
-	}
-	strcpy(name, aName);
-	scan(name, &given);
-	LYalloca_free(name);
+	    if (name == NULL) {
+		outofmem(__FILE__, "HTParseAnchor");
 
-	p++;			/*next to '#' */
-	if (given.anchor == NULL) {
-	    for (; *p; p++)	/*scroll to end '\0' */
-		;
+		assert(name != NULL);
+	    }
+	    strcpy(name, aName);
+	    scan(name, &given);
+	    LYalloca_free(name);
+
+	    p++;		/*next to '#' */
+	    if (given.anchor == NULL) {
+		for (; *p; p++)	/*scroll to end '\0' */
+		    ;
+	    }
 	}
     }
     return p;
@@ -964,6 +982,9 @@ char *HTRelative(const char *aName,
 
 	if (result == NULL)
 	    outofmem(__FILE__, "HTRelative");
+
+	assert(result != NULL);
+
 	result[0] = '\0';
 	for (; levels; levels--)
 	    strcat(result, "../");
@@ -1023,6 +1044,9 @@ char *HTEscape(const char *str,
 
     if (result == NULL)
 	outofmem(__FILE__, "HTEscape");
+
+    assert(result != NULL);
+
     for (q = result, p = str; *p; p++) {
 	unsigned char a = UCH(TOASCII(*p));
 
@@ -1033,7 +1057,7 @@ char *HTEscape(const char *str,
 	} else
 	    *q++ = *p;
     }
-    *q++ = '\0';		/* Terminate */
+    *q = '\0';			/* Terminate */
     return result;
 }
 
@@ -1063,6 +1087,9 @@ char *HTEscapeUnsafe(const char *str)
 
     if (result == NULL)
 	outofmem(__FILE__, "HTEscapeUnsafe");
+
+    assert(result != NULL);
+
     for (q = result, p = str; *p; p++) {
 	unsigned char a = UCH(TOASCII(*p));
 
@@ -1073,7 +1100,7 @@ char *HTEscapeUnsafe(const char *str)
 	} else
 	    *q++ = *p;
     }
-    *q++ = '\0';		/* Terminate */
+    *q = '\0';			/* Terminate */
     return result;
 }
 
@@ -1103,6 +1130,9 @@ char *HTEscapeSP(const char *str,
 
     if (result == NULL)
 	outofmem(__FILE__, "HTEscape");
+
+    assert(result != NULL);
+
     for (q = result, p = str; *p; p++) {
 	unsigned char a = UCH(TOASCII(*p));
 
@@ -1116,7 +1146,7 @@ char *HTEscapeSP(const char *str,
 	    *q++ = *p;
 	}
     }
-    *q++ = '\0';		/* Terminate */
+    *q = '\0';			/* Terminate */
     return result;
 }
 
@@ -1168,7 +1198,7 @@ char *HTUnEscape(char *str)
 	}
     }
 
-    *q++ = '\0';
+    *q = '\0';
     return str;
 
 }				/* HTUnEscape */
@@ -1208,7 +1238,7 @@ char *HTUnEscapeSome(char *str,
 	}
     }
 
-    *q++ = '\0';
+    *q = '\0';
     return str;
 
 }				/* HTUnEscapeSome */
@@ -1271,6 +1301,8 @@ void HTMake822Word(char **str,
     if (result == NULL)
 	outofmem(__FILE__, "HTMake822Word");
 
+    assert(result != NULL);
+
     q = result;
     if (quoted)
 	*q++ = '"';
@@ -1294,7 +1326,7 @@ void HTMake822Word(char **str,
     }
     if (quoted)
 	*q++ = '"';
-    *q++ = '\0';		/* Terminate */
+    *q = '\0';			/* Terminate */
     FREE(*str);
     *str = result;
 }

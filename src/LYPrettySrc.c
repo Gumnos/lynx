@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYPrettySrc.c,v 1.20 2009/03/11 00:30:39 tom Exp $
+ * $LynxId: LYPrettySrc.c,v 1.21 2010/04/30 09:26:14 tom Exp $
  *
  * HTML source syntax highlighting
  * by Vlad Harchev <hvv@hippo.ru>
@@ -135,7 +135,6 @@ static void append_open_tag(char *tagname,
 			    HT_tagspec ** tail)
 {
     HT_tagspec *subj;
-    HTTag *tag;
 
 #ifdef USE_COLOR_STYLE
     int hcode;
@@ -144,8 +143,6 @@ static void append_open_tag(char *tagname,
     append_close_tag(tagname, head, tail);	/* initialize common members */
     subj = *tail;
     subj->start = TRUE;
-
-    tag = HTML_dtd.tags + subj->element;
 
 #ifdef USE_COLOR_STYLE
     hcode = hash_code_lowercase_on_fly(tagname);
@@ -157,6 +154,7 @@ static void append_open_tag(char *tagname,
 	 * plain formatting tags they are not used directly for anything except
 	 * style - and we provide style value directly.
 	 */
+	HTTag *tag = HTML_dtd.tags + subj->element;
 	int class_attr_idx = 0;
 	int n = tag->number_of_attributes;
 	attr *attrs = tag->attributes;

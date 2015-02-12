@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTMIME.c,v 1.70 2009/04/08 19:55:32 tom Exp $
+ * $LynxId: HTMIME.c,v 1.73 2010/06/16 23:54:20 tom Exp $
  *
  *			MIME Message Parse			HTMIME.c
  *			==================
@@ -170,10 +170,10 @@ struct _HTStream {
  */
 void HTMIME_TrimDoubleQuotes(char *value)
 {
-    int i;
+    size_t i;
     char *cp = value;
 
-    if (!(cp && *cp) || *cp != '"')
+    if (isEmpty(cp) || *cp != '"')
 	return;
 
     i = strlen(cp);
@@ -204,7 +204,7 @@ static BOOL content_is_compressed(HTStream *me)
  */
 static void dequote(char *url)
 {
-    int len;
+    size_t len;
 
     len = strlen(url);
     if (*url == '\'' && len > 1 && url[len - 1] == url[0]) {
@@ -2034,7 +2034,7 @@ static void HTMIME_put_character(HTStream *me,
     }				/* switch on state */
 
 #ifdef EXP_HTTP_HEADERS
-    HTChunkPutc(&me->anchor->http_headers, c);
+    HTChunkPutc(&me->anchor->http_headers, UCH(c));
     if (me->state == MIME_TRANSPARENT) {
 	HTChunkTerminate(&me->anchor->http_headers);
 	CTRACE((tfp, "Server Headers:\n%.*s\n",
@@ -2053,7 +2053,7 @@ static void HTMIME_put_character(HTStream *me,
     me->state = miJUNK_LINE;
 
 #ifdef EXP_HTTP_HEADERS
-    HTChunkPutc(&me->anchor->http_headers, c);
+    HTChunkPutc(&me->anchor->http_headers, UCH(c));
 #endif
 
     return;
@@ -2156,6 +2156,9 @@ HTStream *HTMIMEConvert(HTPresentation *pres,
 
     if (me == NULL)
 	outofmem(__FILE__, "HTMIMEConvert");
+
+    assert(me != NULL);
+
     me->isa = &HTMIME;
     me->sink = sink;
     me->anchor = anchor;
@@ -2303,6 +2306,8 @@ static void HTmmdec_base64(char **t,
     if ((buf = typeMallocn(char, strlen(s) * 3 + 1)) == 0)
 	  outofmem(__FILE__, "HTmmdec_base64");
 
+    assert(buf != NULL);
+
     for (bp = buf; *s; s += 4) {
 	val = 0;
 	if (s[2] == '=')
@@ -2344,18 +2349,20 @@ static void HTmmdec_quote(char **t,
     if ((buf = typeMallocn(char, strlen(s) + 1)) == 0)
 	  outofmem(__FILE__, "HTmmdec_quote");
 
+    assert(buf != NULL);
+
     for (bp = buf; *s;) {
 	if (*s == '=') {
 	    cval = 0;
 	    if (s[1] && (p = strchr(HTmmquote, s[1]))) {
-		cval += (char) (p - HTmmquote);
+		cval = (char) (cval + (char) (p - HTmmquote));
 	    } else {
 		*bp++ = *s++;
 		continue;
 	    }
 	    if (s[2] && (p = strchr(HTmmquote, s[2]))) {
-		cval <<= 4;
-		cval += (char) (p - HTmmquote);
+		cval = (char) (cval << 4);
+		cval = (char) (cval + (p - HTmmquote));
 		*bp++ = cval;
 		s += 3;
 	    } else {
@@ -2387,6 +2394,8 @@ void HTmmdecode(char **target,
 
     if ((buf = typeMallocn(char, strlen(source) + 1)) == 0)
 	  outofmem(__FILE__, "HTmmdecode");
+
+    assert(buf != NULL);
 
     for (s = source, u = buf; *s;) {
 	if (!strncasecomp(s, "=?ISO-2022-JP?B?", 16)) {
@@ -2462,6 +2471,8 @@ int HTrjis(char **t,
 
     if ((buf = typeMallocn(char, strlen(s) * 2 + 1)) == 0)
 	  outofmem(__FILE__, "HTrjis");
+
+    assert(buf != NULL);
 
     for (p = buf; *s;) {
 	if (!kanji && s[0] == '$' && (s[1] == '@' || s[1] == 'B')) {

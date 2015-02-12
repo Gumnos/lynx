@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTPlain.c,v 1.44 2009/01/03 01:23:21 tom Exp $
+ * $LynxId: HTPlain.c,v 1.46 2010/04/30 08:28:48 tom Exp $
  *
  *		Plain text object		HTWrite.c
  *		=================
@@ -447,7 +447,6 @@ static void HTPlain_write(HTStream *me, const char *s, int l)
 			continue;
 		    } else if (uck < 0) {
 			me->utf_buf[0] = '\0';
-			code = UCH(c);
 		    } else {
 			c = replace_buf[0];
 			if (c && replace_buf[1]) {
@@ -687,6 +686,9 @@ HTStream *HTPlainPresent(HTPresentation *pres GCC_UNUSED, HTParentAnchor *anchor
 
     if (me == NULL)
 	outofmem(__FILE__, "HTPlain_new");
+
+    assert(me != NULL);
+
     me->isa = &HTPlain;
 
     HTPlain_lastraw = -1;

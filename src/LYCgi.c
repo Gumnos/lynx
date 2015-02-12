@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYCgi.c,v 1.56 2009/04/12 17:14:41 tom Exp $
+ * $LynxId: LYCgi.c,v 1.58 2010/06/17 10:44:09 tom Exp $
  *                   Lynx CGI support                              LYCgi.c
  *                   ================
  *
@@ -118,6 +118,7 @@ static void add_environment_value(const char *env_value)
 	if (env == NULL) {
 	    outofmem(__FILE__, "LYCgi");
 	}
+	assert(env != NULL);
     }
 
     env[envc++] = (char *) env_value;
@@ -370,6 +371,11 @@ static int LYLoadCGI(const char *arg,
 	int wstatus;
 #endif
 
+	fd1[0] = -1;
+	fd1[1] = -1;
+	fd2[0] = -1;
+	fd2[1] = -1;
+
 	if (anAnchor->isHEAD || keep_mime_headers) {
 
 	    /* Show output as plain text */
@@ -590,6 +596,8 @@ static int LYLoadCGI(const char *arg,
 		if (argv == NULL) {
 		    outofmem(__FILE__, "LYCgi");
 		}
+		assert(argv != NULL);
+
 		cur_argv = argv + 1;	/* For argv[0] */
 		if (pgm_args != NULL) {
 		    char *cr;
@@ -673,7 +681,6 @@ static int LYLoadCGI(const char *arg,
 	    } else {		/* and the Ugly */
 		HTAlert(CONNECT_FAILED);
 		PERROR("fork() failed");
-		status = HT_NO_DATA;
 		close(fd1[0]);
 		close(fd1[1]);
 		close(fd2[0]);

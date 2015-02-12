@@ -1,4 +1,4 @@
-/* $LynxId: LYCurses.c,v 1.147 2009/11/27 12:58:21 tom Exp $ */
+/* $LynxId: LYCurses.c,v 1.151 2010/06/17 08:09:48 tom Exp $ */
 #include <HTUtils.h>
 #include <HTAlert.h>
 
@@ -424,14 +424,14 @@ static void LYAttrset(WINDOW * win, int color,
 	&& color >= 0) {
 	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset color %#x -> (%s)\n",
 			      color, attr_to_string(color)));
-	wattrset(win, color);
+	(void) wattrset(win, color);
     } else if (mono >= 0) {
 	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset mono %#x -> (%s)\n",
 			      mono, attr_to_string(mono)));
-	wattrset(win, mono);
+	(void) wattrset(win, mono);
     } else {
 	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset (A_NORMAL)\n"));
-	wattrset(win, A_NORMAL);
+	(void) wattrset(win, A_NORMAL);
     }
 }
 
@@ -470,7 +470,7 @@ void curses_w_style(WINDOW * win, int style,
     if (style == s_normal && dir) {
 	LYAttrset(win, ds->color, ds->mono);
 	if (win == LYwin)
-	    SetCachedStyle(YP, XP, s_normal);
+	    SetCachedStyle(YP, XP, (unsigned) s_normal);
 	return;
     }
 
@@ -516,7 +516,7 @@ void curses_w_style(WINDOW * win, int style,
 	    CTRACE2(TRACE_STYLE, (tfp, "CACHED: <%s> @(%d,%d)\n",
 				  ds->name, YP, XP));
 	    if (win == LYwin)
-		SetCachedStyle(YP, XP, style);
+		SetCachedStyle(YP, XP, (unsigned) style);
 	}
 	LYAttrset(win, ds->color, ds->mono);
 	break;
@@ -810,10 +810,10 @@ int lynx_chg_color(int color,
 void lynx_set_color(int a)
 {
     if (lynx_has_color && LYShowColor >= SHOW_COLOR_ON) {
-	wattrset(LYwin, lynx_color_cfg_attr(a)
-		 | (((a + 1) < COLOR_PAIRS)
-		    ? (chtype) get_color_pair(a + 1)
-		    : A_NORMAL));
+	(void) wattrset(LYwin, lynx_color_cfg_attr(a)
+			| (((a + 1) < COLOR_PAIRS)
+			   ? (chtype) get_color_pair(a + 1)
+			   : A_NORMAL));
     }
 }
 
@@ -1690,7 +1690,7 @@ static int dumbterm(char *terminal)
 #ifdef USE_COLOR_TABLE
 static void LYsetWAttr(WINDOW * win)
 {
-    wattrset(win, LYgetTableAttr());
+    (void) wattrset(win, LYgetTableAttr());
 }
 
 void LYaddWAttr(WINDOW * win, int a)
@@ -1730,21 +1730,24 @@ void LYsubAttr(int a)
 void LYpaddstr(WINDOW * the_window, int width, const char *the_string)
 {
     int y, x1, x2;
-    int actual = (int) LYstrCells(the_string);
     int length = (int) strlen(the_string);
+
+#ifdef WIDEC_CURSES
+    int actual = (int) LYstrCells(the_string);
+#endif
 
     getyx(the_window, y, x1);
     if (width + x1 > LYcolLimit)
 	width = LYcolLimit - x1;
+#ifdef WIDEC_CURSES
     if (actual > width) {
 	actual = width;
-#ifdef WIDEC_CURSES
 	/* FIXME: a binary search might be faster */
 	while (LYstrExtent(the_string, length, length) > actual) {
 	    --length;
 	}
-#endif
     }
+#endif
     LYwaddnstr(the_window, the_string, (size_t) length);
     getyx(the_window, y, x2);
     width -= (x2 - x1);
@@ -2929,7 +2932,7 @@ long LYgetattrs(WINDOW * win)
      * FIXME: this ignores the color-pair, which for most implementations is
      * not stored in the attribute value.
      */
-    wattr_get(win, &attrs, &pair, NULL);
+    (void) wattr_get(win, &attrs, &pair, NULL);
     result = (long) attrs;
 #endif
     return result;

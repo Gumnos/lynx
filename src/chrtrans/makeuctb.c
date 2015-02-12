@@ -1,5 +1,5 @@
 /*
- * $LynxId: makeuctb.c,v 1.40 2009/11/21 15:46:24 tom Exp $
+ * $LynxId: makeuctb.c,v 1.44 2010/06/17 08:06:46 tom Exp $
  *
  *  makeuctb.c, derived from conmakehash.c   - kw
  *
@@ -100,8 +100,8 @@ int ascii_tolower(int i)
 /* copied from HTString.c, not everybody has strncasecmp */
 int strncasecomp(const char *a, const char *b, int n)
 {
-    const char *p = a;
-    const char *q = b;
+    const char *p;
+    const char *q;
 
     for (p = a, q = b;; p++, q++) {
 	int diff;
@@ -194,7 +194,7 @@ static void addpair_str(char *str, int un)
 		    MAX_UNIPAIRS);
 	    done(EX_DATAERR);
 	}
-	themap_str.entries[themap_str.entry_ct].unicode = un;
+	themap_str.entries[themap_str.entry_ct].unicode = (u16) un;
 	themap_str.entries[themap_str.entry_ct].replace_str = str;
 	themap_str.entry_ct++;
     }
@@ -238,7 +238,7 @@ static void addpair(int fp, int un)
 	    fprintf(stderr, "ERROR: Only 255 unicodes/glyph permitted!\n");
 	    done(EX_DATAERR);
 	}
-	unitable[fp][unicount[fp]] = un;
+	unitable[fp][unicount[fp]] = (u16) un;
 	unicount[fp]++;
     }
     /* otherwise: ignore */
@@ -561,7 +561,9 @@ int main(int argc, char **argv)
 		 */
 		int escaped = 0;
 
-		for (ch = *(++p); (ch = *p) != '\0'; p++) {
+		ch = 0;
+		for (++p; *p != '\0'; p++) {
+		    ch = *p;
 		    if (escaped) {
 			escaped = 0;
 		    } else if (ch == '"') {
@@ -581,7 +583,8 @@ int main(int argc, char **argv)
 		/*
 		 *  We had ':'.
 		 */
-		for (ch = *(++p); (ch = *p) != '\0'; p++, p1++) {
+		for (++p; *p != '\0'; p++, p1++) {
+		    ch = *p;
 		    if (UCH(ch) < 32 || ch == '\\' || ch == '\"' ||
 			UCH(ch) >= 127) {
 			sprintf(p1, "\\%.3o", UCH(ch));
@@ -748,7 +751,7 @@ int main(int argc, char **argv)
 	}
     }
     for (p = this_MIMEcharset; *p; p++) {
-	*p = TOLOWER(*p);
+	*p = (char) TOLOWER(*p);
     }
     if (argc > 4) {
 	strncpy(this_LYNXcharset, argv[4], UC_MAXLEN_LYNXCSNAME);
@@ -768,7 +771,7 @@ int main(int argc, char **argv)
 	for (i = 0, p = this_MIMEcharset;
 	     *p && (i < UC_MAXLEN_ID_APPEND - 1);
 	     p++, i++) {
-	    id_append[i + 1] = isalnum(UCH(*p)) ? *p : '_';
+	    id_append[i + 1] = (char) (isalnum(UCH(*p)) ? *p : '_');
 	}
 	id_append[i + 1] = '\0';
     }

@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTAAProt.c,v 1.31 2009/03/10 00:27:20 tom Exp $
+ * $LynxId: HTAAProt.c,v 1.32 2010/04/29 09:30:57 tom Exp $
  *
  * MODULE							HTAAProt.c
  *		PROTECTION FILE PARSING MODULE
@@ -346,6 +346,8 @@ static HTAAProt *HTAAProt_new(const char *cur_docname,
 	if ((prot = typecalloc(HTAAProt)) == 0)
 	      outofmem(__FILE__, "HTAAProt_new");
 
+	assert(prot != NULL);
+
 	prot->ctemplate = NULL;
 	prot->filename = NULL;
 	prot->uid_name = NULL;
@@ -359,6 +361,9 @@ static HTAAProt *HTAAProt_new(const char *cur_docname,
 	    fclose(fp);
 	    if ((cache_item = typecalloc(HTAAProtCache)) == 0)
 		outofmem(__FILE__, "HTAAProt_new");
+
+	    assert(cache_item != NULL);
+
 	    cache_item->prot = prot;
 	    cache_item->prot_filename = NULL;
 	    StrAllocCopy(cache_item->prot_filename, prot_filename);

@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTGopher.c,v 1.43 2008/03/17 00:03:23 tom Exp $
+ * $LynxId: HTGopher.c,v 1.46 2010/06/16 23:45:31 tom Exp $
  *
  *			GOPHER ACCESS				HTGopher.c
  *			=============
@@ -303,7 +303,7 @@ static void parse_menu(const char *arg GCC_UNUSED,
 			    port[0] = ':';	/* delimit host a la W3 */
 			    junk = strchr(port, TAB);
 			    if (junk)
-				*junk++ = '\0';		/* Chop port */
+				*junk = '\0';	/* Chop port */
 			    if ((port[1] == '0') && (!port[2]))
 				port[0] = '\0';		/* 0 means none */
 			}	/* no port */
@@ -312,8 +312,8 @@ static void parse_menu(const char *arg GCC_UNUSED,
 	    }
 	    /* gtype and name ok */
 	    /* Nameless files are a separator line */
-	    if (gtype == GOPHER_TEXT) {
-		int i = strlen(name) - 1;
+	    if (name != NULL && gtype == GOPHER_TEXT) {
+		int i = (int) strlen(name) - 1;
 
 		while (name[i] == ' ' && i >= 0)
 		    name[i--] = '\0';
@@ -684,10 +684,14 @@ static void display_index(const char *arg,
 static void de_escape(char *command, const char *selector)
 {
     const char *p = selector;
-    char *q = command;
+    char *q;
 
     if (command == NULL)
 	outofmem(__FILE__, "HTLoadGopher");
+
+    assert(command != NULL);
+
+    q = command;
     while (*p) {		/* Decode hex */
 	if (*p == HEX_ESCAPE) {
 	    char c;
@@ -695,16 +699,16 @@ static void de_escape(char *command, const char *selector)
 
 	    p++;
 	    c = *p++;
-	    b = from_hex(c);
+	    b = UCH(from_hex(c));
 	    c = *p++;
 	    if (!c)
 		break;		/* Odd number of chars! */
-	    *q++ = (char) FROMASCII((b << 4) + from_hex(c));
+	    *q++ = (char) FROMASCII((b << 4) + UCH(from_hex(c)));
 	} else {
 	    *q++ = *p++;	/* Record */
 	}
     }
-    *q++ = '\0';		/* Terminate command */
+    *q = '\0';			/* Terminate command */
 }
 
 /*	Free the CSOfields structures. - FM
@@ -765,7 +769,7 @@ static void interpret_cso_key(const char *key,
 	    error = 1;
 	}
 	if (!error) {
-	    *length = strlen(buf);
+	    *length = (int) strlen(buf);
 	    return;
 	}
     }
@@ -851,16 +855,14 @@ static void interpret_cso_key(const char *key,
 	    buf[out++] = (*key++);
 	    if (out > sizeof(buf) - 2) {
 		buf[out] = '\0';
-		(*Target->isa->put_block) (Target, buf, strlen(buf));
+		(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		out = 0;
 	    }
 	}
 	buf[out++] = ')';
 	buf[out] = '\0';
-	*length = strlen(buf);
-	return;
     }
-    *length = strlen(buf);
+    *length = (int) strlen(buf);
     return;
 }
 
@@ -1002,15 +1004,17 @@ static int parse_cso_fields(char *buf,
 			 * Remaining data are description.  Save in current
 			 * info block.
 			 */
-			alen = strlen((char *) &p[i]) + 1;
-			if (alen > sizeof(last->desc_buf)) {
-			    if (last->description != last->desc_buf)
-				FREE(last->description);
-			    if (!(last->description = (char *) malloc(alen))) {
-				outofmem(__FILE__, "HTLoadCSO");
+			if (last != NULL) {
+			    alen = strlen((char *) &p[i]) + 1;
+			    if (alen > sizeof(last->desc_buf)) {
+				if (last->description != last->desc_buf)
+				    FREE(last->description);
+				if (!(last->description = (char *) malloc(alen))) {
+				    outofmem(__FILE__, "HTLoadCSO");
+				}
 			    }
+			    strcpy(last->description, (char *) &p[i]);
 			}
-			strcpy(last->description, (char *) &p[i]);
 		    } else {
 			/*
 			 * Initialize new block, append to end of list to
@@ -1021,6 +1025,9 @@ static int parse_cso_fields(char *buf,
 			if (!newf) {
 			    outofmem(__FILE__, "HTLoadCSO");
 			}
+
+			assert(newf != NULL);
+
 			if (last)
 			    last->next = newf;
 			else
@@ -1114,7 +1121,6 @@ static int generate_cso_form(char *host,
 	(char *) 0
     };
 
-    out = 0;
     memset(&ctx, 0, sizeof(ctx));
     ctx.host = host;
     ctx.seek = (char *) 0;
@@ -1141,9 +1147,10 @@ static int generate_cso_form(char *host,
 		 */
 		buf[out] = '\0';
 		if (out > 0)
-		    (*Target->isa->put_block) (Target, buf, strlen(buf));
-		out = 0;
-		for (key = &line[j]; line[j + 1] && (line[j] != ')'); j++) ;
+		    (*Target->isa->put_block) (Target, buf, (int) strlen(buf));
+		for (key = &line[j]; line[j + 1] && (line[j] != ')'); j++) {
+		    ;
+		}
 		/*
 		 * Save context, interpet command and restore updated context.
 		 */
@@ -1153,21 +1160,21 @@ static int generate_cso_form(char *host,
 		i = ctx.cur_line;
 		j = ctx.cur_off;
 		line = ctemplate[i];
-		out = length;
+		out = (size_t) length;
 
 		if (ctx.seek) {
 		    /*
 		     * Command wants us to skip (forward) to indicated token. 
 		     * Start at current position.
 		     */
-		    int slen = strlen(ctx.seek);
+		    size_t slen = strlen(ctx.seek);
 
 		    for (; ctemplate[i]; i++) {
 			for (line = ctemplate[i]; line[j]; j++) {
 			    if (line[j] == '$')
 				if (0 == strncmp(ctx.seek, &line[j], slen)) {
 				    if (j == 0)
-					j = strlen(ctemplate[--i]) - 1;
+					j = (int) strlen(ctemplate[--i]) - 1;
 				    else
 					--j;
 				    line = ctemplate[i];
@@ -1183,7 +1190,7 @@ static int generate_cso_form(char *host,
 			char *temp = 0;
 
 			HTSprintf0(&temp, GOPHER_CSO_SEEK_FAILED, ctx.seek);
-			(*Target->isa->put_block) (Target, temp, strlen(temp));
+			(*Target->isa->put_block) (Target, temp, (int) strlen(temp));
 			FREE(temp);
 		    }
 		}
@@ -1194,7 +1201,7 @@ static int generate_cso_form(char *host,
 		buf[out++] = line[j];
 		if (out > (sizeof(buf) - 3)) {
 		    buf[out] = '\0';
-		    (*Target->isa->put_block) (Target, buf, strlen(buf));
+		    (*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		    out = 0;
 		}
 	    }
@@ -1203,7 +1210,7 @@ static int generate_cso_form(char *host,
 	buf[out] = '\0';
     }
     if (out > 0)
-	(*Target->isa->put_block) (Target, buf, strlen(buf));
+	(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 
     return 0;
 }
@@ -1253,7 +1260,7 @@ static int generate_cso_report(HTStream *Target)
 	    }
 	    rcode = (p[0] == '-') ? &p[1] : p;
 	    ndx_str = fname = NULL;
-	    len = strlen(p);
+	    len = (int) strlen(p);
 	    for (i = 0; i < len; i++) {
 		if (p[i] == ':') {
 		    p[i] = '\0';
@@ -1270,22 +1277,22 @@ static int generate_cso_report(HTStream *Target)
 		if (prev_ndx != ndx) {
 		    if (prev_ndx != -100) {
 			HTSprintf0(&buf, "</DL></DL>\n");
-			(*Target->isa->put_block) (Target, buf, strlen(buf));
+			(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		    }
 		    if (ndx == 0) {
 			HTSprintf0(&buf,
 				   "<HR><DL><DT>Information/status<DD><DL><DT>\n");
-			(*Target->isa->put_block) (Target, buf, strlen(buf));
+			(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		    } else {
 			HTSprintf0(&buf,
 				   "<HR><DL><DT>Entry %d:<DD><DL COMPACT><DT>\n", ndx);
-			(*Target->isa->put_block) (Target, buf, strlen(buf));
+			(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		    }
 		    prev_ndx = ndx;
 		}
 	    } else {
 		HTSprintf0(&buf, "<DD>%s\n", rcode);
-		(*Target->isa->put_block) (Target, buf, strlen(buf));
+		(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		continue;
 	    }
 	    if ((*rcode >= '2') && (*rcode <= '5') && (fname != ndx_str)) {
@@ -1295,7 +1302,7 @@ static int generate_cso_report(HTStream *Target)
 		for (fvalue = fname; *fvalue; fvalue++) {
 		    if (*fvalue == ':') {
 			*fvalue++ = '\0';
-			i = strlen(fname) - 1;
+			i = (int) strlen(fname) - 1;
 			while (i >= 0 && fname[i] == ' ') {
 			    fname[i--] = '\0';	/* trim trailing */
 			}
@@ -1320,10 +1327,10 @@ static int generate_cso_report(HTStream *Target)
 			HTSprintf0(&buf,
 				   "<DT><I>%s</I><DD><A HREF=\"%s\">%s</A>\n",
 				   fname, fvalue, fvalue);
-			(*Target->isa->put_block) (Target, buf, strlen(buf));
+			(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		    } else {
 			HTSprintf0(&buf, "<DT><I>%s</I><DD>", fname);
-			(*Target->isa->put_block) (Target, buf, strlen(buf));
+			(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 			buf[0] = '\0';
 			l = fvalue;
 			while (*l) {
@@ -1364,11 +1371,11 @@ static int generate_cso_report(HTStream *Target)
 			    }
 			}
 			StrAllocCat(buf, "\n");
-			(*Target->isa->put_block) (Target, buf, strlen(buf));
+			(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		    }
 		} else {
 		    HTSprintf0(&buf, "<DD>");
-		    (*Target->isa->put_block) (Target, buf, strlen(buf));
+		    (*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		    buf[0] = '\0';
 		    l = fvalue;
 		    while (*l) {
@@ -1408,18 +1415,18 @@ static int generate_cso_report(HTStream *Target)
 			}
 		    }
 		    StrAllocCat(buf, "\n");
-		    (*Target->isa->put_block) (Target, buf, strlen(buf));
+		    (*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		}
 	    } else {
 		HTSprintf0(&buf, "<DD>%s\n", fname ? fname : rcode);
-		(*Target->isa->put_block) (Target, buf, strlen(buf));
+		(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 	    }
 	}
     }
   end_CSOreport:
     if (prev_ndx != -100) {
 	HTSprintf0(&buf, "</DL></DL>\n");
-	(*Target->isa->put_block) (Target, buf, strlen(buf));
+	(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
     }
     FREE(buf);
     return 0;
@@ -1546,6 +1553,7 @@ static int HTLoadCSO(const char *arg,
     FREE(host);
 
     BStrCopy(content, anAnchor->post_data);
+    assert(content != NULL);
 
     if (BStrData(content)[BStrLen(content) - 1] != '&')
 	BStrCat0(content, "&");
@@ -1564,7 +1572,7 @@ static int HTLoadCSO(const char *arg,
 
     return_type = 0;
     has_indexed = 0;
-    start = finish = 0;
+    start = 0;
     for (i = 0; i < len; i++) {
 	if (!data[i] || data[i] == '&') {
 	    /*
@@ -1609,6 +1617,7 @@ static int HTLoadCSO(const char *arg,
 					       "Warning: non-lookup field ignored<BR>\n");
 					(*Target->isa->put_block) (Target,
 								   buf,
+								   (int)
 								   strlen(buf));
 				    }
 				} else if (data[start] == 'r') {
@@ -1634,9 +1643,9 @@ static int HTLoadCSO(const char *arg,
 	NETCLOSE(s);
 	strcpy(buf,
 	       "<EM>Error:</EM> At least one indexed field value must be specified!\n");
-	(*Target->isa->put_block) (Target, buf, strlen(buf));
+	(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 	strcpy(buf, "</BODY>\n</HTML>\n");
-	(*Target->isa->put_block) (Target, buf, strlen(buf));
+	(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 	(*Target->isa->_free) (Target);
 	free_CSOfields();
 	return HT_LOADED;
@@ -1656,10 +1665,10 @@ static int HTLoadCSO(const char *arg,
     }
     HTBprintf(&command, "%c%c", CR, LF);
     strcpy(buf, "<H2>\n<EM>CSO/PH command:</EM> ");
-    (*Target->isa->put_block) (Target, buf, strlen(buf));
+    (*Target->isa->put_block) (Target, buf, (int) strlen(buf));
     (*Target->isa->put_block) (Target, BStrData(command), BStrLen(command));
     strcpy(buf, "</H2>\n");
-    (*Target->isa->put_block) (Target, buf, strlen(buf));
+    (*Target->isa->put_block) (Target, buf, (int) strlen(buf));
     if (TRACE) {
 	CTRACE((tfp, "HTLoadCSO: Writing command `"));
 	trace_bstring(command);
@@ -1712,7 +1721,7 @@ static int HTLoadGopher(const char *arg,
      * the ISINDEX search).  - FM
      */
     {
-	int len;
+	size_t len;
 
 	if ((len = strlen(arg)) > 5) {
 	    if (0 == strcmp((const char *) &arg[len - 6], ":105/2")) {
@@ -1767,6 +1776,8 @@ static int HTLoadGopher(const char *arg,
 	    if (command == NULL)
 		outofmem(__FILE__, "HTLoadGopher");
 
+	    assert(command != NULL);
+
 	    de_escape(command, selector);	/* Bug fix TBL 921208 */
 
 	    strcat(command, "\t");
@@ -1801,6 +1812,8 @@ static int HTLoadGopher(const char *arg,
 	    if (command == NULL)
 		outofmem(__FILE__, "HTLoadGopher");
 
+	    assert(command != NULL);
+
 	    de_escape(command, selector);	/* Bug fix TBL 921208 */
 
 	    strcpy(command, "query ");
@@ -1819,6 +1832,9 @@ static int HTLoadGopher(const char *arg,
 	    command = (char *) malloc(strlen(selector) + 2 + 1);
 	    if (command == NULL)
 		outofmem(__FILE__, "HTLoadGopher");
+
+	    assert(command != NULL);
+
 	    de_escape(command, selector);
 	}
 	FREE(p1);
@@ -1829,7 +1845,7 @@ static int HTLoadGopher(const char *arg,
 
 	*p++ = CR;		/* Macros to be correct on Mac */
 	*p++ = LF;
-	*p++ = '\0';
+	*p = '\0';
     }
 
     /*

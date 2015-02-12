@@ -1,5 +1,5 @@
 /*
- * $LynxId: UCAuto.c,v 1.40 2010/04/25 20:16:41 tom Exp $
+ * $LynxId: UCAuto.c,v 1.43 2010/05/02 22:23:54 tom Exp $
  *
  *  This file contains code for changing the Linux console mode.
  *  Currently some names for font files are hardwired in here.
@@ -310,6 +310,11 @@ void UCChangeTerminalCodepage(int newcs,
 	if ((old_font = typecallocn(char, LY_MAXPATH)) != 0)
 	      old_umap = typecallocn(char, LY_MAXPATH);
 
+	if (old_font == NULL)
+	    outofmem(__FILE__, "UCChangeTerminalCodepage");
+
+	assert(old_font != NULL);
+
 	if ((fp1 = LYOpenTemp(old_font, ".fnt", BIN_W)) != 0)
 	    fp2 = LYOpenTemp(old_umap, ".uni", BIN_W);
 
@@ -523,8 +528,6 @@ void UCChangeTerminalCodepage(int newcs,
 	}
 	if (TransT != GN_dunno && TransT != GN_dontCare) {
 	    lastTransT = TransT;
-	} else {
-	    TransT = lastTransT;
 	}
     }
 

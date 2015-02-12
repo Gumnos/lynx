@@ -1,5 +1,7 @@
-
-/* MODULE							HTUU.c
+/*
+ * $LynxId: HTUU.c,v 1.10 2010/04/29 23:57:11 tom Exp $
+ *
+ * MODULE							HTUU.c
  *			UUENCODE AND UUDECODE
  *
  * ACKNOWLEDGEMENT:
@@ -28,10 +30,6 @@
  *  Mark Riordan   12 August 1990 and 17 Feb 1991.
  *  This code is hereby placed in the public domain.
  * -------------------------------------------------------------
- *
- * BUGS:
- *
- *
  */
 
 #include <HTUtils.h>
@@ -136,7 +134,7 @@ int HTUU_decode(char *bufcoded,
     static int first = 1;
 
     int nbytesdecoded, j;
-    register char *bufin = bufcoded;
+    register char *bufin;
     register unsigned char *bufout = bufplain;
     register int nprbytes;
 

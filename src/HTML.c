@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTML.c,v 1.133 2009/11/27 12:47:31 tom Exp $
+ * $LynxId: HTML.c,v 1.139 2010/06/18 00:05:37 tom Exp $
  *
  *		Structured stream to Rich hypertext converter
  *		============================================
@@ -323,7 +323,7 @@ void HTML_put_character(HTStructured * me, char c)
 	if (c == LY_SOFT_HYPHEN)
 	    return;
 	if (c != '\n' && c != '\t' && c != '\r') {
-	    HTChunkPutc(&me->title, c);
+	    HTChunkPutc(&me->title, UCH(c));
 	} else if (FIX_JAPANESE_SPACES) {
 	    if (c == '\t') {
 		HTChunkPutc(&me->title, ' ');
@@ -336,28 +336,28 @@ void HTML_put_character(HTStructured * me, char c)
 	return;
 
     case HTML_STYLE:
-	HTChunkPutc(&me->style_block, c);
+	HTChunkPutc(&me->style_block, UCH(c));
 	return;
 
     case HTML_SCRIPT:
-	HTChunkPutc(&me->script, c);
+	HTChunkPutc(&me->script, UCH(c));
 	return;
 
     case HTML_OBJECT:
-	HTChunkPutc(&me->object, c);
+	HTChunkPutc(&me->object, UCH(c));
 	return;
 
     case HTML_TEXTAREA:
-	HTChunkPutc(&me->textarea, c);
+	HTChunkPutc(&me->textarea, UCH(c));
 	return;
 
     case HTML_SELECT:
     case HTML_OPTION:
-	HTChunkPutc(&me->option, c);
+	HTChunkPutc(&me->option, UCH(c));
 	return;
 
     case HTML_MATH:
-	HTChunkPutc(&me->math, c);
+	HTChunkPutc(&me->math, UCH(c));
 	return;
 
     default:
@@ -375,7 +375,7 @@ void HTML_put_character(HTStructured * me, char c)
 	     */
 	    if (me->sp[0].tag_number == HTML_A)
 		break;
-	    HTChunkPutc(&me->option, c);
+	    HTChunkPutc(&me->option, UCH(c));
 	    return;
 	}
 	break;
@@ -752,6 +752,7 @@ static void addClassName(const char *prefix,
 	}
 	if (Style_className == NULL)
 	    outofmem(__FILE__, "addClassName");
+	assert(Style_className != NULL);
 	Style_className_end = Style_className + have;
     }
     if (offset)
@@ -1313,7 +1314,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 		StrAllocCopy(href, Base);
 	    } else {
 		StrAllocCopy(href, value[HTML_LINK_HREF]);
-		url_type = LYLegitimizeHREF(me, &href, TRUE, TRUE);
+		(void) LYLegitimizeHREF(me, &href, TRUE, TRUE);
 
 		Base = (me->inBASE && *href != '\0' && *href != '#')
 		    ? me->base_href
@@ -2716,13 +2717,13 @@ static int HTML_start_element(HTStructured * me, int element_number,
 		    }
 		}
 		if (seqtype == 'A') {
-		    sprintf(number_string, LYUppercaseA_OL_String(seqnum));
+		    strcpy(number_string, LYUppercaseA_OL_String(seqnum));
 		} else if (seqtype == 'a') {
-		    sprintf(number_string, LYLowercaseA_OL_String(seqnum));
+		    strcpy(number_string, LYLowercaseA_OL_String(seqnum));
 		} else if (seqtype == 'I') {
-		    sprintf(number_string, LYUppercaseI_OL_String(seqnum));
+		    strcpy(number_string, LYUppercaseI_OL_String(seqnum));
 		} else if (seqtype == 'i') {
-		    sprintf(number_string, LYLowercaseI_OL_String(seqnum));
+		    strcpy(number_string, LYLowercaseI_OL_String(seqnum));
 		} else {
 		    sprintf(number_string, "%2d.", seqnum);
 		}
@@ -3007,7 +3008,6 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	    }
 	    FREE(temp);
 	    dest = NULL;
-	    dest_ismap = FALSE;
 	    FREE(title);
 	}
 	me->CurrentANum = HText_beginAnchor(me->text,
@@ -3065,7 +3065,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	    non_empty(value[HTML_IMG_USEMAP])) {
 	    StrAllocCopy(map_href, value[HTML_IMG_USEMAP]);
 	    CHECK_FOR_INTERN(intern_flag, map_href);
-	    url_type = LYLegitimizeHREF(me, &map_href, TRUE, TRUE);
+	    (void) LYLegitimizeHREF(me, &map_href, TRUE, TRUE);
 	    /*
 	     * If map_href ended up zero-length or otherwise doesn't have a
 	     * hash, it can't be valid, so ignore it.  - FM
@@ -3484,7 +3484,6 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	FREE(title);
 	FREE(newtitle);
 	dest = NULL;
-	dest_ismap = FALSE;
 	break;
 
     case HTML_MAP:
@@ -3555,7 +3554,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	     */
 	    StrAllocCopy(href, value[HTML_AREA_HREF]);
 	    CHECK_FOR_INTERN(intern_flag, href);
-	    url_type = LYLegitimizeHREF(me, &href, TRUE, TRUE);
+	    (void) LYLegitimizeHREF(me, &href, TRUE, TRUE);
 
 	    /*
 	     * Check whether a BASE tag is in effect, and use it for resolving,
@@ -4543,8 +4542,8 @@ static int HTML_start_element(HTStructured * me, int element_number,
 		    /*
 		     * Not yet implemented.
 		     */
-		    not_impl = "[RANGE Input]";
 #ifdef NOTDEFINED
+		    not_impl = "[RANGE Input]";
 		    if (me->inFORM)
 			HText_DisableCurrentForm();
 #endif /* NOTDEFINED */
@@ -5619,7 +5618,10 @@ static int HTML_end_element(HTStructured * me, int element_number,
     char *temp = NULL, *cp = NULL;
     BOOL BreakFlag = FALSE;
     BOOL intern_flag = FALSE;
+
+#ifdef USE_COLOR_STYLE
     BOOL skip_stack_requested = FALSE;
+#endif
     EMIT_IFDEF_USE_JUSTIFY_ELTS(BOOL reached_awaited_stacked_elt = FALSE);
 
 #ifdef USE_PRETTYSRC
@@ -5683,7 +5685,9 @@ static int HTML_end_element(HTStructured * me, int element_number,
      * HTMLDTD.c.  - FM & KW
      */
     if (HTML_dtd.tags[element_number].contents != SGML_EMPTY) {
+#ifdef USE_COLOR_STYLE
 	skip_stack_requested = (BOOL) (me->skip_stack > 0);
+#endif
 	if ((element_number != me->sp[0].tag_number) &&
 	    me->skip_stack <= 0 &&
 	    HTML_dtd.tags[HTML_LH].contents != SGML_EMPTY &&
@@ -6930,7 +6934,7 @@ static int HTML_end_element(HTStructured * me, int element_number,
 			temp[j] = (char) (temp[j + 1] ? ' ' : '\0');
 		}
 		I.value = temp;
-		chars = HText_beginInput(me->text, me->inUnderline, &I);
+		(void) HText_beginInput(me->text, me->inUnderline, &I);
 		for (chars = me->textarea_cols; chars > 0; chars--)
 		    HTML_put_character(me, '_');
 		HText_appendCharacter(me->text, '\r');
@@ -7636,6 +7640,7 @@ HTStructured *HTML_new(HTParentAnchor *anchor,
     me = typecalloc(HTStructured);
     if (me == NULL)
 	outofmem(__FILE__, "HTML_new");
+    assert(me != NULL);
 
     /*
      * This used to call 'get_styles()' only on the first time through this
@@ -7995,6 +8000,8 @@ static HTStream *CacheThru_new(HTParentAnchor *anchor,
     if (!stream)
 	outofmem(__FILE__, "CacheThru_new");
 
+    assert(stream != NULL);
+
     stream->isa = &PassThruCache;
     stream->anchor = anchor;
     stream->fp = NULL;
@@ -8224,14 +8231,15 @@ static char *MakeNewTitle(const char **value, int src_type)
     char *newtitle = NULL;
 
     StrAllocCopy(newtitle, "[");
-    if (value != 0 && value[src_type] != 0)
+    if (value != 0 && value[src_type] != 0) {
 	ptr = strrchr(value[src_type], '/');
-    else
-	ptr = 0;
-    if (!ptr) {
-	StrAllocCat(newtitle, value[src_type]);
+	if (!ptr) {
+	    StrAllocCat(newtitle, value[src_type]);
+	} else {
+	    StrAllocCat(newtitle, ptr + 1);
+	}
     } else {
-	StrAllocCat(newtitle, ptr + 1);
+	ptr = 0;
     }
 #ifdef SH_EX			/* 1998/04/02 (Thu) 16:02:00 */
 
