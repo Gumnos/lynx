@@ -1,4 +1,6 @@
 /*
+ * $LynxId: UCdomap.c,v 1.65 2007/05/13 16:09:19 Thorsten.Glaser Exp $
+ *
  *  UCdomap.c
  *  =========
  *
@@ -25,7 +27,7 @@
 #include <UCDefs.h>
 #include <LYCharSets.h>
 
-#if defined(EXP_LOCALE_CHARSET) && defined(HAVE_LANGINFO_CODESET)
+#if defined(USE_LOCALE_CHARSET) && defined(HAVE_LANGINFO_CODESET)
 #include <langinfo.h>
 #endif
 
@@ -951,8 +953,10 @@ int UCTransUniCharStr(char *outbuf,
 	    pout = outbuf, outleft = buflen;
 	    HTSprintf0(&tocode, "%s//TRANSLIT", LYCharSet_UC[charset_out].MIMEname);
 	    cd = iconv_open(tocode, "UTF-16BE");
-	    FREE(tocode)
-		rc = iconv(cd, &pin, &inleft, &pout, &outleft);
+	    FREE(tocode);
+	    if (cd == (iconv_t) - 1)
+		cd = iconv_open(LYCharSet_UC[charset_out].MIMEname, "UTF-16BE");
+	    rc = iconv(cd, &pin, &inleft, &pout, &outleft);
 	    iconv_close(cd);
 	    if ((pout - outbuf) == 3) {
 		CTRACE((tfp,
@@ -1594,7 +1598,7 @@ int UCGetLYhndl_byMIME(const char *value)
  * "old method".  Maybe not nice (maybe not even necessary any more), but it
  * works (as far as it goes..).
  *
- * We try to be conservative and only allocate new memory for this if needed. 
+ * We try to be conservative and only allocate new memory for this if needed.
  * If not needed, just point to SevenBitApproximations[i].  [Could do the same
  * for ISO_Latin1[] if it's identical to that, but would make it even *more*
  * messy than it already is...] This the only function in this file that knows,
@@ -2219,9 +2223,9 @@ int safeUCGetLYhndl_byMIME(const char *value)
     return (i);
 }
 
-#ifdef EXP_LOCALE_CHARSET
+#ifdef USE_LOCALE_CHARSET
 
-#if defined(EXP_LOCALE_CHARSET) && !defined(HAVE_LANGINFO_CODESET)
+#if defined(USE_LOCALE_CHARSET) && !defined(HAVE_LANGINFO_CODESET)
 /*
  * This is a quick-and-dirty emulator of the nl_langinfo(CODESET)
  * function defined in the Single Unix Specification for those systems
@@ -2361,7 +2365,7 @@ static char *nl_langinfo(nl_item item)
     }
     return C_CODESET;
 }
-#endif /* defined(EXP_LOCALE_CHARSET) && !defined(HAVE_LANGINFO_CODESET) */
+#endif /* defined(USE_LOCALE_CHARSET) && !defined(HAVE_LANGINFO_CODESET) */
 
 /*
  * If LYLocaleCharset is true, use the current locale to lookup a MIME name
@@ -2404,4 +2408,4 @@ void LYFindLocaleCharset(void)
 	current_char_set = linedrawing_char_set;
     }
 }
-#endif /* EXP_LOCALE_CHARSET */
+#endif /* USE_LOCALE_CHARSET */

@@ -1,5 +1,102 @@
+-- $LynxId: CHANGES,v 1.219 2007/05/16 21:51:47 tom Exp $
+===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2007-05-17 (2.8.7dev.5)
+* build/install "en" po file so that GNU gettext LANGUAGE environment variable
+  can find the corresponding English message file (request by Chuck Houpt) -TD
+* add LYNX_HELPFILE environment variable to allow override of location of the
+  help-file -Chuck Houpt
+* make install-bin and install-lss makefile rules a little quieter (prompted
+  by discussion by Chuck Houpt and TG) -TD
+* fix an off-by-one in HText_canScrollDown() and total_pages in GridText.c -TH
+* rewrite strcasecomp_asterisk() to support wildcards as in RFC 2818 (prompted
+  by less-complete Debian patch for #401447, see also #268102) -TD
+* improve X.509 certificate validation -TG
+  This is tested for OpenSSL, ifdef'd to not break gnutls.  Changes:
+  + peer certificate is cached, no need to call SSL_get_peer_certificate()
+    twice
+  + support foo.domain:port and [ip.add.re.ss] and [ip.add.re.ss]:port and
+    [i:p:v:6:ad:dr:es:s] and [i:p:v:6:ad:dr:es:s]:port
+  + add support for checking X.509v3 SubjectAltName extensions (of type DNS -
+    tested - and IP - untested) when the X.509 commonName check fails.
+  + when displaying a list of failed CNs, change format from foo:bar:baz to
+    CN<foo>:CN<bar>:CN<baz>:SAN<DNS=foo>:SAN<IP=1.2.3.4> so that we know where
+    what comes from (in "Your recent statusline messages")
+  + if the peer certificate can *NOT* be verified, output a message to the log
+    as well
+  + fix a possible use of an uninitialised value ssl_all_cns
+  + output certificate issuer to the logs as well (so that you can, before
+    entering your online banking PIN, see if the certificate has been issued
+    not only _to_ your bank but also _from_ a place you trust, in case
+    /etc/ssl/certs/ contains a lot of Root CA certs)
+* quiet a gcc warning regarding do_system() -TG
+* if iconv_open() using transliteration fails, retry without the
+  transliteration feature -TG
+* change keymap for "CHANGE_KCODE" from CTRL-L to "J" -TG
+* remove "local" section from lynx manpage -TG
+* log SSL/TLS (HTTPS connection) X.509 certificate issuer information into the
+  "recent statusline messages" (accessible via the backspace key) -TG
+* modify po/makefile.inn to use DESTDIR -Thomas Klausner, TD
+* add --with-destdir configure option to set a default value for the DESTDIR
+  variable in makefiles, and modified makefiles to ensure that setting
+  DESTDIR in the top-level makefile propagates to lower levels (prompted by
+  NetBSD patch for port) -TD
+* correct two places in HTML.c which compared element_number to HTML_H6
+  twice rather also to HTML_H5 (report by hsv@tbbs.net) -TD
+* improve change for UCSetBoxChars() from 2.8.6dev.16 for
+  EXP_CHARTRANS_AUTOSWITCH which assumed that the line-drawing character set
+  was always different from the display character set.  If both are US_ASCII
+  for example, ASCII lines would be drawn, which is not good -TD
+* change exit's in configure script test-programs to return's to reduce
+  problems with declaration of exit() -TD
+* use "install-sh" rather than "install.sh" to reduce problems with Sun make
+  program -TD
+* add configure-check for ncurses functions _nc_freeall() and
+  _nc_free_and_exit(), to help with memory-leak checking -TD
+* change a few options such as --enable-locale-charset option to
+  non-experimental -TD
+* correct lynx.cfg parsing of SYSLOG_TEXT which is miscoded as a boolean -TD
+* add --enable-local-docs option to link doc-directory from help-page
+  (request by PW) -TD
+* change default for MIME_LIBDIR from /usr/local/lib/mosaic to /etc -TD
+* add --with-mime-libdir option to set MIME_LIBDIR in userdefs.h file -TD
+* remove "lynxstuff" from help-page, it no longer exists (report by PW) -TD
+* correct loop-limit in print_crawl_to_fd(), which broke
+  "lynx -crawl -dump" from 2.8.6dev.9 changes (Mandriva #29785) -TD
+* replace BROKEN_PROFTPD and BROKEN_WU_FTPD logic with configurable list of
+  strings in lynx.cfg, i.e., BROKEN_FTP_RETR and BROKEN_FTP_EPSV, and add
+  "spftp/" to the predefined values for the former.  Prompted by report by
+  Fred Kasner for
+	ftp.symantec.com/AVDEFS/norton_antivirus
+  which has a broken RETR command -TD
+* add -passive-ftp option -TD
+* ifdef'd -ftp option in case ftp is disabled, for consistency -TD
+* ifdef'd options menu so that if ftp is disabled, the corresponding options
+  are not shown -TD
+* improve pretty-src in a few places by passing-through whitespace as
+  demonstrated by
+	http://www.w3.org/TR/html401/index/elements.html
+  (report by Rado Smiljanic) -TD
+* change user-messages in HTFWriter.c to info-messages, which are generally
+  faster (prompted by patch by Rado Smiljanic) -TD
+* fix pretty-src for "attribute without value" case (patch by Rado Smiljanic)
+* correct tab "abbr", was "abbrev" (patch by Rado Smiljanic)
+* modify ifdef's in HTTCP.c to allow building Cygwin configuration without
+  NSL_FORK, broken in 2.8.5dev.5 (report by Holger Lange) -TD
+* modify IsOurFile() to allow its parameter to be a symbolic link to one of
+  the user's files (report by Rado Smiljanic) -TD
+* check if there is piped-in data when starting without "-" or "-stdin"
+  options, warn about the ignored input data in that case (prompted by report
+  by Toralf Foerster) -TD
+* use POSIX macros for decoding system() return value in UCAuto.c -TD
+* use POSIX macros for decoding system() return value in LYEdit.c
+  (adapted from an incomplete change in OpenBSD CVS) -TD
+* modify CF_SRAND to recognize the asymmetric variant of arc4random() -TD
+* updated configure script macros CF_SUBDIR_PATH, CF_XOPEN_SOURCE,
+  CF_X_ATHENA_LIBS, CF_X_TOOLKIT -TD
+* updated config.guess, config.sub -TD
 
 2006-11-14 (2.8.7dev.4)
 * use RFC-822 encoding for filenames passed via file-upload forms (Debian
@@ -102,7 +199,7 @@ Changes since Lynx 2.8 release
   file for color-style look like the non-color-style (Debian #386216) -TD
 * fix change made to LYwaddnstr() which did not update the position in LYwin
   after writing text to a subwindow.  This caused some cases where the status
-  line would be cleared by the filler color -TD 
+  line would be cleared by the filler color -TD
 * modify noviceline() function to account for trailing newlines in the message
   text which caused the message to be displayed on the wrong lines (report
   by Atsuhito Kohda) -TD
@@ -192,8 +289,8 @@ Changes since Lynx 2.8 release
   which leaves SIGWINCH undefined -TD
 * add configure options --with-cfg-file and --with-lss-file to allow one to
   specify the names and paths of the default configuration and color-style
-  files -TD   
-* change configure script --enable-color-style so it is enabled by default 
+  files -TD
+* change configure script --enable-color-style so it is enabled by default
   (prompted by request by Jason Spiro) -TD
 * add COLOR_STYLE setting to lynx.cfg -TD
 * change default initialization of color-style code when no lss file is given
@@ -213,7 +310,7 @@ Changes since Lynx 2.8 release
 
 2006-05-29 (2.8.6dev.18)
 * suppress OpenSSL URL from version message if it happens to be built using
-  GNU TLS -TD  
+  GNU TLS -TD
 * change default for DEFAULT_INDEX_FILE in lynx.cfg to http://lynx.isc.org/
   since the Mosaic MetaIndex file is defunct (suggested by Stef Caunter)
 * update makelynx.bat (report by FLWM) -TD
@@ -222,7 +319,7 @@ Changes since Lynx 2.8 release
   well as ".zz" suffixes -TD
 * modify configure script macro AM_PATH_PROG_WITH_TEST to allow for DOS device
   letter, and to override $PATHSEP with $PATH_SEPARATOR if the latter is
-  set -DK 
+  set -DK
 * modify ifdef in LYCurses.c to avoid using nonfunctional PDCurses 2.7
   newterm() -DK
 * update config.guess (2006-04-26) and config.sub (2006-05-13)
@@ -2071,8 +2168,8 @@ FreeBSD 4.1, 4.8, NetBSD 1.5, 1.6 and OpenBSD 2.8 (curses/ncurses).
 * correct order of checks for wrapping in www_search_forward() and
   www_search_backward(), which would allow an infinite loop if there were no
   anchors on the current page (report by Frederic L W Meunier) -TD
-* add a missing chunk to reverted change of SGML_character()
-  -NSH <nsh@horae.dti.ne.jp>
+* add a missing chunk to reverted change of SGML_character() -NSH
+  <nsh@horae.dti.ne.jp>
 
 2001-07-07 (2.8.4pre.3)
 * review/add descriptions of new command-line options in lynx.man, lynx.hlp and
