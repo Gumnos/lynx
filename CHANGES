@@ -3,6 +3,9 @@
 Changes since Lynx 2.8 release
 ===============================================================================
 
+2007-08-02 (2.8.7dev.7)
+* restore top-level descrip.mms due to error in patch -TD
+
 2007-08-02 (2.8.7dev.6)
 * update cs.po from
     http://translationproject.org/latest/lynx/
