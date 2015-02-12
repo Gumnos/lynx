@@ -1,4 +1,4 @@
-/* $LynxId: LYCurses.c,v 1.164 2012/02/10 18:22:15 tom Exp $ */
+/* $LynxId: LYCurses.c,v 1.174 2013/07/21 00:40:06 tom Exp $ */
 #include <HTUtils.h>
 #include <HTAlert.h>
 
@@ -258,33 +258,38 @@ int string_to_attr(const char *name)
 #ifdef USE_COLOR_STYLE
 static char *attr_to_string(int code)
 {
-    static char result[sizeof(Mono_Attrs) + 80];
-    unsigned i;
-    int pair = PAIR_NUMBER((unsigned) code);
-    int bold = (pair != 0 && ((unsigned) code & A_BOLD) != 0);
+    static char *result;
 
-    if (bold)
-	code &= (int) ~A_BOLD;
+    if (code >= 0) {
+	unsigned i;
+	int pair = PAIR_NUMBER((unsigned) code);
+	int bold = (pair != 0 && ((unsigned) code & A_BOLD) != 0);
 
-    *result = 0;
-    for (i = 0; i < TABLESIZE(Mono_Attrs); i++) {
-	if (Mono_Attrs[i].code & code) {
-	    if (*result)
-		strcat(result, "+");
-	    strcat(result, Mono_Attrs[i].name);
+	StrAllocCopy(result, "");
+
+	if (bold)
+	    code &= (int) ~A_BOLD;
+
+	for (i = 0; i < TABLESIZE(Mono_Attrs); i++) {
+	    if (Mono_Attrs[i].code & code) {
+		if (non_empty(result))
+		    StrAllocCat(result, "+");
+		StrAllocCat(result, Mono_Attrs[i].name);
+	    }
 	}
-    }
-    if (pair != 0) {
-	short f, b;
+	if (pair != 0) {
+	    short f, b;
 
-	if (pair_content((short) pair, &f, &b) != ERR) {
-	    const char *fg = lookup_color(bold ? f + COLORS : f);
-	    const char *bg = lookup_color(b);
-
-	    if (*result)
-		strcat(result, "+");
-	    sprintf(result + strlen(result), "%s/%s", fg, bg);
+	    if (pair_content((short) pair, &f, &b) != ERR) {
+		if (non_empty(result))
+		    StrAllocCat(result, "+");
+		StrAllocCat(result, lookup_color(bold ? f + COLORS : f));
+		StrAllocCat(result, "/");
+		StrAllocCat(result, lookup_color(b));
+	    }
 	}
+    } else {
+	FREE(result);
     }
     return result;
 }
@@ -422,20 +427,24 @@ void setHashStyle(int style,
 static void LYAttrset(WINDOW * win, int color,
 		      int mono)
 {
+    char *shown = NULL;
+
     if (lynx_has_color
 	&& LYShowColor >= SHOW_COLOR_ON
 	&& color >= 0) {
 	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset color %#x -> (%s)\n",
-			      color, attr_to_string(color)));
+			      color, shown = attr_to_string(color)));
 	(void) wattrset(win, (unsigned) color);
     } else if (mono >= 0) {
 	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset mono %#x -> (%s)\n",
-			      mono, attr_to_string(mono)));
+			      mono, shown = attr_to_string(mono)));
 	(void) wattrset(win, (unsigned) mono);
     } else {
 	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset (A_NORMAL)\n"));
 	(void) wattrset(win, A_NORMAL);
     }
+    if (shown != NULL)
+	(void) attr_to_string(-1);
 }
 
 void curses_w_style(WINDOW * win, int style,
@@ -448,18 +457,29 @@ void curses_w_style(WINDOW * win, int style,
 #endif
 
     int YP, XP;
+    bucket *ds;
+    BOOL free_ds = TRUE;
 
-#if !OMIT_SCN_KEEPING
-    bucket *ds = (style == NOSTYLE ? nostyle_bucket() : &hashStyles[style]);
-
-#else
-    bucket *ds = (style == NOSTYLE ? &nostyle_bucket :
-		  (style == SPECIAL_STYLE ? special_bucket() : &hashStyles[style]));
+    switch (style) {
+#if OMIT_SCN_KEEPING
+    case SPECIAL_STYLE:
+	ds = special_bucket();
+	break;
 #endif
+    case NOSTYLE:
+	ds = nostyle_bucket();
+	break;
+    default:
+	ds = &hashStyles[style];
+	free_ds = FALSE;
+	break;
+    }
 
     if (!ds->name) {
 	CTRACE2(TRACE_STYLE, (tfp, "CSS.CS:Style %d not configured\n", style));
 #if !OMIT_SCN_KEEPING
+	if (free_ds)
+	    free(ds);
 	return;
 #endif
     }
@@ -474,6 +494,8 @@ void curses_w_style(WINDOW * win, int style,
 	LYAttrset(win, ds->color, ds->mono);
 	if (win == LYwin)
 	    SetCachedStyle(YP, XP, (unsigned) s_normal);
+	if (free_ds)
+	    free(ds);
 	return;
     }
 
@@ -524,6 +546,11 @@ void curses_w_style(WINDOW * win, int style,
 	LYAttrset(win, ds->color, ds->mono);
 	break;
     }
+
+    if (free_ds)
+	free(ds);
+
+    return;
 }
 
 /*
@@ -775,7 +802,8 @@ static void lynx_map_color(int n)
 
     CTRACE((tfp, "lynx_map_color(%d)\n", n));
 
-    if (n + 1 < (int) TABLESIZE(lynx_color_pairs)) {
+    if (n + 1 < (int) TABLESIZE(lynx_color_pairs)
+	&& n < (int) TABLESIZE(lynx_color_cfg)) {
 	for (j = n + 1; j < COLOR_PAIRS_MAX; j += COLOR_CFG_MAX) {
 	    lynx_color_pairs[j].fg = lynx_color_cfg[n].fg;
 	    lynx_color_pairs[j].bg = lynx_color_cfg[n].bg;
@@ -886,12 +914,16 @@ void LYnoVideo(int a)
 }
 
 #define NEWTERM_NAME "newterm"
-#if       !defined(VMS) && !defined(USE_SLANG)
-/*
- * If newterm is not defined, assume a curses subset which
- * supports only initscr.  --gil
- */
-#if defined(HAVE_NEWTERM) && defined(HAVE_DELSCREEN) && !defined(PDCURSES) && !(defined(NCURSES) && defined(HAVE_RESIZETERM))
+
+#if !defined(VMS) && !defined(USE_SLANG)
+#if defined(NCURSES) && defined(HAVE_RESIZETERM)
+
+static SCREEN *LYscreen = NULL;
+
+#define LYDELSCR()		/* ncurses does not need this */
+
+#elif defined(HAVE_NEWTERM) && defined(HAVE_DELSCREEN) && !defined(PDCURSES)
+
 static SCREEN *LYscreen = NULL;
 
 #define LYDELSCR() { \
@@ -899,10 +931,13 @@ if (recent_sizechange) { \
     CTRACE((tfp, "Screen size: delscreen()\n")); \
     delscreen(LYscreen); \
     LYscreen = NULL; } }
-/*
- * Surrogates for newterm and delscreen
- */
+
 #else /* HAVE_NEWTERM   */
+
+    /*
+     * If newterm is not defined, assume a curses subset which
+     * supports only initscr.  --gil
+     */
 static WINDOW *LYscreen = NULL;
 
 #undef  NEWTERM_NAME
@@ -911,12 +946,14 @@ static WINDOW *LYscreen = NULL;
 #define newterm(type, out, in) (initscr())
 #define LYDELSCR()		/* nothing */
 #endif /* HAVE_NEWTERM   */
+
 #else /* !defined(VMS) && !defined(USE_SLANG) */
-/*
- * Provide last recourse definitions of LYscreen and LYDELSCR for
- * stop_curses, which only tests LYscreen for zero/nonzero but
- * never uses it as a pointer or L-value.
- */
+
+    /*
+     * Provide last recourse definitions of LYscreen and LYDELSCR for
+     * stop_curses, which only tests LYscreen for zero/nonzero but
+     * never uses it as a pointer or L-value.
+     */
 #define LYscreen TRUE
 #define LYDELSCR()		/* nothing */
 #endif /* !defined(VMS) && !defined(USE_SLANG) */
@@ -983,8 +1020,9 @@ static void moveWindowHXY(HWND hwnd, int x, int y)
 
     if ((x != winrect.left) || (y != winrect.top)) {
 	MoveWindow(hwnd, x, y, win_width, win_height, TRUE);
-	CTRACE((tfp, "move window from (%d,%d) to (%d,%d).\n", winrect.left,
-		winrect.top, x, y));
+	CTRACE((tfp, "move window from (%d,%d) to (%d,%d).\n",
+		(int) winrect.left,
+		(int) winrect.top, x, y));
     }
 }
 
@@ -1008,7 +1046,8 @@ static void adjustWindowPos(void)
     win_height = winrect.bottom - winrect.top;
     CTRACE((tfp, "Display Size: (%4d,%3d)\n", disp_width, disp_height));
     CTRACE((tfp, "Orig WinRect: (%4d,%4d,%3d,%3d), ",
-	    winrect.left, winrect.right, winrect.top, winrect.bottom));
+	    (int) winrect.left, (int) winrect.right,
+	    (int) winrect.top, (int) winrect.bottom));
     CTRACE((tfp, "Size: (%4d,%3d)\n", win_width, win_height));
 
     newwin_left = winrect.left;
@@ -1056,7 +1095,8 @@ void maxmizeWindowSize(void)
 	win_width = winrect.right - winrect.left;
 	win_height = winrect.bottom - winrect.top;
 	CTRACE((tfp, "Current Rect: (%4d,%4d,%3d,%3d), ",
-		winrect.left, winrect.right, winrect.top, winrect.bottom));
+		(int) winrect.left, (int) winrect.right,
+		(int) winrect.top, (int) winrect.bottom));
 	CTRACE((tfp, "Size: (%4d,%3d)\n", win_width, win_height));
 
 	if (scrsize_x == 0) {
@@ -1112,6 +1152,39 @@ void recoverWindowSize(void)
     } else {
 	CTRACE((tfp, "scrsize_{xy} is not saved yet.\n"));
     }
+}
+#endif
+
+#if defined(USE_DEFAULT_COLORS)
+void restart_curses(void)
+{
+    SCREEN *oldscreen = LYscreen;
+
+    if (!(LYscreen = newterm(NULL, stdout, stdin))) {	/* start curses */
+	fprintf(tfp, "%s\n",
+		gettext("Terminal reinitialisation failed - unknown terminal type?"));
+	exit_immediately(EXIT_FAILURE);
+    }
+
+    /* force xterm mouse-mode off in the physical terminal */
+    lynx_enable_mouse(0);
+    keypad(LYwin, FALSE);
+    wrefresh(LYwin);
+
+    LYwin = stdscr;
+    /* reenable xterm mouse-mode in the new screen */
+    keypad(LYwin, TRUE);
+    lynx_enable_mouse(1);
+
+    if (-1 == lynx_initialize_keymaps()) {
+	endwin();
+	exit_immediately(EXIT_FAILURE);
+    }
+    if (has_colors()) {
+	start_color();
+    }
+
+    delscreen(oldscreen);
 }
 #endif
 
@@ -1372,6 +1445,7 @@ void start_curses(void)
 #endif
 
 #ifdef USE_DEFAULT_COLORS
+	    update_default_colors();
 	    if (LYuse_default_colors) {
 #if defined(EXP_ASSUMED_COLOR) && defined(USE_COLOR_TABLE)
 		/*
@@ -2140,6 +2214,8 @@ void LYwaddnstr(WINDOW * w GCC_UNUSED,
 	&& (LYshiftWin == 0)
 	&& LYwideLines == FALSE
 	&& ((int) len > (LYcolLimit - x0))
+	&& (y0 >= 0)
+	&& (x0 >= 0)
 	&& (x0 < LYcolLimit)) {
 	WINDOW *sub = derwin(LYwin, LYlines, LYcolLimit, 0, 0);
 
@@ -2860,6 +2936,10 @@ void LYrefresh(void)
 	int y, x;
 
 	getyx(LYwin, y, x);
+	if (y < 0)
+	    y = 0;
+	if (x < 0)
+	    x = 0;
 	if (x > LYcolLimit)
 	    x = LYcolLimit;
 	wmove(stdscr, y, x);

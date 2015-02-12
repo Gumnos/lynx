@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTTP.c,v 1.126 2012/11/13 22:49:46 tom Exp $
+ * $LynxId: HTTP.c,v 1.128 2013/05/05 19:36:45 tom Exp $
  *
  * HyperText Tranfer Protocol	- Client implementation		HTTP.c
  * ==========================
@@ -194,10 +194,8 @@ void HTSSLInitPRNG(void)
 
 	RAND_file_name(rand_file, 256L);
 	CTRACE((tfp, "HTTP: Seeding PRNG\n"));
-	if (rand_file != NULL) {
-	    /* Seed as much as 1024 bytes from RAND_file_name */
-	    RAND_load_file(rand_file, 1024L);
-	}
+	/* Seed as much as 1024 bytes from RAND_file_name */
+	RAND_load_file(rand_file, 1024L);
 	/* Seed in time (mod_ssl does this) */
 	RAND_seed((unsigned char *) &t, (int) sizeof(time_t));
 
@@ -212,10 +210,8 @@ void HTSSLInitPRNG(void)
 	    l = lynx_rand();
 	    RAND_seed((unsigned char *) &l, (int) sizeof(long));
 	}
-	if (rand_file != NULL) {
-	    /* Write a rand_file */
-	    RAND_write_file(rand_file);
-	}
+	/* Write a rand_file */
+	RAND_write_file(rand_file);
     }
 #endif /* SSLEAY_VERSION_NUMBER >= 0x00905100 */
     return;
@@ -552,8 +548,8 @@ static int HTLoadHTTP(const char *arg,
     BOOL do_post = FALSE;	/* ARE WE posting ? */
     const char *METHOD;
 
-    char *line_buffer;
-    char *line_kept_clean;
+    char *line_buffer = NULL;
+    char *line_kept_clean = NULL;
 
 #ifdef SH_EX			/* FIX BUG by kaz@maczuka.hitachi.ibaraki.jp */
     int real_length_of_line = 0;
@@ -2159,7 +2155,7 @@ static int HTLoadHTTP(const char *arg,
 		    HTAlert(line_buffer);
 		    HTTP_NETCLOSE(s, handle);
 		    status = HT_NO_DATA;
-		    goto done;
+		    goto clean_up;
 
 		default:
 		    /*

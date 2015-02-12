@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYReadCFG.c,v 1.168 2012/08/13 00:09:29 tom Exp $
+ * $LynxId: LYReadCFG.c,v 1.176 2013/05/30 23:16:56 tom Exp $
  */
 #ifndef NO_RULES
 #include <HTRules.h>
@@ -634,16 +634,6 @@ static int assumed_color_fun(char *buffer)
 	if (default_fg == ERR_COLOR
 	    || default_bg == ERR_COLOR)
 	    exit_with_color_syntax(buffer);
-#ifdef USE_SLANG
-	/*
-	 * Sorry - the order of initialization of slang precludes setting the
-	 * default colors from the lynx.cfg file, since slang is already
-	 * initialized before the file is read, and there is no interface
-	 * defined for setting it from the application (that's one of the
-	 * problems with using environment variables rather than a programmable
-	 * interface) -TD
-	 */
-#endif
 	FREE(temp_fg);
     } else {
 	CTRACE((tfp, "...ignored since DEFAULT_COLORS:off\n"));
@@ -661,21 +651,33 @@ static int color_fun(char *value)
 #endif
 
 #ifdef USE_DEFAULT_COLORS
-static int default_colors_fun(char *value)
+void update_default_colors(void)
 {
-    LYuse_default_colors = is_true(value);
+    int old_fg = default_fg;
+    int old_bg = default_bg;
+
+    default_color_reset = !LYuse_default_colors;
     if (LYuse_default_colors) {
+	default_color_reset = FALSE;
 	default_fg = DEFAULT_COLOR;
 	default_bg = DEFAULT_COLOR;
     } else {
 	default_color_reset = TRUE;
-	if (default_fg == DEFAULT_COLOR ||
-	    default_bg == DEFAULT_COLOR) {
-	    default_fg = COLOR_WHITE;
-	    default_bg = COLOR_BLACK;
-	    lynx_setup_colors();
-	}
+	default_fg = COLOR_WHITE;
+	default_bg = COLOR_BLACK;
     }
+    if (old_fg != default_fg || old_bg != default_bg) {
+	lynx_setup_colors();
+#ifdef USE_COLOR_STYLE
+	update_color_style();
+#endif
+    }
+}
+
+static int default_colors_fun(char *value)
+{
+    LYuse_default_colors = is_true(value);
+    update_default_colors();
     return 0;
 }
 #endif
@@ -756,7 +758,7 @@ static int keymap_fun(char *key)
 		fprintf(stderr,
 			gettext("key remapping of %s to %s for %s failed\n"),
 			key, func, efunc + 1);
-	    } else if (func && !strcmp("TOGGLE_HELP", func)) {
+	    } else if (!strcmp("TOGGLE_HELP", func)) {
 		LYUseNoviceLineTwo = FALSE;
 	    }
 	    return 0;
@@ -764,7 +766,7 @@ static int keymap_fun(char *key)
 	    fprintf(stderr, gettext("key remapping of %s to %s failed\n"),
 		    key, func);
 	} else {
-	    if (func && !strcmp("TOGGLE_HELP", func))
+	    if (!strcmp("TOGGLE_HELP", func))
 		LYUseNoviceLineTwo = FALSE;
 	}
 	if (efunc) {
@@ -1724,6 +1726,7 @@ static Config_Type Config_Table [] =
      PARSE_INT(RC_TIMEOUT,              lynx_timeout),
 #endif
      PARSE_PRG(RC_TOUCH_PATH,           ppTOUCH),
+     PARSE_SET(RC_TRACK_INTERNAL_LINKS, track_internal_links),
      PARSE_SET(RC_TRIM_INPUT_FIELDS,    LYtrimInputFields),
 #ifdef EXEC_LINKS
      PARSE_DEF(RC_TRUSTED_EXEC,         EXEC_PATH),
@@ -1968,8 +1971,12 @@ BOOL LYSetConfigValue(const char *name,
 #ifdef VMS
 		Define_VMSLogical(temp_name, value);
 #else
-		if (q->str_value == 0)
+		if (q->str_value == 0) {
 		    q->str_value = typecalloc(char *);
+
+		    if (q->str_value == 0)
+			outofmem(__FILE__, "LYSetConfigValue");
+		}
 
 		HTSprintf0(q->str_value, "%s=%s", temp_name, value);
 		putenv(*(q->str_value));
@@ -1990,12 +1997,10 @@ BOOL LYSetConfigValue(const char *name,
 	if (*(q->lst_value) == NULL) {
 	    *(q->lst_value) = HTList_new();
 	}
-	if (q->lst_value != 0) {
-	    char *my_value = NULL;
-
-	    StrAllocCopy(my_value, value);
-	    HTList_appendObject(*(q->lst_value), my_value);
-	}
+	temp_value = NULL;
+	StrAllocCopy(temp_value, value);
+	HTList_appendObject(*(q->lst_value), temp_value);
+	temp_value = NULL;
 	break;
 
 #if defined(EXEC_LINKS) || defined(LYNXCGI_LINKS)

@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTFWriter.c,v 1.100 2012/08/15 23:25:33 tom Exp $
+ * $LynxId: HTFWriter.c,v 1.105 2013/07/21 00:41:24 tom Exp $
  *
  *		FILE WRITER				HTFWrite.h
  *		===========
@@ -159,7 +159,6 @@ static void HTFWriter_free(HTStream *me)
     BOOLEAN found = FALSE;
 
 #ifdef WIN_EX
-    int status;
     HANDLE cur_handle;
 
     cur_handle = GetForegroundWindow();
@@ -211,7 +210,7 @@ static void HTFWriter_free(HTStream *me)
 #endif /* USE_ZLIB */
 		    {
 			path[len - 3] = '\0';
-			remove(path);
+			(void) remove(path);
 		    }
 		} else if (len > 4 && !strcasecomp(&path[len - 3], "bz2")) {
 #ifdef USE_BZLIB
@@ -221,11 +220,11 @@ static void HTFWriter_free(HTStream *me)
 #endif /* USE_BZLIB */
 		    {
 			path[len - 4] = '\0';
-			remove(path);
+			(void) remove(path);
 		    }
 		} else if (len > 2 && !strcasecomp(&path[len - 1], "Z")) {
 		    path[len - 2] = '\0';
-		    remove(path);
+		    (void) remove(path);
 		}
 		if (!use_zread) {
 		    if (!dump_output_immediately) {
@@ -251,7 +250,7 @@ static void HTFWriter_free(HTStream *me)
 			LYrefresh();
 		    }
 		    HTAlert(ERROR_UNCOMPRESSING_TEMP);
-		    LYRemoveTemp(me->anchor->FileCache);
+		    (void) LYRemoveTemp(me->anchor->FileCache);
 		    FREE(me->anchor->FileCache);
 		} else {
 		    /*
@@ -365,7 +364,7 @@ static void HTFWriter_free(HTStream *me)
 #ifdef WIN_EX
 			    if (focus_window) {
 				HTInfoMsg(gettext("Set focus1"));
-				status = SetForegroundWindow(cur_handle);
+				(void) SetForegroundWindow(cur_handle);
 			    }
 #else
 			    start_curses();
@@ -380,7 +379,7 @@ static void HTFWriter_free(HTStream *me)
 		    if (dump_output_immediately &&
 			me->output_format == HTAtom_for("www/present")) {
 			FREE(addr);
-			remove(me->anchor->FileCache);
+			(void) remove(me->anchor->FileCache);
 			FREE(me->anchor->FileCache);
 			FREE(me->remove_command);
 			FREE(me->end_command);
@@ -423,7 +422,7 @@ static void HTFWriter_free(HTStream *me)
 #ifdef WIN_EX
 		if (focus_window) {
 		    HTInfoMsg(gettext("Set focus2"));
-		    status = SetForegroundWindow(cur_handle);
+		    (void) SetForegroundWindow(cur_handle);
 		}
 #else
 		start_curses();
@@ -441,7 +440,7 @@ static void HTFWriter_free(HTStream *me)
 #ifdef WIN_EX
 		if (focus_window) {
 		    HTInfoMsg(gettext("Set focus3"));
-		    status = SetForegroundWindow(cur_handle);
+		    (void) SetForegroundWindow(cur_handle);
 		}
 #else
 		start_curses();
@@ -454,7 +453,7 @@ static void HTFWriter_free(HTStream *me)
 
     if (dump_output_immediately) {
 	if (me->anchor->FileCache)
-	    remove(me->anchor->FileCache);
+	    (void) remove(me->anchor->FileCache);
 	FREE(me);
 #ifdef USE_PERSISTENT_COOKIES
 	/*
@@ -491,7 +490,7 @@ static void HTFWriter_abort(HTStream *me, HTError e GCC_UNUSED)
 #ifdef VMS
 	    LYSystem(me->remove_command);
 #else
-	    chmod(me->remove_command, 0600);	/* Ignore errors */
+	    (void) chmod(me->remove_command, 0600);	/* Ignore errors */
 	    if (0 != unlink(me->remove_command)) {
 		char buf[560];
 
@@ -658,7 +657,7 @@ HTStream *HTSaveAndExecute(HTPresentation *pres,
 	if (!StrNCmp(anchor->address, "file://localhost", 16)) {
 
 	    /* 1998/01/23 (Fri) 17:38:26 */
-	    unsigned char *cp, *view_fname;
+	    char *cp, *view_fname;
 
 	    me->fp = NULL;
 
@@ -676,7 +675,7 @@ HTStream *HTSaveAndExecute(HTPresentation *pres,
 	    /* 1998/04/21 (Tue) 11:04:16 */
 	    cp = view_fname;
 	    while (*cp) {
-		if (IS_SJIS_HI1(*cp) || IS_SJIS_HI2(*cp)) {
+		if (IS_SJIS_HI1(UCH(*cp)) || IS_SJIS_HI2(UCH(*cp))) {
 		    cp += 2;
 		    continue;
 		} else if (*cp == '/') {
@@ -685,7 +684,7 @@ HTStream *HTSaveAndExecute(HTPresentation *pres,
 		cp++;
 	    }
 	    if (strchr(view_fname, ' '))
-		view_fname = (unsigned char *) quote_pathname(view_fname);
+		view_fname = quote_pathname(view_fname);
 
 	    StrAllocCopy(me->viewer_command, pres->command);
 
@@ -1015,7 +1014,7 @@ HTStream *HTCompressed(HTPresentation *pres,
      * Deal with any inappropriate invocations of this function, or a download
      * request, in which case we won't bother to uncompress the file.  - FM
      */
-    if (!(anchor && anchor->content_encoding && anchor->content_type)) {
+    if (!(anchor->content_encoding && anchor->content_type)) {
 	/*
 	 * We have no idea what we're dealing with, so treat it as a binary
 	 * stream.  - FM
@@ -1145,7 +1144,7 @@ HTStream *HTCompressed(HTPresentation *pres,
      * Remove any old versions of the file.  - FM
      */
     if (anchor->FileCache) {
-	LYRemoveTemp(anchor->FileCache);
+	(void) LYRemoveTemp(anchor->FileCache);
 	FREE(anchor->FileCache);
     }
 

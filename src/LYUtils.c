@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYUtils.c,v 1.227 2012/08/15 23:11:03 tom Exp $
+ * $LynxId: LYUtils.c,v 1.242 2013/07/29 00:33:32 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTCP.h>
@@ -546,7 +546,8 @@ static BOOL show_whereis_targets(int flag,
 	     * characters of the hightext if we're making the link current.
 	     * -FM
 	     */
-	    if ((Offset < offset) &&
+	    if (offset >= 0 &&
+		(Offset < offset) &&
 		((Offset + tLen) > offset)) {
 		itmp = 0;
 		written = 0;
@@ -1210,6 +1211,8 @@ void LYhighlight(int flag,
 		int row = LYP + hi_count + title_adjust;
 
 		hi_offset = LYGetHilitePos(cur, hi_count);
+		if (hi_offset < 0)
+		    continue;
 		lynx_stop_link_color(flag == TRUE, links[cur].inUnderline);
 		LYmove(row, hi_offset);
 
@@ -1470,7 +1473,7 @@ void statusline(const char *text)
 	len = (int) strlen(text_buff);
 	if (len >= (int) (sizeof(buffer) - 1))
 	    len = (int) (sizeof(buffer) - 1);
-	StrNCpy(buffer, text_buff, len)[len] = '\0';
+	LYStrNCpy(buffer, text_buff, len);
 	/* FIXME: a binary search might be faster */
 	while (len > 0 && LYstrExtent(buffer, len, len) > max_length)
 	    buffer[--len] = '\0';
@@ -2816,13 +2819,16 @@ BOOLEAN LYCloseOutput(FILE *fp)
  */
 BOOLEAN LYCanWriteFile(const char *filename)
 {
+    BOOLEAN result = FALSE;
+
     if (LYCloseOutput(fopen(filename, "w"))) {
-	remove(filename);
-	return TRUE;
+	if (remove(filename) == 0) {
+	    result = TRUE;
+	}
     } else {
 	_statusline(NEW_FILENAME_PROMPT);
-	return FALSE;
     }
+    return result;
 }
 
 /*
@@ -2930,10 +2936,6 @@ void LYExtSignal(int sig,
 	act.sa_handler = handler;
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;
-#ifdef SA_RESTART
-	if (sig != SIGWINCH)
-	    act.sa_flags |= SA_RESTART;
-#endif /* SA_RESTART */
 	sigaction(sig, &act, NULL);
     } else
 #endif /* defined(SIGWINCH) */
@@ -3188,9 +3190,10 @@ void change_sug_filename(char *fname)
 	HTSprintf0(&temp, "file://localhost/%s" PID_FMT, cp2, GETPID());
     }
     if (!StrNCmp(fname, temp, strlen(temp))) {
-	cp = strrchr(fname, '.');
-	if (strlen(cp) > (strlen(temp) - 4))
-	    cp = NULL;
+	if ((cp = strrchr(fname, '.')) != 0) {
+	    if (strlen(cp) > (strlen(temp) - 4))
+		cp = NULL;
+	}
 	StrAllocCopy(temp, NonNull(cp));
 	sprintf(fname, "temp%.*s", LY_MAXPATH - 10, temp);
     }
@@ -3469,7 +3472,7 @@ static int fmt_tempname(char *result,
      */
 #ifdef HAVE_RAND_TEMPNAME
     if (first) {
-	lynx_srand((unsigned) ((long) time((time_t *) 0) + (long) result));
+	lynx_srand((unsigned) ((long) time((time_t *) NULL) + (long) result));
 	first = FALSE;
     }
 
@@ -4521,22 +4524,23 @@ int win32_check_interrupt(void)
     return FALSE;
 }
 
+#if !defined(__MINGW32__)
 void sleep(unsigned sec)
 {
     unsigned int i, j;
-    int c;
 
     for (j = 0; j < sec; j++) {
 	for (i = 0; i < 10; i++) {
 	    Sleep(100);
 	    if (kbhit()) {
-		c = LYgetch();
+		(void) LYgetch();
 		return;
 	    }
 	}
     }
 }
-#endif
+#endif /* !__MINGW32__ */
+#endif /* _WINDOWS */
 
 /*
  * This function rewrites and reallocates a previously allocated string so that
@@ -5463,7 +5467,7 @@ static char *FindLeadingTilde(char *pathname, int embedded)
  */
 char *LYAbsOrHomePath(char **fname)
 {
-    if (!LYisAbsPath(*fname)) {
+    if (*fname && !LYisAbsPath(*fname)) {
 	if (LYIsTilde((*fname)[0])) {
 	    LYTildeExpand(fname, FALSE);
 	} else {
@@ -5765,20 +5769,21 @@ int remove(char *name)
 static BOOL IsOurSymlink(const char *name)
 {
     BOOL result = FALSE;
-    int size = LY_MAXPATH;
-    int used;
+    size_t size = LY_MAXPATH;
+    size_t used;
     char *buffer = typeMallocn(char, (unsigned) size);
+    char *check;
 
     if (buffer != 0) {
-	while ((used = (int) readlink(name, buffer, (size_t) (size - 1))) == size
-	       - 1) {
-	    buffer = typeRealloc(char, buffer, (unsigned) (size *= 2));
+	while ((used = (size_t) readlink(name, buffer, (size - 1))) == size - 1) {
+	    check = typeRealloc(char, buffer, (unsigned) (size *= 2));
 
-	    if (buffer == 0)
+	    if (check == 0)
 		break;
+	    buffer = check;
 	}
 	if (buffer != 0) {
-	    if (used > 0) {
+	    if ((int) used > 0) {
 		buffer[used] = '\0';
 	    } else {
 		FREE(buffer);
@@ -5899,9 +5904,10 @@ static FILE *OpenHiddenFile(const char *name, const char *mode)
 	if (fd < 0
 	    && errno == EEXIST
 	    && IsOurFile(name)) {
-	    remove(name);
-	    /* FIXME: there's a race at this point if directory is open */
-	    fd = open(name, O_CREAT | O_EXCL | O_WRONLY, HIDE_CHMOD);
+	    if (remove(name) == 0) {
+		/* FIXME: there's a race at this point if directory is open */
+		fd = open(name, O_CREAT | O_EXCL | O_WRONLY, HIDE_CHMOD);
+	    }
 	}
 	if (fd >= 0) {
 #if defined(O_BINARY) && defined(__CYGWIN__)
@@ -5932,7 +5938,7 @@ static FILE *OpenHiddenFile(const char *name, const char *mode)
 
 	if (chmod(name, HIDE_CHMOD) == 0 || errno == ENOENT)
 	    fp = fopen(name, mode);
-	umask(save);
+	(void) umask(save);
     }
     return fp;
 }
@@ -5945,7 +5951,7 @@ FILE *LYNewBinFile(const char *name)
 #ifdef VMS
     FILE *fp = fopen(name, BIN_W, "mbc=32");
 
-    chmod(name, HIDE_CHMOD);
+    (void) chmod(name, HIDE_CHMOD);
 #else
     FILE *fp = OpenHiddenFile(name, BIN_W);
 #endif
@@ -5958,7 +5964,7 @@ FILE *LYNewTxtFile(const char *name)
 
 #ifdef VMS
     fp = fopen(name, TXT_W, "shr=get");
-    chmod(name, HIDE_CHMOD);
+    (void) chmod(name, HIDE_CHMOD);
 #else
     SetDefaultMode(O_TEXT);
 
@@ -5976,7 +5982,7 @@ FILE *LYAppendToTxtFile(const char *name)
 
 #ifdef VMS
     fp = fopen(name, TXT_A, "shr=get");
-    chmod(name, HIDE_CHMOD);
+    (void) chmod(name, HIDE_CHMOD);
 #else
     SetDefaultMode(O_TEXT);
 
@@ -6009,8 +6015,8 @@ void LYRelaxFilePermissions(const char *name)
 	mode_t save = umask(HIDE_UMASK);
 
 	mode = ((mode & 0700) | 0066) & ~save;
-	umask(save);
-	chmod(name, mode);
+	(void) umask(save);
+	(void) chmod(name, mode);
     }
 }
 #endif
@@ -6018,18 +6024,22 @@ void LYRelaxFilePermissions(const char *name)
 /*
  * Check if the given anchor has an associated file-cache.
  */
-BOOLEAN LYCachedTemp(char *result,
+BOOLEAN LYCachedTemp(char *target,
 		     char **cached)
 {
+    BOOLEAN result = FALSE;
+
     if (*cached) {
-	LYStrNCpy(result, *cached, LY_MAXPATH);
+	LYStrNCpy(target, *cached, LY_MAXPATH);
 	FREE(*cached);
-	if (LYCanReadFile(result)) {
-	    remove(result);
+	if (LYCanReadFile(target)) {
+	    if (remove(target) != 0) {
+		CTRACE((tfp, "cannot remove %s\n", target));
+	    }
 	}
-	return TRUE;
+	result = TRUE;
     }
-    return FALSE;
+    return result;
 }
 
 #ifndef HAVE_MKDTEMP
@@ -6102,7 +6112,7 @@ FILE *LYOpenTemp(char *result,
 		printf("%s: %s\n", lynx_temp_space, LYStrerror(errno));
 		exit_immediately(EXIT_FAILURE);
 	    }
-	    umask(old_mask);
+	    (void) umask(old_mask);
 	    lynx_temp_subspace = 1;
 	    StrAllocCat(lynx_temp_space, "/");
 	    CTRACE((tfp, "made subdirectory %s\n", lynx_temp_space));
@@ -6436,7 +6446,7 @@ int LYRemoveTemp(char *name)
 void LYCleanupTemp(void)
 {
     while (ly_temp != 0) {
-	LYRemoveTemp(ly_temp->name);
+	(void) LYRemoveTemp(ly_temp->name);
     }
 #if defined(MULTI_USER_UNIX)
     if (lynx_temp_subspace > 0) {
@@ -6814,7 +6824,7 @@ void LYLocalFileToURL(char **target,
 	    LYAddHtmlSep(target);
 	StrAllocCat(*target, temp);
     }
-    if (!LYIsHtmlSep(*leaf))
+    if (leaf && !LYIsHtmlSep(*leaf))
 	LYAddHtmlSep(target);
     StrAllocCat(*target, leaf);
 }
@@ -6850,7 +6860,7 @@ FILE *InternalPageFP(char *filename,
     if (LYReuseTempfiles && reuse_flag) {
 	fp = LYOpenTempRewrite(filename, HTML_SUFFIX, BIN_W);
     } else {
-	LYRemoveTemp(filename);
+	(void) LYRemoveTemp(filename);
 	fp = LYOpenTemp(filename, HTML_SUFFIX, BIN_W);
     }
     if (fp == NULL) {
@@ -7313,7 +7323,7 @@ int Cygwin_Shell(void)
 			     0, 0, &startUpInfo, &procInfo);
 
 	if (!code) {
-	    printf("shell = [%s], code = %ld\n", shell, GetLastError());
+	    printf("shell = [%s], code = %ld\n", shell, (long) GetLastError());
 	}
 
 	/* wait for the child to return (this is not a requirement

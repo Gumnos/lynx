@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYLocal.c,v 1.119 2012/11/18 22:25:54 tom Exp $
+ * $LynxId: LYLocal.c,v 1.125 2013/05/03 08:43:42 tom Exp $
  *
  *  Routines to manipulate the local filesystem.
  *  Written by: Rick Mallett, Carleton University
@@ -807,7 +807,7 @@ static int modify_tagged(char *testpath)
     _statusline(gettext("Enter new location for tagged items: "));
 
     BStrCopy0(given_target, "");
-    LYgetBString(&given_target, VISIBLE, 0, NORECALL);
+    (void) LYgetBString(&given_target, VISIBLE, 0, NORECALL);
     if (!isBEmpty(given_target)) {
 	/*
 	 * Replace ~/ references to the home directory.
@@ -1371,7 +1371,7 @@ static int permit_location(char *destpath,
 
 	user_filename = LYPathLeaf(srcpath);
 
-	LYRemoveTemp(tempfile);
+	(void) LYRemoveTemp(tempfile);
 	if ((fp0 = LYOpenTemp(tempfile, HTML_SUFFIX, "w")) == NULL) {
 	    HTAlert(gettext("Unable to open permit options file"));
 	    return (code);
@@ -2045,7 +2045,7 @@ int dired_options(DocInfo *doc, char **newfile)
 {
     static char tempfile[LY_MAXPATH];
     const char *my_suffix;
-    char *path;
+    char *path = NULL;
     char *dir;
     lynx_list_item_type *nxt;
     struct stat dir_info;
@@ -2210,7 +2210,7 @@ static int get_filename(const char *prompt,
 
     _statusline(prompt);
 
-    LYgetBString(&buf, VISIBLE, 0, NORECALL);
+    (void) LYgetBString(&buf, VISIBLE, 0, NORECALL);
     if (strstr(buf->str, "../") != NULL) {
 	HTAlert(gettext("Illegal filename; request ignored."));
 	return FALSE;
@@ -2497,6 +2497,7 @@ void add_menu_item(char *str)
 {
     struct dired_menu *tmp, *mp;
     char *cp;
+    BOOL used = FALSE;
 
     /*
      * First custom menu definition causes entire default menu to be discarded.
@@ -2514,48 +2515,60 @@ void add_menu_item(char *str)
     /*
      * Conditional on tagged != NULL ?
      */
-    cp = strchr(str, ':');
-    *cp++ = '\0';
-    if (strcasecomp(str, "tag") == 0) {
-	tmp->cond = DE_TAG;
-    } else if (strcasecomp(str, "dir") == 0) {
-	tmp->cond = DE_DIR;
-    } else if (strcasecomp(str, "file") == 0) {
-	tmp->cond = DE_FILE;
+    if ((cp = strchr(str, ':')) != 0) {
+	*cp++ = '\0';
+	if (strcasecomp(str, "tag") == 0) {
+	    tmp->cond = DE_TAG;
+	} else if (strcasecomp(str, "dir") == 0) {
+	    tmp->cond = DE_DIR;
+	} else if (strcasecomp(str, "file") == 0) {
+	    tmp->cond = DE_FILE;
 #ifdef S_IFLNK
-    } else if (strcasecomp(str, "link") == 0) {
-	tmp->cond = DE_SYMLINK;
+	} else if (strcasecomp(str, "link") == 0) {
+	    tmp->cond = DE_SYMLINK;
 #endif /* S_IFLNK */
-    }
-
-    /*
-     * Conditional on matching suffix.
-     */
-    str = cp;
-    cp = strchr(str, ':');
-    *cp++ = '\0';
-    StrAllocCopy(tmp->sfx, str);
-
-    str = cp;
-    cp = strchr(str, ':');
-    *cp++ = '\0';
-    StrAllocCopy(tmp->link, str);
-
-    str = cp;
-    cp = strchr(str, ':');
-    *cp++ = '\0';
-    StrAllocCopy(tmp->rest, str);
-
-    StrAllocCopy(tmp->href, cp);
-
-    if (menu_head) {
-	for (mp = menu_head; mp && mp->next != NULL; mp = mp->next) {
-	    ;
 	}
-	if (mp != NULL)
-	    mp->next = tmp;
-    } else
-	menu_head = tmp;
+
+	/*
+	 * Conditional on matching suffix.
+	 */
+	str = cp;
+	if ((cp = strchr(str, ':')) != 0) {
+	    *cp++ = '\0';
+	    StrAllocCopy(tmp->sfx, str);
+
+	    str = cp;
+	    if ((cp = strchr(str, ':')) != 0) {
+		*cp++ = '\0';
+		StrAllocCopy(tmp->link, str);
+
+		str = cp;
+		if ((cp = strchr(str, ':')) != 0) {
+		    *cp++ = '\0';
+		    StrAllocCopy(tmp->rest, str);
+
+		    StrAllocCopy(tmp->href, cp);
+
+		    if (menu_head) {
+			for (mp = menu_head;
+			     mp && mp->next != NULL;
+			     mp = mp->next) {
+			    ;
+			}
+			if (mp != NULL) {
+			    mp->next = tmp;
+			    used = TRUE;
+			}
+		    } else {
+			menu_head = tmp;
+			used = TRUE;
+		    }
+		}
+	    }
+	}
+    }
+    if (!used)
+	FREE(tmp);
 }
 
 void reset_dired_menu(void)

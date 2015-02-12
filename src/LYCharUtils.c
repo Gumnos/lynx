@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYCharUtils.c,v 1.117 2012/02/10 18:36:39 tom Exp $
+ * $LynxId: LYCharUtils.c,v 1.123 2013/06/04 20:42:47 tom Exp $
  *
  *  Functions associated with LYCharSets.c and the Lynx version of HTML.c - FM
  *  ==========================================================================
@@ -746,10 +746,6 @@ char *LYUppercaseI_OL_String(int seqnum)
     if (Arabic >= 500) {
 	strcat(OLstring, "D");
 	Arabic -= 500;
-	while (Arabic >= 500) {
-	    strcat(OLstring, "C");
-	    Arabic -= 10;
-	}
     }
 
     if (Arabic >= 400) {
@@ -770,10 +766,6 @@ char *LYUppercaseI_OL_String(int seqnum)
     if (Arabic >= 50) {
 	strcat(OLstring, "L");
 	Arabic -= 50;
-	while (Arabic >= 50) {
-	    strcat(OLstring, "X");
-	    Arabic -= 10;
-	}
     }
 
     if (Arabic >= 40) {
@@ -880,10 +872,6 @@ char *LYLowercaseI_OL_String(int seqnum)
     if (Arabic >= 500) {
 	strcat(OLstring, "d");
 	Arabic -= 500;
-	while (Arabic >= 500) {
-	    strcat(OLstring, "c");
-	    Arabic -= 10;
-	}
     }
 
     if (Arabic >= 400) {
@@ -904,10 +892,6 @@ char *LYLowercaseI_OL_String(int seqnum)
     if (Arabic >= 50) {
 	strcat(OLstring, "l");
 	Arabic -= 50;
-	while (Arabic >= 50) {
-	    strcat(OLstring, "x");
-	    Arabic -= 10;
-	}
     }
 
     if (Arabic >= 40) {
@@ -2457,15 +2441,14 @@ void LYHandleMETA(HTStructured * me, const BOOL *present,
 	     * Check for an anchor in http or https URLs.  - FM
 	     */
 	    cp = NULL;
-#ifndef DONT_TRACK_INTERNAL_LINKS
 	    /* id_string seems to be used wrong below if given.
 	       not that it matters much.  avoid setting it here. - kw */
-	    if ((StrNCmp(href, "http", 4) == 0) &&
+	    if (track_internal_links &&
+		(StrNCmp(href, "http", 4) == 0) &&
 		(cp = strchr(href, '#')) != NULL) {
 		StrAllocCopy(id_string, cp);
 		*cp = '\0';
 	    }
-#endif
 	    if (me->inA) {
 		/*
 		 * Ugh!  The META tag, which is a HEAD element, is in an
@@ -2599,98 +2582,94 @@ void LYHandlePlike(HTStructured * me, const BOOL *present,
 		   int align_idx,
 		   int start)
 {
-    if (TRUE) {
+    /*
+     * FIG content should be a true block, which like P inherits the current
+     * style.  APPLET is like character elements or an ALT attribute, unless
+     * its content contains a block element.  If we encounter a P in either's
+     * content, we set flags to treat the content as a block - FM
+     */
+    if (start) {
+	if (me->inFIG)
+	    me->inFIGwithP = TRUE;
+
+	if (me->inAPPLET)
+	    me->inAPPLETwithP = TRUE;
+    }
+
+    UPDATE_STYLE;
+    if (me->List_Nesting_Level >= 0) {
 	/*
-	 * FIG content should be a true block, which like P inherits the
-	 * current style.  APPLET is like character elements or an ALT
-	 * attribute, unless it content contains a block element.  If we
-	 * encounter a P in either's content, we set flags to treat the content
-	 * as a block.  - FM
+	 * We're in a list.  Treat P as an instruction to create one blank
+	 * line, if not already present, then fall through to handle
+	 * attributes, with the "second line" margins - FM
 	 */
-	if (start) {
-	    if (me->inFIG)
-		me->inFIGwithP = TRUE;
-
-	    if (me->inAPPLET)
-		me->inAPPLETwithP = TRUE;
-	}
-
-	UPDATE_STYLE;
-	if (me->List_Nesting_Level >= 0) {
-	    /*
-	     * We're in a list.  Treat P as an instruction to create one blank
-	     * line, if not already present, then fall through to handle
-	     * attributes, with the "second line" margins.  - FM
-	     */
-	    if (me->inP) {
-		if (me->inFIG || me->inAPPLET ||
-		    me->inCAPTION || me->inCREDIT ||
-		    me->sp->style->spaceAfter > 0 ||
-		    (start && me->sp->style->spaceBefore > 0)) {
-		    LYEnsureDoubleSpace(me);
-		} else {
-		    LYEnsureSingleSpace(me);
-		}
-	    }
-	} else if (me->sp[0].tag_number == HTML_ADDRESS) {
-	    /*
-	     * We're in an ADDRESS.  Treat P as an instruction to start a
-	     * newline, if needed, then fall through to handle attributes.  -
-	     * FM
-	     */
-	    if (!HText_LastLineEmpty(me->text, FALSE)) {
-		HText_setLastChar(me->text, ' ');	/* absorb white space */
-		HText_appendCharacter(me->text, '\r');
-	    }
-	} else {
-	    if (start) {
-		if (!(me->inLABEL && !me->inP)) {
-		    HText_appendParagraph(me->text);
-		}
-	    } else if (me->sp->style->spaceAfter > 0) {
+	if (me->inP) {
+	    if (me->inFIG || me->inAPPLET ||
+		me->inCAPTION || me->inCREDIT ||
+		me->sp->style->spaceAfter > 0 ||
+		(start && me->sp->style->spaceBefore > 0)) {
 		LYEnsureDoubleSpace(me);
 	    } else {
 		LYEnsureSingleSpace(me);
 	    }
-	    me->inLABEL = FALSE;
 	}
-	me->in_word = NO;
-
-	if (LYoverride_default_alignment(me)) {
-	    me->sp->style->alignment = LYstyles(me->sp[0].tag_number)->alignment;
-	} else if ((me->List_Nesting_Level >= 0 &&
-		    (me->sp->style->id == ST_DivCenter ||
-		     me->sp->style->id == ST_DivLeft ||
-		     me->sp->style->id == ST_DivRight)) ||
-		   ((me->Division_Level < 0) &&
-		    (me->sp->style->id == ST_Normal ||
-		     me->sp->style->id == ST_Preformatted))) {
-	    me->sp->style->alignment = HT_LEFT;
-	} else {
-	    me->sp->style->alignment = (short) me->current_default_alignment;
-	}
-
-	if (start) {
-	    if (present && present[align_idx] && value[align_idx]) {
-		if (!strcasecomp(value[align_idx], "center") &&
-		    !(me->List_Nesting_Level >= 0 && !me->inP))
-		    me->sp->style->alignment = HT_CENTER;
-		else if (!strcasecomp(value[align_idx], "right") &&
-			 !(me->List_Nesting_Level >= 0 && !me->inP))
-		    me->sp->style->alignment = HT_RIGHT;
-		else if (!strcasecomp(value[align_idx], "left") ||
-			 !strcasecomp(value[align_idx], "justify"))
-		    me->sp->style->alignment = HT_LEFT;
-	    }
-
-	}
-
+    } else if (me->sp[0].tag_number == HTML_ADDRESS) {
 	/*
-	 * Mark that we are starting a new paragraph and don't have any of it's
-	 * text yet.  - FM
+	 * We're in an ADDRESS.  Treat P as an instruction to start a newline,
+	 * if needed, then fall through to handle attributes - FM
 	 */
-	me->inP = FALSE;
+	if (!HText_LastLineEmpty(me->text, FALSE)) {
+	    HText_setLastChar(me->text, ' ');	/* absorb white space */
+	    HText_appendCharacter(me->text, '\r');
+	}
+    } else {
+	if (start) {
+	    if (!(me->inLABEL && !me->inP)) {
+		HText_appendParagraph(me->text);
+	    }
+	} else if (me->sp->style->spaceAfter > 0) {
+	    LYEnsureDoubleSpace(me);
+	} else {
+	    LYEnsureSingleSpace(me);
+	}
+	me->inLABEL = FALSE;
     }
+    me->in_word = NO;
+
+    if (LYoverride_default_alignment(me)) {
+	me->sp->style->alignment = LYstyles(me->sp[0].tag_number)->alignment;
+    } else if ((me->List_Nesting_Level >= 0 &&
+		(me->sp->style->id == ST_DivCenter ||
+		 me->sp->style->id == ST_DivLeft ||
+		 me->sp->style->id == ST_DivRight)) ||
+	       ((me->Division_Level < 0) &&
+		(me->sp->style->id == ST_Normal ||
+		 me->sp->style->id == ST_Preformatted))) {
+	me->sp->style->alignment = HT_LEFT;
+    } else {
+	me->sp->style->alignment = (short) me->current_default_alignment;
+    }
+
+    if (start && align_idx >= 0) {
+	if (present && present[align_idx] && value[align_idx]) {
+	    if (!strcasecomp(value[align_idx], "center") &&
+		!(me->List_Nesting_Level >= 0 && !me->inP))
+		me->sp->style->alignment = HT_CENTER;
+	    else if (!strcasecomp(value[align_idx], "right") &&
+		     !(me->List_Nesting_Level >= 0 && !me->inP))
+		me->sp->style->alignment = HT_RIGHT;
+	    else if (!strcasecomp(value[align_idx], "left") ||
+		     !strcasecomp(value[align_idx], "justify"))
+		me->sp->style->alignment = HT_LEFT;
+	}
+
+    }
+
+    /*
+     * Mark that we are starting a new paragraph and don't have any of its
+     * text yet - FM
+     */
+    me->inP = FALSE;
 
     return;
 }

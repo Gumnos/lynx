@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTAAUtil.c,v 1.31 2010/09/24 23:51:22 tom Exp $
+ * $LynxId: HTAAUtil.c,v 1.35 2013/05/03 20:32:37 tom Exp $
  *
  * MODULE							HTAAUtil.c
  *		COMMON PARTS OF ACCESS AUTHORIZATION MODULE
@@ -495,8 +495,7 @@ void HTAA_setupReader(char *start_of_headers,
 #endif
     start_pointer = buffer;
     if (start_of_headers) {
-	StrNCpy(buffer, start_of_headers, length);
-	buffer[length] = '\0';
+	LYStrNCpy(buffer, start_of_headers, length);
 	end_pointer = buffer + length;
     } else {
 	*start_pointer = '\0';
@@ -557,6 +556,8 @@ char *HTAA_getUnfoldedLine(void)
 		in_soc = -1;
 		return line;
 	    }
+	    if (count > (int) buffer_length)
+		count = (int) buffer_length;
 	    start_pointer = buffer;
 	    end_pointer = buffer + count;
 	    *end_pointer = '\0';

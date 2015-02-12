@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTRules.c,v 1.42 2010/06/17 21:33:35 tom Exp $
+ * $LynxId: HTRules.c,v 1.44 2013/05/03 09:42:04 tom Exp $
  *
  *	Configuration manager for Hypertext Daemon		HTRules.c
  *	==========================================
@@ -453,7 +453,7 @@ int HTSetConfiguration(char *config)
 {
     HTRuleOp op;
     char *line = NULL;
-    char *pointer = line;
+    char *pointer = NULL;
     char *word1;
     const char *word2;
     const char *word3;
@@ -464,7 +464,7 @@ int HTSetConfiguration(char *config)
     int status;
 
     StrAllocCopy(line, config);
-    {
+    if (line != NULL) {
 	char *p = line;
 
 	/* Chop off comments */

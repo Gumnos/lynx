@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYGlobalDefs.h,v 1.133 2012/11/14 01:09:44 tom Exp $
+ * $LynxId: LYGlobalDefs.h,v 1.136 2013/07/29 00:29:14 tom Exp $
  *
  * global variable definitions
  */
@@ -211,9 +211,7 @@ extern "C" {
     extern BOOLEAN LYCursesON;	/* start_curses()->TRUE, stop_curses()->FALSE */
     extern BOOLEAN LYJumpFileURL;	/* URL from the jump file shortcuts? */
     extern BOOLEAN LYNewsPosting;	/* News posting supported if TRUE */
-#ifdef USE_SESSIONS
     extern BOOLEAN LYAutoSession;	/* Auto restore/save session? */
-#endif
     extern BOOLEAN LYShowCursor;	/* Show the cursor or hide it?      */
     extern BOOLEAN LYShowTransferRate;
     extern BOOLEAN LYUnderlineLinks;	/* Show the links underlined vs bold */
@@ -422,6 +420,7 @@ extern "C" {
     extern BOOLEAN LYRestricted;	/* whether we had -anonymous option */
     extern BOOLEAN LYValidate;
     extern BOOLEAN LYPermitURL;
+    extern BOOLEAN track_internal_links;
     extern BOOLEAN enable_scrollback;	/* Clear screen before displaying new page */
     extern BOOLEAN keep_mime_headers;	/* Include mime headers and *
 
@@ -628,6 +627,7 @@ extern "C" {
 #endif				/* !VMS */
 
 #if defined(USE_COLOR_STYLE)
+    extern int LYuse_color_style;	/* color-style vs oldlynx */
     extern char *lynx_lss_file;
 #endif
 
@@ -666,9 +666,7 @@ extern "C" {
 #endif
 
 #if defined(__CYGWIN__)
-    extern void cygwin_conv_to_full_win32_path(char *posix, char *dos);
-    extern void cygwin_conv_to_full_posix_path(char *dos, char *posix);
-    extern int setmode(int handle, int amode);
+#include <io.h>
 #endif
 
 #if !defined(__CYGWIN__) && defined(__CYGWIN32__)

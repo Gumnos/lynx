@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTMIME.c,v 1.79 2012/08/22 09:48:46 tom Exp $
+ * $LynxId: HTMIME.c,v 1.87 2013/05/05 20:07:25 tom Exp $
  *
  *			MIME Message Parse			HTMIME.c
  *			==================
@@ -273,7 +273,7 @@ static int pumpData(HTStream *me)
 	FREE(me->compression_encoding);
 	StrAllocCopy(me->compression_encoding, new_encoding);
 
-	strcpy(me->value, new_content);
+	LYStrNCpy(me->value, new_content, VALUE_SIZE - 1);
 	StrAllocCopy(me->anchor->content_type_params, me->value);
 	me->format = HTAtom_for(me->value);
     }
@@ -625,7 +625,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Cache-Control: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Convert to lowercase and indicate in anchor.  - FM
@@ -687,7 +687,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Content-Base: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Indicate in anchor.  - FM
@@ -698,7 +698,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Content-Disposition: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Indicate in anchor.  - FM
@@ -747,7 +747,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Content-Encoding: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value) ||
+	if (me->value[0] == '\0' ||
 	    !strcasecomp(me->value, "identity"))
 	    break;
 	/*
@@ -779,7 +779,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Content-Language: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Convert to lowercase and indicate in anchor.  - FM
@@ -791,7 +791,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Content-Length: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Convert to integer and indicate in anchor.  - FM
@@ -806,7 +806,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Content-Location: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Indicate in anchor.  - FM
@@ -817,7 +817,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Content-MD5: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Indicate in anchor.  - FM
@@ -833,7 +833,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Content-Transfer-Encoding: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Force the Content-Transfer-Encoding value to all lower case.  - FM
@@ -845,7 +845,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Content-Type: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Force the Content-Type value to all lower case and strip spaces and
@@ -864,7 +864,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Date: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Indicate in anchor.  - FM
@@ -877,7 +877,7 @@ static int dispatchField(HTStream *me)
 	 */
 	CTRACE((tfp, "HTMIME: PICKED UP ETag: %s\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Indicate in anchor.  - FM
@@ -888,7 +888,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Expires: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Indicate in anchor.  - FM
@@ -904,7 +904,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Last-Modified: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Indicate in anchor.  - FM
@@ -930,7 +930,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Pragma: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Check whether to set no_cache for the anchor.  - FM
@@ -963,7 +963,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Safe: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Indicate in anchor if "YES" or "TRUE".  - FM
@@ -984,7 +984,7 @@ static int dispatchField(HTStream *me)
 	HTMIME_TrimDoubleQuotes(me->value);
 	CTRACE((tfp, "HTMIME: PICKED UP Server: '%s'\n",
 		me->value));
-	if (!(me->value && *me->value))
+	if (me->value[0] == '\0')
 	    break;
 	/*
 	 * Indicate in anchor.  - FM
@@ -2332,6 +2332,7 @@ static void HTmmdec_base64(char **t,
 
 	for (j = 0; j <= count; j++) {
 	    if (!(p = strchr(HTmm64, s[j]))) {
+		FREE(buf);
 		return;
 	    }
 	    d = (int) (p - HTmm64);
@@ -2446,7 +2447,7 @@ void HTmmdecode(char **target,
 	    }
 	    if (base64)
 		HTmmdec_base64(&m2buf, mmbuf);
-	    if (quote)
+	    else
 		HTmmdec_quote(&m2buf, mmbuf);
 	    for (t = m2buf; *t;)
 		*u++ = *t++;

@@ -1,4 +1,4 @@
-/* $LynxId: LYKeymap.c,v 1.83 2012/02/12 18:35:32 tom Exp $ */
+/* $LynxId: LYKeymap.c,v 1.85 2013/05/03 23:07:29 tom Exp $ */
 #include <HTUtils.h>
 #include <LYUtils.h>
 #include <LYGlobalDefs.h>
@@ -1170,7 +1170,7 @@ char *LYKeycodeToString(int c,
     for (n = 0; n < TABLESIZE(named_keys); n++) {
 	if (named_keys[n].key == c) {
 	    named = TRUE;
-	    strcpy(buf, named_keys[n].name);
+	    LYStrNCpy(buf, named_keys[n].name, sizeof(buf) - 1);
 	    break;
 	}
     }
@@ -1259,7 +1259,7 @@ static char *pretty_html(int c)
 	    for (n = 0; n < TABLESIZE(table); n++) {
 		if (c == table[n].code) {
 		    found = TRUE;
-		    strcpy(dst, table[n].name);
+		    LYStrNCpy(dst, table[n].name, sizeof(dst) - 1);
 		    adj += (int) strlen(dst) - 1;
 		    dst += (int) strlen(dst);
 		    break;
@@ -1802,7 +1802,7 @@ char *key_for_func_ext(int lac,
 BOOLEAN LYisNonAlnumKeyname(int ch,
 			    int KeyName)
 {
-    if (ch < 0 || ch >= KEYMAP_SIZE)
+    if (ch < 0 || (ch + 1) >= KEYMAP_SIZE)
 	return (FALSE);
     if (ch > 0
 	&& strchr("0123456789\

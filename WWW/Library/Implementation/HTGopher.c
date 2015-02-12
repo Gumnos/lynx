@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTGopher.c,v 1.56 2012/11/17 01:33:36 tom Exp $
+ * $LynxId: HTGopher.c,v 1.60 2013/05/01 22:20:13 tom Exp $
  *
  *			GOPHER ACCESS				HTGopher.c
  *			=============
@@ -742,6 +742,7 @@ static void free_CSOfields(void)
  */
 static void interpret_cso_key(const char *key,
 			      char *buf,
+			      size_t bufsize,
 			      int *length,
 			      CSOformgen_context * ctx,
 			      HTStream *Target)
@@ -856,7 +857,7 @@ static void interpret_cso_key(const char *key,
 
 	while (*key && (*key != ')')) {
 	    buf[out++] = (*key++);
-	    if (out > sizeof(buf) - 2) {
+	    if (out > bufsize - 2) {
 		buf[out] = '\0';
 		(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		out = 0;
@@ -1087,6 +1088,7 @@ static int parse_cso_fields(char *buf,
 static int generate_cso_form(char *host,
 			     int port,
 			     char *buf,
+			     size_t bufsize,
 			     HTStream *Target)
 {
     int i, j, length;
@@ -1136,9 +1138,7 @@ static int generate_cso_form(char *host,
      */
     out = 0;
     buf[out] = '\0';
-    for (i = full_flag ? /***1***/ 0 : 0;
-	 ctemplate[i];
-	 i++) {
+    for (i = 0; ctemplate[i]; i++) {
 	/*
 	 * Search the current string for substitution, flagged by $(
 	 */
@@ -1159,7 +1159,7 @@ static int generate_cso_form(char *host,
 		 */
 		ctx.cur_line = i;
 		ctx.cur_off = j;
-		interpret_cso_key(key, buf, &length, &ctx, Target);
+		interpret_cso_key(key, buf, bufsize, &length, &ctx, Target);
 		i = ctx.cur_line;
 		j = ctx.cur_off;
 		line = ctemplate[i];
@@ -1202,7 +1202,7 @@ static int generate_cso_form(char *host,
 		 * Non-command text, add to output buffer.
 		 */
 		buf[out++] = line[j];
-		if (out > (sizeof(buf) - 3)) {
+		if (out > (bufsize - 3)) {
 		    buf[out] = '\0';
 		    (*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		    out = 0;
@@ -1421,7 +1421,7 @@ static int generate_cso_report(HTStream *Target)
 		    (*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 		}
 	    } else {
-		HTSprintf0(&buf, "<DD>%s\n", fname ? fname : rcode);
+		HTSprintf0(&buf, "<DD>%s\n", fname);
 		(*Target->isa->put_block) (Target, buf, (int) strlen(buf));
 	    }
 	}
@@ -1537,7 +1537,7 @@ static int HTLoadCSO(const char *arg,
     }
     anAnchor->safe = TRUE;
     if (isBEmpty(anAnchor->post_data)) {
-	generate_cso_form(host, port, buf, Target);
+	generate_cso_form(host, port, buf, sizeof(buf), Target);
 	(*Target->isa->_free) (Target);
 	FREE(host);
 	NETCLOSE(s);

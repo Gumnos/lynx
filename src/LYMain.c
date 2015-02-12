@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMain.c,v 1.238 2012/08/05 01:03:03 tom Exp $
+ * $LynxId: LYMain.c,v 1.243 2013/05/30 08:58:21 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTP.h>
@@ -150,6 +150,13 @@ LOCAL_EXECUTION_LINKS_ON_BUT_NOT_REMOTE;
 #if defined(LYNXCGI_LINKS) && !defined(VMS)	/* WebSter Mods -jkt */
 char *LYCgiDocumentRoot = NULL;	/* DOCUMENT_ROOT in the lynxcgi env */
 #endif /* LYNXCGI_LINKS */
+
+#ifdef TRACK_INTERNAL_LINKS
+BOOLEAN track_internal_links = TRUE;
+
+#else
+BOOLEAN track_internal_links = FALSE;
+#endif
 
 #ifdef REVERSE_CLEAR_SCREEN_PROBLEM
 BOOLEAN enable_scrollback = TRUE;
@@ -678,8 +685,9 @@ static void FatalProblem(int sig);
 #endif /* !VMS */
 
 #if defined(USE_COLOR_STYLE)
-char *lynx_lss_file2 = NULL;	/* from command-line options */
+int LYuse_color_style = TRUE;
 char *lynx_lss_file = NULL;	/* from config-file, etc. */
+static char *lynx_lss_file2 = NULL;	/* from command-line options */
 #endif
 
 #ifdef USE_DEFAULT_COLORS
@@ -2345,7 +2353,7 @@ void reload_read_cfg(void)
     }
     if (!save_rc(rcfp)) {
 	HTAlwaysAlert(NULL, OPTIONS_NOT_SAVED);
-	LYRemoveTemp(tempfile);
+	(void) LYRemoveTemp(tempfile);
 	FREE(tempfile);
 	return;			/* can not write the very own file :( */
     } {
@@ -2386,7 +2394,7 @@ void reload_read_cfg(void)
 	 */
 	rcfp = fopen(tempfile, "r");
 	read_rc(rcfp);
-	LYRemoveTemp(tempfile);
+	(void) LYRemoveTemp(tempfile);
 	FREE(tempfile);		/* done with it - kw */
 
 #ifdef USE_CHARSET_CHOICE
@@ -3470,6 +3478,12 @@ with -dump, format output as with -traversal, but to stdout"
       "incremental display stages with MessageSecs delay"
    ),
 #endif
+#ifdef USE_DEFAULT_COLORS
+   PARSE_SET(
+      "default_colors",	4|TOGGLE_ARG,		LYuse_default_colors,
+      "use terminal default foreground/background colors"
+   ),
+#endif
    PARSE_INT(
       "delay",		4|NEED_TIME_ARG,	DelaySecs,
       "=NNN\nset NNN-second delay at statusline message"
@@ -4251,7 +4265,9 @@ static BOOL parse_arg(char **argv,
      */
     if (*arg_name != '-'
 #if EXTENDED_OPTION_LOGIC
-	|| (no_options_further == TRUE && nof_index < (*countp))
+	|| ((no_options_further == TRUE)
+	    && (countp != 0)
+	    && (nof_index < (*countp)))
 #endif
 	) {
 #if EXTENDED_STARTFILE_RECALL

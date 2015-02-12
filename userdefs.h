@@ -1,5 +1,5 @@
 /*
- * $LynxId: userdefs.h,v 1.266 2011/06/06 00:35:56 tom Exp $
+ * $LynxId: userdefs.h,v 1.274 2013/06/12 09:20:28 tom Exp $
  *
  * Lynx - Hypertext navigation system
  *
@@ -1432,11 +1432,11 @@
  * the version definition with the Project Version on checkout.  Just
  * ignore it. - kw */
 /* $Format: "#define LYNX_VERSION \"$ProjectVersion$\""$ */
-#define LYNX_VERSION "2.8.8dev.14"
+#define LYNX_VERSION "2.8.8dev.16"
 #define LYNX_WWW_HOME "http://lynx.isc.org/"
 #define LYNX_WWW_DIST "http://lynx.isc.org/current/"
 /* $Format: "#define LYNX_DATE \"$ProjectDate$\""$ */
-#define LYNX_DATE "Wed, 22 Aug 2012 03:53:37 -0700"
+#define LYNX_DATE "Mon, 29 Jul 2013 14:38:35 -0700"
 #define LYNX_DATE_OFF 5		/* truncate the automatically-generated date */
 #define LYNX_DATE_LEN 11	/* truncate the automatically-generated date */
 
@@ -1826,5 +1826,26 @@
  *
  * This ends the section specific to anonymous accounts.
  */
+
+/*****************************
+ * These can be uncommmented to get more detail when debugging changes to
+ * the color-style and layout logic.
+ */
+/*#define DEBUG_APPCH 1*/
+/*#define DEBUG_STYLE 1*/
+
+#ifdef DEBUG_STYLE
+#define CTRACE_STYLE(p) CTRACE2(TRACE_STYLE, p)
+#else
+#define CTRACE_STYLE(p)		/* nothing */
+#endif
+
+/* #define DEBUG_SPLITLINE */
+
+#ifdef DEBUG_SPLITLINE
+#define CTRACE_SPLITLINE(p)	CTRACE(p)
+#else
+#define CTRACE_SPLITLINE(p)	/*nothing */
+#endif
 
 #endif /* USERDEFS_H */

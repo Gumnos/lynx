@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTFTP.c,v 1.106 2012/11/15 23:51:23 tom Exp $
+ * $LynxId: HTFTP.c,v 1.121 2013/05/06 00:09:50 tom Exp $
  *
  *			File Transfer Protocol (FTP) Client
  *			for a WorldWideWeb browser
@@ -351,9 +351,13 @@ char *HTVMS_name(const char *nn,
 	HTSprintf0(&vmsname, "%s%s:[%s]%s",
 		   nodename, filename + 1, second + 1, last + 1);
 	*second = *last = '/';	/* restore filename */
-	for (p = strchr(vmsname, '['); *p != ']'; p++)
-	    if (*p == '/')
-		*p = '.';	/* Convert dir sep.  to dots */
+	if ((p = strchr(vmsname, '[')) != 0) {
+	    while (*p != '\0' && *p != ']') {
+		if (*p == '/')
+		    *p = '.';	/* Convert dir sep.  to dots */
+		++p;
+	    }
+	}
     }
     FREE(nodename);
     FREE(filename);
@@ -764,6 +768,15 @@ static void set_unix_dirstyle(eServerType *ServerType, BOOLEAN *UseList)
     }
 }
 
+#define CheckForInterrupt(msg) \
+	if (status == HT_INTERRUPTED) { \
+	    CTRACE((tfp, "HTFTP: Interrupted %s.\n", msg)); \
+	    _HTProgress(CONNECTION_INTERRUPTED); \
+	    NETCLOSE(control->socket); \
+	    control->socket = -1; \
+	    return HT_INTERRUPTED; \
+	}
+
 /*	Get a valid connection to the host
  *	----------------------------------
  *
@@ -821,13 +834,13 @@ static int get_connection(const char *arg,
     }
     con->socket = -1;
 
-    if (!arg)
+    if (isEmpty(arg)) {
+	free(con);
 	return -1;		/* Bad if no name specified     */
-    if (!*arg)
-	return -1;		/* Bad if name had zero length  */
+    }
 
-/* Get node name:
-*/
+    /* Get node name:
+     */
     CTRACE((tfp, "get_connection(%s)\n", arg));
     {
 	char *p1 = HTParse(arg, "", PARSE_HOST);
@@ -914,17 +927,11 @@ static int get_connection(const char *arg,
     HTInitInput(control->socket);
     init_help_message_cache();	/* Clear the login message buffer. */
 
-/*	Now we log in		Look up username, prompt for pw.
-*/
+    /*  Now we log in           Look up username, prompt for pw.
+     */
     status = response((char *) 0);	/* Get greeting */
+    CheckForInterrupt("at beginning of login");
 
-    if (status == HT_INTERRUPTED) {
-	CTRACE((tfp, "HTFTP: Interrupted at beginning of login.\n"));
-	_HTProgress(CONNECTION_INTERRUPTED);
-	NETCLOSE(control->socket);
-	control->socket = -1;
-	return HT_INTERRUPTED;
-    }
     server_type = GENERIC_SERVER;	/* reset */
     if (status == 2) {		/* Send username */
 	char *cp;		/* look at greeting text */
@@ -947,13 +954,7 @@ static int get_connection(const char *arg,
 			    ? username
 			    : "anonymous");
 
-	if (status == HT_INTERRUPTED) {
-	    CTRACE((tfp, "HTFTP: Interrupted while sending username.\n"));
-	    _HTProgress(CONNECTION_INTERRUPTED);
-	    NETCLOSE(control->socket);
-	    control->socket = -1;
-	    return HT_INTERRUPTED;
-	}
+	CheckForInterrupt("while sending username");
     }
     if (status == 3) {		/* Send password */
 	if (password) {
@@ -1001,26 +1002,13 @@ static int get_connection(const char *arg,
 	}
 	status = response(command);
 	FREE(command);
-	if (status == HT_INTERRUPTED) {
-	    CTRACE((tfp, "HTFTP: Interrupted while sending password.\n"));
-	    _HTProgress(CONNECTION_INTERRUPTED);
-	    NETCLOSE(control->socket);
-	    control->socket = -1;
-	    return HT_INTERRUPTED;
-	}
+	CheckForInterrupt("while sending password");
     }
     FREE(username);
 
     if (status == 3) {
 	status = send_cmd_1("ACCT noaccount");
-	if (status == HT_INTERRUPTED) {
-	    CTRACE((tfp, "HTFTP: Interrupted while sending password.\n"));
-	    _HTProgress(CONNECTION_INTERRUPTED);
-	    NETCLOSE(control->socket);
-	    control->socket = -1;
-	    return HT_INTERRUPTED;
-	}
-
+	CheckForInterrupt("while sending password");
     }
     if (status != 2) {
 	CTRACE((tfp, "HTFTP: Login fail: %s", response_text));
@@ -1127,20 +1115,6 @@ static int get_connection(const char *arg,
 	get_ftp_pwd(&server_type, &use_list);
     }
 
-/*  Now we inform the server of the port number we will listen on
-*/
-#ifdef NOTREPEAT_PORT
-    {
-	int status = response(port_command);
-
-	if (status != 2) {
-	    if (control->socket)
-		close_connection(control->socket);
-	    return -status;	/* Bad return */
-	}
-	CTRACE((tfp, "HTFTP: Port defined.\n"));
-    }
-#endif /* NOTREPEAT_PORT */
     return con->socket;		/* Good return */
 }
 
@@ -1319,8 +1293,10 @@ static int get_listen_socket(void)
 	    status = getsockname(control->socket,
 				 (struct sockaddr *) &soc_address,
 				 &address_length);
-	if (status < 0)
+	if (status < 0) {
+	    close(new_socket);
 	    return HTInetStatus("getsockname");
+	}
 #ifdef INET6
 	CTRACE((tfp, "HTFTP: This host is %s\n",
 		HTInetString((void *) soc_in)));
@@ -1349,8 +1325,10 @@ static int get_listen_socket(void)
 	    /* Cast to generic sockaddr */
 			  SOCKADDR_LEN(soc_address)
 		);
-	if (status < 0)
+	if (status < 0) {
+	    close(new_socket);
 	    return HTInetStatus("bind");
+	}
 
 	address_length = sizeof(soc_address);
 #ifdef SOCKS
@@ -1363,8 +1341,10 @@ static int get_listen_socket(void)
 	    status = getsockname(new_socket,
 				 (struct sockaddr *) &soc_address,
 				 &address_length);
-	if (status < 0)
+	if (status < 0) {
+	    close(new_socket);
 	    return HTInetStatus("getsockname");
+	}
     }
 #endif /* POLL_PORTS */
 
@@ -1472,15 +1452,15 @@ static void set_years_and_date(void)
     char day[8], month[8], date[12];
     time_t NowTime;
     int i;
+    char *printable;
 
     NowTime = time(NULL);
-    StrNCpy(day, (char *) ctime(&NowTime) + 8, 2);
-    day[2] = '\0';
+    printable = ctime(&NowTime);
+    LYStrNCpy(day, printable + 8, 2);
     if (day[0] == ' ') {
 	day[0] = '0';
     }
-    StrNCpy(month, (char *) ctime(&NowTime) + 4, 3);
-    month[3] = '\0';
+    LYStrNCpy(month, printable + 4, 3);
     for (i = 0; i < 12; i++) {
 	if (!strcasecomp(month, months[i])) {
 	    break;
@@ -1489,8 +1469,7 @@ static void set_years_and_date(void)
     i++;
     sprintf(date, "9999%02d%.2s", i, day);
     TheDate = atoi(date);
-    strcpy(ThisYear, (char *) ctime(&NowTime) + 20);
-    ThisYear[4] = '\0';
+    LYStrNCpy(ThisYear, printable + 20, 4);
     sprintf(LastYear, "%d", (atoi(ThisYear) - 1));
     HaveYears = TRUE;
 }
@@ -1631,8 +1610,7 @@ static void parse_eplf_line(char *line,
 	    while (*(++cp) && (*cp != ','))
 		secs = (secs * 10) + (*cp - '0');
 	    secs += base;	/* assumes that time_t is #seconds */
-	    strcpy(ct, ctime(&secs));
-	    ct[24] = 0;
+	    LYStrNCpy(ct, ctime(&secs), 24);
 	    StrAllocCopy(info->date, ct);
 	    break;
 	case '/':
@@ -1790,7 +1768,7 @@ static void parse_dls_line(char *line,
 		StrAllocCopy(entry_info->type, "");
 	} else {
 	    StrAllocCopy(entry_info->filename, line);
-	    if (cps && cps != line && *(cps - 1) == '/')
+	    if (cps != line && *(cps - 1) == '/')
 		StrAllocCopy(entry_info->type, ENTRY_IS_DIRECTORY);
 	    else
 		StrAllocCopy(entry_info->type, "");
@@ -2345,7 +2323,7 @@ static EntryInfo *parse_dir_entry(char *entry,
 	    /* if still unchanged... */
 	    parse_dls_line(entry, entry_info, pspilledname);
 
-	    if (!entry_info->filename || *entry_info->filename == '\0') {
+	    if (isEmpty(entry_info->filename)) {
 		entry_info->display = FALSE;
 		return (entry_info);
 	    }
@@ -2577,7 +2555,11 @@ static EntryInfo *parse_dir_entry(char *entry,
     }
 #endif
 
-    if (entry_info->filename && strlen(entry_info->filename) > 3) {
+    if (isEmpty(entry_info->filename)) {
+	entry_info->display = FALSE;
+	return (entry_info);
+    }
+    if (strlen(entry_info->filename) > 3) {
 	if (((cp = strrchr(entry_info->filename, '.')) != NULL &&
 	     0 == strncasecomp(cp, ".me", 3)) &&
 	    (cp[3] == '\0' || cp[3] == ';')) {
@@ -2620,133 +2602,99 @@ static EntryInfo *parse_dir_entry(char *entry,
     return (entry_info);
 }
 
+static void formatDate(char target[16], EntryInfo *entry)
+{
+    char temp[8], month[4];
+    int i;
+
+    /*
+     * Set up for sorting in reverse chronological order. - FM
+     */
+    if (entry->date[9] == ':') {
+	strcpy(target, "9999");
+	LYStrNCpy(temp, &entry->date[7], 5);
+	if (temp[0] == ' ') {
+	    temp[0] = '0';
+	}
+    } else {
+	LYStrNCpy(target, &entry->date[8], 4);
+	strcpy(temp, "00:00");
+    }
+    LYStrNCpy(month, entry->date, 3);
+    for (i = 0; i < 12; i++) {
+	if (!strcasecomp(month, months[i])) {
+	    break;
+	}
+    }
+    i++;
+    sprintf(month, "%02d", i);
+    strcat(target, month);
+    StrNCat(target, &entry->date[4], 2);
+    if (target[6] == ' ' || target[6] == HT_NON_BREAK_SPACE) {
+	target[6] = '0';
+    }
+
+    /* If no year given, assume last year if it would otherwise be in the
+     * future by more than one day.  The one day tolerance is to account for a
+     * possible timezone difference. - kw
+     */
+    if (target[0] == '9' && atoi(target) > TheDate + 1) {
+	for (i = 0; i < 4; i++) {
+	    target[i] = LastYear[i];
+	}
+    }
+    strcat(target, temp);
+}
+
 static int compare_EntryInfo_structs(EntryInfo *entry1, EntryInfo *entry2)
 {
-    int i, status;
-    char date1[16], date2[16], time1[8], time2[8], month[4];
+    int status;
+    char date1[16], date2[16];
+    int result = strcmp(entry1->filename, entry2->filename);
 
     switch (HTfileSortMethod) {
     case FILE_BY_SIZE:
 	/* both equal or both 0 */
-	if (entry1->size == entry2->size)
-	    return (strcmp(entry1->filename, entry2->filename));
-	else if (entry1->size > entry2->size)
-	    return (1);
-	else
-	    return (-1);
+	if (entry1->size > entry2->size)
+	    result = 1;
+	else if (entry1->size < entry2->size)
+	    result = -1;
+	break;
 
     case FILE_BY_TYPE:
 	if (entry1->type && entry2->type) {
 	    status = strcasecomp(entry1->type, entry2->type);
 	    if (status)
-		return (status);
-	    /* else fall to filename comparison */
+		result = status;
 	}
-	return (strcmp(entry1->filename, entry2->filename));
+	break;
 
     case FILE_BY_DATE:
-	if (entry1->date && entry2->date) {
+	if (entry1->date && entry2->date &&
+	    strlen(entry1->date) == 12 &&
+	    strlen(entry2->date) == 12) {
 	    /*
-	     * Make sure we have the correct length. - FM
-	     */
-	    if (strlen(entry1->date) != 12 || strlen(entry2->date) != 12) {
-		return (strcmp(entry1->filename, entry2->filename));
-	    }
-	    /*
-	     * Set the years and date,
-	     * if we don't have them yet.
+	     * Set the years and date, if we don't have them yet.
 	     */
 	    if (!HaveYears) {
 		set_years_and_date();
 	    }
-	    /*
-	     * Set up for sorting in reverse
-	     * chronological order. - FM
-	     */
-	    if (entry1->date[9] == ':') {
-		strcpy(date1, "9999");
-		strcpy(time1, &entry1->date[7]);
-		if (time1[0] == ' ') {
-		    time1[0] = '0';
-		}
-	    } else {
-		strcpy(date1, &entry1->date[8]);
-		strcpy(time1, "00:00");
-	    }
-	    StrNCpy(month, entry1->date, 3);
-	    month[3] = '\0';
-	    for (i = 0; i < 12; i++) {
-		if (!strcasecomp(month, months[i])) {
-		    break;
-		}
-	    }
-	    i++;
-	    sprintf(month, "%02d", i);
-	    strcat(date1, month);
-	    StrNCat(date1, &entry1->date[4], 2);
-	    date1[8] = '\0';
-	    if (date1[6] == ' ' || date1[6] == HT_NON_BREAK_SPACE) {
-		date1[6] = '0';
-	    }
-	    /* If no year given, assume last year if it would otherwise be in
-	     * the future by more than one day.  The one day tolerance is to
-	     * account for a possible timezone difference.  - kw
-	     */
-	    if (date1[0] == '9' && atoi(date1) > TheDate + 1) {
-		for (i = 0; i < 4; i++) {
-		    date1[i] = LastYear[i];
-		}
-	    }
-	    strcat(date1, time1);
-	    if (entry2->date[9] == ':') {
-		strcpy(date2, "9999");
-		strcpy(time2, &entry2->date[7]);
-		if (time2[0] == ' ') {
-		    time2[0] = '0';
-		}
-	    } else {
-		strcpy(date2, &entry2->date[8]);
-		strcpy(time2, "00:00");
-	    }
-	    StrNCpy(month, entry2->date, 3);
-	    month[3] = '\0';
-	    for (i = 0; i < 12; i++) {
-		if (!strcasecomp(month, months[i])) {
-		    break;
-		}
-	    }
-	    i++;
-	    sprintf(month, "%02d", i);
-	    strcat(date2, month);
-	    StrNCat(date2, &entry2->date[4], 2);
-	    date2[8] = '\0';
-	    if (date2[6] == ' ' || date2[6] == HT_NON_BREAK_SPACE) {
-		date2[6] = '0';
-	    }
-	    /* If no year given, assume last year if it would otherwise be in
-	     * the future by more than one day.  The one day tolerance is to
-	     * account for a possible timezone difference.  - kw
-	     */
-	    if (date2[0] == '9' && atoi(date2) > TheDate + 1) {
-		for (i = 0; i < 4; i++) {
-		    date2[i] = LastYear[i];
-		}
-	    }
-	    strcat(date2, time2);
+	    formatDate(date1, entry1);
+	    formatDate(date2, entry2);
 	    /*
 	     * Do the comparison. - FM
 	     */
 	    status = strcasecomp(date2, date1);
 	    if (status)
-		return (status);
-	    /* else fall to filename comparison */
+		result = status;
 	}
-	return (strcmp(entry1->filename, entry2->filename));
+	break;
 
     case FILE_BY_NAME:
     default:
-	return (strcmp(entry1->filename, entry2->filename));
+	break;
     }
+    return result;
 }
 
 #ifdef LONG_LIST
@@ -2866,7 +2814,8 @@ static void LYListFmtParse(const char *fmtstr,
 	    FormatStr(&buf, start, data->filename);
 	    PUTS(buf);
 	    END(HTML_A);
-	    *buf = '\0';
+	    if (buf != 0)
+		*buf = '\0';
 	    if (c != 'A' && data->linkname != 0) {
 		PUTS(" -> ");
 		PUTS(data->linkname);
@@ -2980,6 +2929,7 @@ static void LYListFmtParse(const char *fmtstr,
     FREE(str);
 }
 #endif /* LONG_LIST */
+
 /*	Read a directory into an hypertext object from the data socket
  *	--------------------------------------------------------------
  *
@@ -3080,6 +3030,7 @@ static int read_directory(HTParentAnchor *parent,
 		    ABORT_TARGET;
 		    HTBTreeAndObject_free(bt);
 		    FREE(spilledname);
+		    HTChunkFree(chunk);
 		    return HT_INTERRUPTED;
 		}
 	    }
@@ -3101,6 +3052,7 @@ static int read_directory(HTParentAnchor *parent,
 			ABORT_TARGET;
 			HTBTreeAndObject_free(bt);
 			FREE(spilledname);
+			HTChunkFree(chunk);
 			return HT_INTERRUPTED;
 		    }
 		} else if ((char) ic == CR || (char) ic == LF) {	/* Terminator? */
@@ -3433,7 +3385,7 @@ static int setup_connection(const char *name,
 		    ;		/* null body */
 		}
 		for ( /*nothing */ ;
-		     *p && *p && *p != '(';
+		     *p && *p != '(';
 		     p++) {	/*) */
 		    ;		/* null body */
 		}
@@ -4153,23 +4105,23 @@ int HTFTPLoad(const char *name,
 		format = HTCharsetFormat(format, anchor, -1);
 		StrAllocCopy(anchor->content_type, format->name);
 		format = HTAtom_for("www/compressed");
+	    }
 
-		switch (cft) {
-		case cftCompress:
-		    StrAllocCopy(anchor->content_encoding, "x-compress");
-		    break;
-		case cftGzip:
-		    StrAllocCopy(anchor->content_encoding, "x-gzip");
-		    break;
-		case cftDeflate:
-		    StrAllocCopy(anchor->content_encoding, "x-deflate");
-		    break;
-		case cftBzip2:
-		    StrAllocCopy(anchor->content_encoding, "x-bzip2");
-		    break;
-		case cftNone:
-		    break;
-		}
+	    switch (cft) {
+	    case cftCompress:
+		StrAllocCopy(anchor->content_encoding, "x-compress");
+		break;
+	    case cftGzip:
+		StrAllocCopy(anchor->content_encoding, "x-gzip");
+		break;
+	    case cftDeflate:
+		StrAllocCopy(anchor->content_encoding, "x-deflate");
+		break;
+	    case cftBzip2:
+		StrAllocCopy(anchor->content_encoding, "x-bzip2");
+		break;
+	    case cftNone:
+		break;
 	    }
 	}
 	FREE(FileName);
@@ -4190,8 +4142,9 @@ int HTFTPLoad(const char *name,
 		outstanding = 0;
 	    CTRACE((tfp, "HTFTP: Closing data socket %d\n", data_soc));
 	    status = NETCLOSE(data_soc);
-	} else
+	} else {
 	    status = 2;		/* data_soc already closed in HTCopy - kw */
+	}
 
 	if (status < 0 && rv != HT_INTERRUPTED && rv != -1) {
 	    (void) HTInetStatus("close");	/* Comment only */
@@ -4202,10 +4155,9 @@ int HTFTPLoad(const char *name,
 		    data_soc = -1;	/* invalidate it */
 		    init_help_message_cache();	/* to free memory */
 		    return HTLoadError(sink, 500, response_text);
-		} else if (status <= 0) {
+		} else if (status == 2 && !StrNCmp(response_text, "221", 3)) {
 		    outstanding = 0;
-		} else if (status == 2 && !StrNCmp(response_text, "221", 3))
-		    outstanding = 0;
+		}
 	    }
 	}
 	final_status = HT_LOADED;

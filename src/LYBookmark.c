@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYBookmark.c,v 1.71 2012/02/09 13:01:39 tom Exp $
+ * $LynxId: LYBookmark.c,v 1.74 2013/05/02 10:43:29 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTAlert.h>
@@ -153,7 +153,7 @@ static const char *convert_mosaic_bookmark_file(const char *filename_buffer)
     char *buf = NULL;
     int line = -2;
 
-    LYRemoveTemp(newfile);
+    (void) LYRemoveTemp(newfile);
     if ((nfp = LYOpenTemp(newfile, HTML_SUFFIX, "w")) == NULL) {
 	LYMBM_statusline(NO_TEMP_FOR_HOTLIST);
 	LYSleepAlert();
@@ -321,8 +321,10 @@ void save_bookmark_link(const char *address,
 	have8bit(Title) && (!LYHaveCJKCharacterSet)) {
 	char *p = title_convert8bit(Title);
 
-	FREE(Title);
-	Title = p;
+	if (p != 0) {
+	    FREE(Title);
+	    Title = p;
+	}
     }
 
     /*
@@ -468,7 +470,6 @@ void remove_bookmark_link(int cur,
 
 #ifdef UNIX
     struct stat stat_buf;
-    mode_t mode;
     BOOLEAN regular = FALSE;
 #endif /* UNIX */
 #endif /* VMS */
@@ -500,8 +501,7 @@ void remove_bookmark_link(int cur,
      */
     if (stat(filename_buffer, &stat_buf) == 0) {
 	regular = (BOOLEAN) (S_ISREG(stat_buf.st_mode) && stat_buf.st_nlink == 1);
-	mode = ((stat_buf.st_mode & HIDE_CHMOD) | 0600);	/* make it writable */
-	(void) chmod(newfile, mode);
+	(void) chmod(newfile, HIDE_CHMOD);
 	if ((nfp = LYReopenTemp(newfile)) == NULL) {
 	    (void) LYCloseInput(fp);
 	    HTAlert(BOOKTEMP_REOPEN_FAIL_FOR_DEL);
@@ -602,7 +602,7 @@ void remove_bookmark_link(int cur,
      */
     if (!regular) {
 	if (LYCopyFile(newfile, filename_buffer) == 0) {
-	    LYRemoveTemp(newfile);
+	    (void) LYRemoveTemp(newfile);
 	    return;
 	}
 	LYSleepAlert();		/* give a chance to see error from cp - kw */
@@ -684,7 +684,7 @@ void remove_bookmark_link(int cur,
 	HTUserMsg2(gettext("File may be recoverable from %s during this session"),
 		   newfile);
     } else {
-	LYRemoveTemp(newfile);
+	(void) LYRemoveTemp(newfile);
     }
 }
 
@@ -1065,7 +1065,7 @@ static char *title_convert8bit(const char *Title)
 	if (UCH(*temp) <= 127) {
 	    StrAllocCat(comment, temp);
 	    StrAllocCat(ncr, temp);
-	} else {
+	} else if (charset_out >= 0) {
 	    long unicode;
 	    char replace_buf[32];
 

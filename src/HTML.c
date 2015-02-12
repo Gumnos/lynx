@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTML.c,v 1.155 2012/02/10 18:36:39 tom Exp $
+ * $LynxId: HTML.c,v 1.161 2013/06/12 09:18:40 tom Exp $
  *
  *		Structured stream to Rich hypertext converter
  *		============================================
@@ -484,13 +484,6 @@ void HTML_put_character(HTStructured * me, int c)
 
     if (c == '\n' || c == '\t') {
 	HText_setLastChar(me->text, ' ');	/* set it to a generic separator */
-
-	/*
-	 * \r's are ignored.  In order to keep collapsing spaces correctly we
-	 * must default back to the previous separator if there was one.
-	 */
-    } else if (c == '\r' && HText_getLastChar(me->text) == ' ') {
-	HText_setLastChar(me->text, ' ');	/* set it to a generic separator */
     } else {
 	HText_setLastChar(me->text, c);
     }
@@ -689,7 +682,7 @@ void HTML_write(HTStructured * me, const char *s, int l)
  *	request (doesn't have a URL from which the document can be retrieved
  *	with GET), and can only be used from within that document.
  *
- * *If DONT_TRACK_INTERNAL_LINKS is not defined, we keep track of whether a
+ * *If track_internal_links is true, we keep track of whether a
  *  link destination was given as an internal link.  This information is
  *  recorded in the type of the link between anchor objects, and is available
  *  to the HText object and the mainloop from there.  URL References to
@@ -705,7 +698,7 @@ void HTML_write(HTStructured * me, const char *s, int l)
  *  e. HREF=""		      -> [...]/mypath/mydoc.htm      (marked internal)
  *  f. HREF="#frag"	      -> [...]/mypath/mydoc.htm#frag (marked internal)
  *
- * *If DONT_TRACK_INTERNAL_LINKS is defined, URL-less URL-References are
+ * *If track_internal_links is false, URL-less URL-References are
  *  resolved differently from URL-References with a non-empty URL (using the
  *  current stream's retrieval address instead of the base), but we make no
  *  further distinction.  Resolution is then as in the examples above, execept
@@ -724,11 +717,12 @@ void HTML_write(HTStructured * me, const char *s, int l)
    locally here, don't confuse with LYinternal_flag which is for
    overriding non-caching similar to LYoverride_no_cache. - kw */
 #define CHECK_FOR_INTERN(flag,s) \
-   	flag = (BOOLEAN) ((s && (*s=='#' || *s=='\0')) ? TRUE : FALSE)
+   	flag = (BOOLEAN) (((s) && (*(s)=='#' || *(s)=='\0')) ? TRUE : FALSE)
 
 /* Last argument to pass to HTAnchor_findChildAndLink() calls,
    just an abbreviation. - kw */
-#define INTERN_LT (HTLinkType *)(intern_flag ? HTInternalLink : NULL)
+#define INTERN_CHK(flag) (HTLinkType *)((flag) ? HTInternalLink : NULL)
+#define INTERN_LT         INTERN_CHK(intern_flag)
 
 #ifdef USE_COLOR_STYLE
 static char *Style_className = 0;
@@ -891,7 +885,7 @@ static void LYHandleFIG(HTStructured * me, const BOOL *present,
 		me->CurrentA = HTAnchor_findChildAndLink(me->node_anchor,	/* Parent */
 							 NULL,	/* Tag */
 							 href,	/* Addresss */
-							 INTERN_LT);	/* Type */
+							 INTERN_CHK(*intern_flag));	/* Type */
 		HText_beginAnchor(me->text, me->inUnderline, me->CurrentA);
 		if (me->inBoldH == FALSE)
 		    HText_appendCharacter(me->text, LY_BOLD_START_CHAR);
@@ -2392,10 +2386,14 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	break;
 
     case HTML_ADDRESS:
-	change_paragraph_style(me, styles[ElementNumber]);
-	UPDATE_STYLE;
-	if (me->sp->tag_number == (int) ElementNumber)
-	    LYEnsureDoubleSpace(me);
+	if (me->List_Nesting_Level < 0) {
+	    change_paragraph_style(me, styles[ElementNumber]);
+	    UPDATE_STYLE;
+	    if (me->sp->tag_number == (int) ElementNumber)
+		LYEnsureDoubleSpace(me);
+	} else {
+	    LYHandlePlike(me, present, value, include, -1, TRUE);
+	}
 	CHECK_ID(HTML_ADDRESS_ID);
 	break;
 
@@ -5620,10 +5618,6 @@ static int HTML_start_element(HTStructured * me, int element_number,
  *	stack for an element with a defined style. (In fact, the styles
  *	should be linked to the whole stack not just the top one.)
  *	TBL 921119
- *
- *	We don't turn on "CAREFUL" check because the parser produces
- *	(internal code errors apart) good nesting.  The parser checks
- *	incoming code errors, not this module.
  */
 static int HTML_end_element(HTStructured * me, int element_number,
 			    char **include)
@@ -5681,9 +5675,6 @@ static int HTML_end_element(HTStructured * me, int element_number,
 		(me->sp->tag_number < 0) ? "*invalid tag*" :
 		(me->sp->tag_number >= HTML_ELEMENTS) ? "special tag" :
 		HTML_dtd.tags[me->sp->tag_number].name));
-#ifdef CAREFUL			/* parser assumed to produce good nesting */
-	/* panic */
-#endif /* CAREFUL */
     }
 
     /*
@@ -7841,7 +7832,7 @@ static void CacheThru_do_free(HTStream *me)
     if (me->anchor->source_cache_file) {
 	CTRACE((tfp, "SourceCacheWriter: Removing previous file %s\n",
 		me->anchor->source_cache_file));
-	LYRemoveTemp(me->anchor->source_cache_file);
+	(void) LYRemoveTemp(me->anchor->source_cache_file);
 	FREE(me->anchor->source_cache_file);
     }
     if (me->anchor->source_cache_chunk) {
@@ -7869,7 +7860,7 @@ static void CacheThru_do_free(HTStream *me)
 		HTAlert(gettext("Source cache error - disk full?"));
 		source_cache_file_error = TRUE;
 	    }
-	    LYRemoveTemp(me->filename);
+	    (void) LYRemoveTemp(me->filename);
 	    me->anchor->source_cache_file = NULL;
 	}
     } else if (me->status != HT_OK) {
@@ -7908,7 +7899,7 @@ static void CacheThru_abort(HTStream *me, HTError e)
 	if (me->filename) {
 	    CTRACE((tfp, "SourceCacheWriter: Removing active file %s\n",
 		    me->filename));
-	    LYRemoveTemp(me->filename);
+	    (void) LYRemoveTemp(me->filename);
 	    FREE(me->filename);
 	}
 	if (me->chunk) {

@@ -1,4 +1,4 @@
-/* $LynxId: LYForms.c,v 1.98 2012/02/12 17:40:17 tom Exp $ */
+/* $LynxId: LYForms.c,v 1.103 2013/05/04 12:58:54 tom Exp $ */
 #include <HTUtils.h>
 #include <HTCJK.h>
 #include <HTTP.h>
@@ -49,6 +49,9 @@ static char **options_list(OptionType * opt_ptr)
 	if (pass == 0) {
 	    len++;
 	    result = typecallocn(char *, len);
+
+	    if (result == 0)
+		outofmem(__FILE__, "options_list");
 	} else {
 	    result[len] = 0;
 	}
@@ -65,8 +68,8 @@ int change_form_link_ex(int cur,
 			int redraw_only)
 {
     FormInfo *form = links[cur].l_form;
-    char *link_name = form->name;
-    char *link_value = form->value;
+    char *link_name;
+    char *link_value;
     int newdoc_changed = 0;
     int c = DO_NOTHING;
     int title_adjust = (no_title ? -TITLE_LINES : 0);
@@ -78,6 +81,8 @@ int change_form_link_ex(int cur,
     if (form == NULL) {
 	return (c);
     }
+    link_name = form->name;
+    link_value = form->value;
     my_data = options_list(form->select_list);
 
     /*
@@ -385,6 +390,10 @@ static int form_getstr(int cur,
      * Get the initial position of the cursor.
      */
     LYGetYX(startline, startcol);
+    if (startline < 0)
+	startline = 0;
+    if (startcol < 0)
+	startcol = 0;
     if ((startcol + form->size) > LYcolLimit)
 	far_col = LYcolLimit;
     else
@@ -758,17 +767,23 @@ static int form_getstr(int cur,
 		       so we deduce it ourselves.  We don't have the info
 		       to do it inside LYLineEdit().
 		       This should work for prompts too.  */
-		    if ((action != LYE_BACK_LL && action != LYE_FORW_RL)
-			|| (cur >= 0
-			    && cur < nlinks
-			    && (action == LYE_FORW_RL
-				? cur < nlinks - 1
-				: cur > 0)
-			    && links[cur + ((action == LYE_FORW_RL)
-					    ? 1
-					    : -1)].ly
-			    == links[cur].ly))
+		    switch (action) {
+		    case LYE_BACK_LL:
+			if (cur > 0
+			    && links[cur - 1].ly == links[cur].ly) {
+			    goto breakfor;
+			}
+			break;
+		    case LYE_FORW_RL:
+			if (cur >= 0
+			    && cur < nlinks - 1
+			    && links[cur + 1].ly == links[cur].ly) {
+			    goto breakfor;
+			}
+			break;
+		    default:
 			goto breakfor;
+		    }
 		}
 #ifdef SUPPORT_MULTIBYTE_EDIT
 		if (rc == 0) {

@@ -1,4 +1,4 @@
-dnl $LynxId: configure.in,v 1.244 2012/11/09 10:28:16 tom Exp $
+dnl $LynxId: configure.in,v 1.247 2013/05/01 08:54:16 tom Exp $
 dnl
 dnl Process this file with autoconf to produce a configure script.
 dnl
@@ -7,7 +7,7 @@ dnl by T.E.Dickey <dickey@invisible-island.net>
 dnl and Jim Spath <jspath@mail.bcpl.lib.md.us>
 dnl
 dnl ---------------------------------------------------------------------------
-dnl Copyright 1997-2010,2011 by Thomas E. Dickey
+dnl Copyright 1997-2012,2013 by Thomas E. Dickey
 dnl 
 dnl Permission to use, copy, modify, and distribute this software and its
 dnl documentation for any purpose and without fee is hereby granted,
@@ -29,7 +29,7 @@ dnl ---------------------------------------------------------------------------
 dnl
 dnl ask PRCS to plug-in the project-version for the configure-script.
 dnl $Format: "AC_REVISION($ProjectVersion$)"$
-AC_REVISION(2.8.8dev.15)
+AC_REVISION(2.8.8dev.16)
 
 # Save the original $CFLAGS so we can distinguish whether the user set those
 # in the environment, or whether autoconf added -O and -g options:
@@ -64,7 +64,7 @@ AC_ARG_PROGRAM
 PACKAGE=lynx
 dnl ask PRCS to plug-in the project-version for the packages.
 # $Format: "VERSION=$ProjectVersion$"$
-VERSION=2.8.8dev.15
+VERSION=2.8.8dev.16
 
 AC_SUBST(PACKAGE)
 AC_SUBST(VERSION)
@@ -767,6 +767,7 @@ CF_CHECK_SIZEOF(int,4)
 CF_CHECK_SIZEOF(long,4)
 CF_CHECK_SIZEOF(off_t,4)
 CF_CHECK_SIZEOF(time_t,4)
+AC_CHECK_TYPE(intptr_t, long)
 
 dnl --------------------------------------------------------------------------
 dnl Checks for library units
@@ -1179,7 +1180,7 @@ CF_ARG_ENABLE(internal-links,
 	[use_internal_links=yes],
 	[use_internal_links=no])
 AC_MSG_RESULT($use_internal_links)
-test $use_internal_links = no && AC_DEFINE(DONT_TRACK_INTERNAL_LINKS,1,[Define to 1 if you want internal-links feature])
+test $use_internal_links = yes && AC_DEFINE(TRACK_INTERNAL_LINKS,1,[Define to 1 if you want internal-links feature])
 
 dnl --------------------------------------------------------------------------
 AC_MSG_CHECKING(if you want to fork NSL requests)

@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMail.c,v 1.90 2012/07/07 13:48:13 tom Exp $
+ * $LynxId: LYMail.c,v 1.94 2013/05/05 21:41:23 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTParse.h>
@@ -108,7 +108,7 @@ static void extract_field(char **dst,
 	}
 	cp++;
     }
-    CTRACE((tfp, "extract_field(%s) = '%s'\n", keyword, NONNULL(*dst)));
+    CTRACE((tfp, "extract_field(%s) = '%s'\n", keyword, *dst));
 }
 
 /*
@@ -134,8 +134,7 @@ static void extract_subject(char *dst,
 	    *cp1 = '\0';
 	}
 	if (*cp) {
-	    StrNCpy(dst, cp, MAX_SUBJECT);
-	    dst[MAX_SUBJECT] = '\0';
+	    LYStrNCpy(dst, cp, MAX_SUBJECT);
 	    SafeHTUnEscape(dst);
 	}
 	if (cp1) {
@@ -817,8 +816,7 @@ void mailform(const char *mailto_address,
 	i = 0;
 	len = (int) strlen(mailto_content);
 	while (len > 78) {
-	    StrNCpy(buf, &mailto_content[i], 78);
-	    buf[78] = '\0';
+	    LYStrNCpy(buf, &mailto_content[i], 78);
 	    fprintf(fd, "%s\n", buf);
 	    i += 78;
 	    len = (int) strlen(&mailto_content[i]);
@@ -829,8 +827,7 @@ void mailform(const char *mailto_address,
     i = 0;
     len = (int) strlen(mailto_content);
     while (len > 78) {
-	StrNCpy(buf, &mailto_content[i], 78);
-	buf[78] = '\0';
+	LYStrNCpy(buf, &mailto_content[i], 78);
 	fprintf(fd, "%s\n", buf);
 	i += 78;
 	len = (int) strlen(&mailto_content[i]);
@@ -884,16 +881,16 @@ void mailform(const char *mailto_address,
     FREE(command);
     LYSleepAlert();
     start_curses();
-    LYRemoveTemp(my_tmpfile);
+    (void) LYRemoveTemp(my_tmpfile);
     if (isPMDF)
-	LYRemoveTemp(hdrfile);
+	(void) LYRemoveTemp(hdrfile);
 #else /* DOS */
     LYSendMailFile(address,
 		   my_tmpfile,
 		   subject,
 		   ccaddr,
 		   SENDING_FORM_CONTENT);
-    LYRemoveTemp(my_tmpfile);
+    (void) LYRemoveTemp(my_tmpfile);
 #endif /* USE_VMS_MAILER */
 #endif /* CAN_PIPE_TO_MAILER */
 
@@ -992,7 +989,7 @@ void mailmsg(int cur,
 	    }
 	}
 
-	convert_explorer(address);
+	(void) convert_explorer(address);
 
 	/*
 	 * Unescape the address field.  - FM
@@ -1098,9 +1095,9 @@ void mailmsg(int cur,
     LYSystem(command);		/* VMS */
     FREE(command);
     FREE(cmd);
-    LYRemoveTemp(my_tmpfile);
+    (void) LYRemoveTemp(my_tmpfile);
     if (isPMDF) {
-	LYRemoveTemp(hdrfile);
+	(void) LYRemoveTemp(hdrfile);
     }
 #else /* DOS */
     LYSendMailFile(address,
@@ -1108,7 +1105,7 @@ void mailmsg(int cur,
 		   subject,
 		   ccaddr,
 		   "");
-    LYRemoveTemp(my_tmpfile);
+    (void) LYRemoveTemp(my_tmpfile);
 #endif /* USE_VMS_MAILER */
 #endif /* CAN_PIPE_TO_MAILER */
 
@@ -1273,8 +1270,7 @@ void reply_by_mail(char *mail_address,
      * Set the default subject.  - FM
      */
     if ((default_subject[0] == '\0') && non_empty(title)) {
-	StrNCpy(default_subject, title, MAX_SUBJECT);
-	default_subject[MAX_SUBJECT] = '\0';
+	LYStrNCpy(default_subject, title, MAX_SUBJECT);
     }
 
     /*
@@ -1727,7 +1723,7 @@ void reply_by_mail(char *mail_address,
 			   the_subject,
 			   ccaddr,
 			   SENDING_COMMENT);
-	    LYRemoveTemp(tmpfile2);	/* Delete the tmpfile. */
+	    (void) LYRemoveTemp(tmpfile2);	/* Delete the tmpfile. */
 #endif /* CAN_PIPE_TO_MAILER */
 	    LYCloseInput(fd);	/* Close the tmpfile. */
 	}
@@ -1749,11 +1745,11 @@ void reply_by_mail(char *mail_address,
 #if USE_VMS_MAILER
     while (LYRemoveTemp(my_tmpfile) == 0) ;	/* Delete the tmpfile(s). */
     if (isPMDF) {
-	LYRemoveTemp(hdrfile);	/* Delete the hdrfile. */
+	(void) LYRemoveTemp(hdrfile);	/* Delete the hdrfile. */
     }
 #else
     FREE(header);
-    LYRemoveTemp(my_tmpfile);	/* Delete the tmpfile. */
+    (void) LYRemoveTemp(my_tmpfile);	/* Delete the tmpfile. */
 #endif /* VMS */
 
     FREE(from_address);

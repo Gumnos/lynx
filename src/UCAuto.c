@@ -1,5 +1,5 @@
 /*
- * $LynxId: UCAuto.c,v 1.47 2012/02/12 17:30:42 tom Exp $
+ * $LynxId: UCAuto.c,v 1.51 2013/05/04 13:14:39 tom Exp $
  *
  *  This file contains code for changing the Linux console mode.
  *  Currently some names for font files are hardwired in here.
@@ -75,7 +75,6 @@ typedef enum {
  */
 typedef enum {
     GN_Blat1,			/* Latin-1 */
-    GN_0decgraf,		/* VT100 graphics */
     GN_Ucp437,			/* PC -> PC */
     GN_Kuser,			/* user-defined */
     GN_dunno,
@@ -290,11 +289,11 @@ void UCChangeTerminalCodepage(int newcs,
 	}
 	if (newcs < 0 && p == 0) {
 	    if (old_font) {
-		LYRemoveTemp(old_font);
+		(void) LYRemoveTemp(old_font);
 		FREE(old_font);
 	    }
 	    if (old_umap) {
-		LYRemoveTemp(old_umap);
+		(void) LYRemoveTemp(old_umap);
 		FREE(old_umap);
 	    }
 	    if (status == 0) {
@@ -345,9 +344,7 @@ void UCChangeTerminalCodepage(int newcs,
 		old_umap = typeRealloc(char, old_umap, nlen);
 	} else {
 	    if (fp1)
-		LYRemoveTemp(old_font);
-	    if (fp2)
-		LYRemoveTemp(old_umap);
+		(void) LYRemoveTemp(old_font);
 	    FREE(old_font);
 	    FREE(old_umap);
 	}
@@ -513,8 +510,6 @@ void UCChangeTerminalCodepage(int newcs,
 	     * Switch Linux console to lat1 table.
 	     */
 	    write_esc("\033(B");
-	} else if (TransT == GN_0decgraf) {
-	    write_esc("\033(0");
 	} else if (TransT == GN_Ucp437) {
 	    /*
 	     * Switch Linux console to 437 table?
@@ -642,8 +637,7 @@ int Find_Best_Display_Charset(int ord)
 	HTInfoMsg(gettext("Charset name in CHARSET_SWITCH_RULES too long"));
 	return ord;
     }
-    StrNCpy(buf, r, s - r);
-    buf[s - r] = '\0';
+    LYStrNCpy(buf, r, s - r);
     n = UCGetLYhndl_byMIME(buf);
     if (n < 0) {
 	sprintf(buf,
@@ -738,7 +732,8 @@ static int _Switch_Display_Charset(int ord, enum switch_display_charset_t really
 
 	rc = VioGetFont(font, 0);	/* Retrieve data for current font */
 	if (rc) {
-	    sprintf(msgbuf, gettext("Can't fetch current font info: err=%#x=%d"), rc, rc);
+	    sprintf(msgbuf,
+		    gettext("Can't fetch current font info: err=%#x=%d"), rc, rc);
 	    HTInfoMsg(msgbuf);
 	    ord = ord1 = auto_display_charset;
 	    goto retry;
