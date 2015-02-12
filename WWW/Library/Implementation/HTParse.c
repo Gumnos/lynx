@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTParse.c,v 1.71 2013/11/28 11:14:12 tom Exp $
+ * $LynxId: HTParse.c,v 1.75 2014/02/12 23:15:42 tom Exp $
  *
  *		Parse HyperText Document Address		HTParse.c
  *		================================
@@ -24,6 +24,7 @@
 
 #ifdef USE_IDNA
 #include <idna.h>
+#include <idn-free.h>
 #endif
 
 #define HEX_ESCAPE '%'
@@ -300,8 +301,8 @@ static void convert_to_idna(char *host)
 			buffer,
 			idna_strerror((Idna_rc) code)));
 	    }
-	    if (output)		/* "(free)" to bypass LYLeaks.c */
-		(free) (output);
+	    if (output)
+		idn_free (output);
 	}
 	free(buffer);
     }

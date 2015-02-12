@@ -1,7 +1,27 @@
--- $LynxId: CHANGES,v 1.730 2014/02/04 01:45:19 tom Exp $
+-- $LynxId: CHANGES,v 1.738 2014/02/14 00:35:10 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2014-02-14 (2.8.8pre.5)
+* change quoting for fixup to help_files.sed in 2.8.8dev.17 to work around
+  bug in cygwin's make/sed programs -TD
+* change quality value for application/xhtml+xml mime type added for Debian
+  #184482, to ensure that it is offered as one of Lynx's internal types on
+  an "Accept:" line sent to the server (Debian #725178) -TD
+* trim unexpected query-parameters from file: URIs when checking for their
+  presentation and compression types.  Not all browsers do this, etc. -TD
+* modify forms-submit to trim query-parameters from the action URI if it
+  happens to be a file-URL.  IE and some other browsers do this. The RFCs
+  do not mention this since forms are an HTTP feature (Debian #738121) -TD
+* reviewed command-line options which were not provided in lynx.cfg; added
+  others which could be useful for dumps (i.e., force_html, hiddenlinks,
+  listonly, list_inline, localhost, short_url, with_backspaces) -TD:
+* add dont_wrap_pre to lynx.cfg (request by GV) -TD
+* use idn_free() rather than ordinary free (patch by GV)
+* build-fix when alt-bindings are disabled (patch by GV)
+* correct sense of --disable-alt-bindings option in configure script (prompted
+  by report by GV) -TD
 
 2014-02-04 (2.8.8pre.4)
 * modify the LOCALE_CHARSET feature to provide a default value for the

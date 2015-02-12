@@ -1,4 +1,4 @@
-# $LynxId: makefile.in,v 1.139 2014/01/19 14:40:59 tom Exp $
+# $LynxId: makefile.in,v 1.142 2014/02/14 00:30:43 tom Exp $
 ##makefile for lynx
 
 SHELL		= @CONFIG_SHELL@
@@ -46,14 +46,14 @@ TAR_UP		= $(TAR) @TAR_UP_OPTIONS@ @TAR_PIPE_OPTIONS@
 TAR_DOWN	= $(TAR) @TAR_DOWN_OPTIONS@ @TAR_PIPE_OPTIONS@
 
 # $Format: "LYNX_VERSION	= $ProjectVersion$"$
-LYNX_VERSION	= 2.8.8pre.4
+LYNX_VERSION	= 2.8.8pre.5
 
 ## This is the version which we are developing (or, upon release, make this
 ## the same).  Use no dots in the name, since it must work on VMS and MS-DOS.
 VERSION		= 2-8-8
 
 ##this is the name of the directory the lynx source code is in.
-##(e.g., lynx2-8-7, not the full path)
+##(e.g., lynx2-8-8, not the full path)
 lynxdir= lynx$(VERSION)
 lynxname= lynx$(VERSION)
 
@@ -401,7 +401,7 @@ help_files.sed : makefile $(srcdir)/lynx_help/help_files.txt
 		-e 's%\(.*\)=\(.*\.html\)$$%s=\2=\2$(COMPRESS_EXT)=g%' \
 		-e 's%\.html=%\\.html=%' \
 		help_files.tmp | $(FIX_SED) >> $@
-	@ECHO_CC@if test -n "$(COMPRESS_EXT)"; then echo 's%\\(\$(COMPRESS_EXT)\\)*\$(COMPRESS_EXT)%$(COMPRESS_EXT)%g' >> $@; fi
+	@ECHO_CC@if test -n "$(COMPRESS_EXT)"; then echo "s%\\(\$(COMPRESS_EXT)\\)*\$(COMPRESS_EXT)%$(COMPRESS_EXT)%g" >> $@; fi
 	@-rm -f help_files.tmp
 
 install-help : $(CFG2HTML) help_files.sed $(HELPDIR) $(SYSCONFDIR)
