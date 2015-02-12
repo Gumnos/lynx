@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYUtils.c,v 1.175 2008/09/07 17:58:37 tom Exp $
+ * $LynxId: LYUtils.c,v 1.179 2008/12/14 20:52:02 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTCP.h>
@@ -16,7 +16,16 @@ extern int kbhit(void);		/* FIXME: use conio.h */
 
 #elif defined(_WINDOWS)
 
+#ifdef DONT_USE_GETTEXT
+#undef gettext
+#endif
+
 #include <conio.h>
+
+#ifdef DONT_USE_GETTEXT
+#define gettext(s) s
+#endif
+
 #if !defined(kbhit) && defined(_WCONIO_DEFINED)
 #define kbhit() _kbhit()	/* reasonably recent conio.h */
 #endif
@@ -2779,6 +2788,8 @@ void remove_backslashes(char *buf)
  */
 BOOLEAN inlocaldomain(void)
 {
+    int result = TRUE;
+
 #ifdef HAVE_UTMP
     int n;
     FILE *fp;
@@ -2788,6 +2799,7 @@ BOOLEAN inlocaldomain(void)
     if ((cp = ttyname(0)))
 	mytty = LYLastPathSep(cp);
 
+    result = FALSE;
     if (mytty && (fp = fopen(UTMP_FILE, "r")) != NULL) {
 	mytty++;
 	do {
@@ -2795,28 +2807,29 @@ BOOLEAN inlocaldomain(void)
 	} while (n > 0 && !STREQ(me.ut_line, mytty));
 	(void) LYCloseInput(fp);
 
-	if (n > 0 &&
-	    strlen(me.ut_host) > strlen(LYLocalDomain) &&
-	    STREQ(LYLocalDomain,
-		  me.ut_host + strlen(me.ut_host) - strlen(LYLocalDomain)))
-	    return (TRUE);
+	if (n > 0) {
+	    if (strlen(me.ut_host) > strlen(LYLocalDomain) &&
+		STREQ(LYLocalDomain,
+		      me.ut_host + strlen(me.ut_host) - strlen(LYLocalDomain))) {
+		result = TRUE;
+	    }
 #ifdef LINUX
-/* Linux fix to check for local user. J.Cullen 11Jul94		*/
-	if ((n > 0) && (strlen(me.ut_host) == 0))
-	    return (TRUE);
+	    /* Linux fix to check for local user. J.Cullen 11Jul94              */
+	    else if (strlen(me.ut_host) == 0) {
+		result = TRUE;
+	    }
 #endif /* LINUX */
+	}
 
     } else {
 	CTRACE((tfp,
 		"Could not get ttyname (returned %s) or open UTMP file %s\n",
 		NONNULL(cp), UTMP_FILE));
     }
-
-    return (FALSE);
 #else
-    CTRACE((tfp, "LYUtils: inlocaldomain() not support.\n"));
-    return (TRUE);
+    CTRACE((tfp, "LYUtils: inlocaldomain() not supported.\n"));
 #endif /* HAVE_UTMP */
+    return (result);
 }
 
 #ifdef HAVE_SIGACTION

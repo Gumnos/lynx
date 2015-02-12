@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMainLoop.c,v 1.153 2008/09/17 22:52:58 tom Exp $
+ * $LynxId: LYMainLoop.c,v 1.157 2008/12/14 18:42:42 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTAccess.h>
@@ -201,7 +201,7 @@ HTList *Goto_URLs = NULL;	/* List of Goto URLs */
 char *LYRequestTitle = NULL;	/* newdoc.title in calls to getfile() */
 char *LYRequestReferer = NULL;	/* Referer, may be set in getfile() */
 
-static char prev_target[512];
+static char prev_target[MAX_LINE];
 
 #ifdef DISP_PARTIAL
 BOOLEAN display_partial = FALSE;	/* could be enabled in HText_new() */
@@ -1500,11 +1500,11 @@ static int handle_LYK_ACTIVATE(int *c,
 		    strip_trailing_slash(newdoc.address);
 	    }
 #endif /* DIRED_SUPPORT  && !__DJGPP__ */
-#ifndef USE_CACHEJAR
-	    if (isLYNXCOOKIE(curdoc.address)) {
-#else
-	    if (isLYNXCOOKIE(curdoc.address) || isLYNXCACHE(curdoc.address)) {
+	    if (isLYNXCOOKIE(curdoc.address)
+#ifdef USE_CACHEJAR
+		|| isLYNXCACHE(curdoc.address)
 #endif
+		) {
 		HTuncache_current_document();
 	    }
 	}
@@ -2463,13 +2463,13 @@ static void handle_LYK_EDIT(int *old_c,
 	    *old_c = real_c;
 	    HTUserMsg(EDIT_DISABLED);
 	}
-    } else
+    }
 #ifdef DIRED_SUPPORT
-	/*
-	 * Allow the user to edit the link rather than curdoc in edit mode.
-	 */
-	if (lynx_edit_mode &&
-	    non_empty(editor) && !no_dired_support) {
+    /*
+     * Allow the user to edit the link rather than curdoc in edit mode.
+     */
+    else if (lynx_edit_mode &&
+	     non_empty(editor) && !no_dired_support) {
 	if (nlinks > 0) {
 	    cp = links[curdoc.link].lname;
 	    if (is_url(cp) == FILE_URL_TYPE) {
@@ -2506,9 +2506,9 @@ static void handle_LYK_EDIT(int *old_c,
 		FREE(tp);
 	    }
 	}
-    } else
+    }
 #endif /* DIRED_SUPPORT */
-    if (non_empty(editor)) {
+    else if (non_empty(editor)) {
 	if (edit_current_file(newdoc.address, curdoc.link, LYGetNewline())) {
 	    HTuncache_current_document();
 	    LYforce_no_cache = TRUE;	/*force reload of document */
@@ -5228,12 +5228,8 @@ static BOOLEAN handle_LYK_LINEWRAP_TOGGLE(int *cmd,
 int mainloop(void)
 {
 #if defined(WIN_EX)		/* 1997/10/08 (Wed) 14:52:06 */
-#undef	STRING_MAX
-#define	STRING_MAX	4096
-    char temp_buff[STRING_MAX];
-
-#define	BUFF_MAX	1024
-    char sjis_buff[BUFF_MAX];
+    char sjis_buff[MAX_LINE];
+    char temp_buff[sizeof(sjis_buff) * 4];
 #endif
     int c = 0;
     int real_c = 0;
@@ -6084,7 +6080,7 @@ int mainloop(void)
 	    } else if (!dump_links_only) {
 		print_wwwfile_to_fd(stdout, FALSE, FALSE);
 	    }
-	    return (EXIT_SUCCESS);
+	    return ((dump_server_status >= 400) ? EXIT_FAILURE : EXIT_SUCCESS);
 	}
 
 	/*
@@ -6465,7 +6461,7 @@ int mainloop(void)
 		    p = links[curdoc.link].lname;
 		}
 
-		if (strlen(p) < 500) {
+		if (strlen(p) < (sizeof(sjis_buff) / 10)) {
 		    strcpy(temp_buff, p);
 		    if (strchr(temp_buff, '%')) {
 			HTUnEscape(temp_buff);

@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYGlobalDefs.h,v 1.110 2008/09/10 11:56:53 tom Exp $
+ * $LynxId: LYGlobalDefs.h,v 1.113 2008/12/14 18:07:20 tom Exp $
  *
  * global variable definitions
  */
@@ -141,8 +141,8 @@ extern "C" {
 #define ADVANCED_MODE 	  2
     extern BOOLEAN LYUseNoviceLineTwo;	/* True if TOGGLE_HELP is not mapped */
 
-#define MAX_LINE 1024		/* Hope that no window is larger than this */
-#define MAX_COLS 999		/* we don't expect wider than this */
+#define MAX_LINE 1024		/* No window can be wider than this */
+#define MAX_COLS (MAX_LINE-10)	/* we don't expect wider than this */
 #define DFT_COLS 80		/* ...and normally only this */
 #define DFT_ROWS 24		/* ...corresponding nominal height */
 
@@ -289,6 +289,7 @@ extern "C" {
     extern int LYTransferRate;	/* see enum TransferRate */
     extern int display_lines;	/* number of lines in the display */
     extern int dump_output_width;
+    extern int dump_server_status;
     extern int keypad_mode;	/* NUMBERS_AS_ARROWS or LINKS_ARE_NUMBERED */
     extern int lynx_temp_subspace;
     extern int max_cookies_buffer;
@@ -585,6 +586,7 @@ extern "C" {
 
     extern BOOL force_empty_hrefless_a;
     extern int connect_timeout;
+    extern int reading_timeout;
 
 #ifdef TEXTFIELDS_MAY_NEED_ACTIVATION
     extern BOOL textfields_need_activation;

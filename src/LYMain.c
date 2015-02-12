@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMain.c,v 1.186 2008/09/10 23:05:36 tom Exp $
+ * $LynxId: LYMain.c,v 1.188 2008/12/14 18:07:56 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTP.h>
@@ -485,6 +485,7 @@ int MessageSecs;		/* time-delay for important Messages   */
 int ReplaySecs;			/* time-delay for command-scripts */
 int crawl_count = 0;		/* Starting number for lnk#.dat files in crawls */
 int dump_output_width = 0;
+int dump_server_status = 0;
 int lynx_temp_subspace = 0;	/* > 0 if we made temp-directory */
 int max_cookies_domain = 50;
 int max_cookies_global = 500;
@@ -555,6 +556,7 @@ int ssl_noprompt = FORCE_PROMPT_DFT;
 #endif
 
 int connect_timeout = 18000; /*=180000*0.1 - used in HTDoConnect.*/
+int reading_timeout = 18000; /*=180000*0.1 - used in HTDoConnect.*/
 
 #ifdef EXP_JUSTIFY_ELTS
 BOOL ok_justify = FALSE;
@@ -1030,13 +1032,6 @@ int main(int argc,
     InitializeCriticalSection(&critSec_READ);
 
 #endif /* _WINDOWS */
-
-#if 0				/* defined(__CYGWIN__) - does not work with screen */
-    if (strcmp(ttyname(fileno(stdout)), "/dev/conout") != 0) {
-	printf("please \"$CYGWIN=notty\"\n");
-	exit_immediately(EXIT_SUCCESS);
-    }
-#endif
 
 #if defined(WIN_EX)
     /* 1997/10/19 (Sun) 21:40:54 */
@@ -3782,6 +3777,10 @@ or CJK mode for the startup character set"
       "realm",		4|SET_ARG,		check_realm,
       "restricts access to URLs in the starting realm"
    ),
+   PARSE_INT(
+      "read_timeout",	4|NEED_INT_ARG,		reading_timeout,
+      "=N\nset the N-second read-timeout"
+   ),
    PARSE_SET(
       "reload",		4|SET_ARG,		reloading,
       "flushes the cache on a proxy server\n(only the first document affected)"
@@ -4465,7 +4464,7 @@ Lynx now exiting with signal:  %d\r\n\r\n", sig);
 	/*
 	 * Exit without dumping core.
 	 */
-	exit_immediately(EXIT_SUCCESS);
+	exit_immediately(EXIT_FAILURE);
     }
 }
 #endif /* !VMS */

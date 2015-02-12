@@ -1,13 +1,15 @@
-; $LynxId: lynx-curses.iss,v 1.2 2007/08/02 00:09:46 tom Exp $
+; $LynxId: lynx-curses.iss,v 1.4 2008/09/24 22:43:18 tom Exp $
 ;
 ; This script assumes environment variables have been set, e.g., to point to
 ; data which is used by the installer:
 ;
 ; LYNX_DOCSDIR - files and subdirectories installed from Unix with "make install-doc"
 ; LYNX_HELPDIR - files and subdirectories installed from Unix with "make install-help"
+;
+; TODO: install curses or slang dll with executable
 
 #define MyAppName "Lynx"
-#define MyAppVerName "Lynx 2.8.7dev.5"
+#define MyAppVerName "Lynx 2.8.7dev.10"
 #define MyAppPublisher "Thomas E Dickey"
 #define MyAppURL "http://lynx.isc.org"
 #define MyAppExeName "lynx.exe"
