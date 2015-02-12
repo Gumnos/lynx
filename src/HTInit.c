@@ -161,15 +161,13 @@ void HTFormatInit(void)
     /*
      * Load the local maps.
      */
-    if (IsOurFile(personal_type_map)
-	&& LYCanReadFile(personal_type_map)) {
-	/* These should override everything else. */
-	HTLoadTypesConfigFile(personal_type_map, mediaUSR);
-    } else {
+    {
 	char buffer[LY_MAXPATH];
 
 	LYAddPathToHome(buffer, sizeof(buffer), personal_type_map);
-	HTLoadTypesConfigFile(buffer, mediaUSR);
+	if (IsOurFile(buffer)
+	    && LYCanReadFile(buffer))
+	    HTLoadTypesConfigFile(buffer, mediaUSR);
     }
 
     /*
@@ -1341,15 +1339,13 @@ void HTFileInit(void)
     /*
      * Load the local maps.
      */
-    if (IsOurFile(personal_extension_map)
-	&& LYCanReadFile(personal_extension_map)) {
-	/* These should override everything else. */
-	HTLoadExtensionsConfigFile(personal_extension_map);
-    } else {
+    {
 	char buffer[LY_MAXPATH];
 
 	LYAddPathToHome(buffer, sizeof(buffer), personal_extension_map);
-	HTLoadExtensionsConfigFile(buffer);
+	if (IsOurFile(buffer)
+	    && LYCanReadFile(buffer))
+	    HTLoadExtensionsConfigFile(buffer);
     }
 }
 

@@ -1,9 +1,15 @@
 Changes since Lynx 2.8 release
 ===============================================================================
 
+2006-11-15 (2.8.6rel.4 diverges from 2.8.7dev.4)
+* limit files set via PERSONAL_EXTENSION_MAP and PERSONAL_MAILCAP to be found
+  relative to the user's home directory.  This change is less flexible than the
+  development version, but simpler to implement.  The check to ensure that
+  the files are controlled by the user is retained (Redhat #214205) -TD
+
 2006-11-06 (2.8.6rel.3 from 2.8.7dev.2)
-* ensure that the configured values for PERSONAL_EXTENSION_MAP and
-  PERSONAL_MAILCAP are absolute pathnames -TD
+* ensure that the configured values for GLOBAL_EXTENSION_MAP and GLOBAL_MAILCAP
+  are absolute pathnames -TD
 * modify logic for reading PERSONAL_EXTENSION_MAP and PERSONAL_MAILCAP to
   ensure that they are files that are controlled only by the user.  The
   default values for these allow lynx to read configuration information
