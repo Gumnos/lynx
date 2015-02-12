@@ -16,10 +16,10 @@
 #include <HTFont.h>
 
 /*
-**  Valid mane chars for tag parsing.
+**  Valid name chars for tag parsing.
 */
-#define IsNmStart(c) (isalpha((unsigned char)c))
-#define IsNmChar(c) (isalnum((unsigned char)c) || \
+#define IsNmStart(c) (isalpha(UCH(c)))
+#define IsNmChar(c) (isalnum(UCH(c)) || \
 		      c == '_' || c=='-' || c == '.' || c==':')
 
 
@@ -40,7 +40,7 @@ Element Numbers
    These include tables in HTMLDTD.c and code in HTML.c.
 
  */
-typedef enum _HTMLElement {
+typedef enum {
 	HTML_A,
 	HTML_ABBREV,
 	HTML_ACRONYM,
@@ -168,10 +168,11 @@ typedef enum _HTMLElement {
 
 /* HTML_ELEMENTS:     number of elements visible to Lynx code in general,
                       alphabetic (ASCII) order. */
+#define HTML_ELEMENTS 118
+
 /* HTML_ALL_ELEMENTS: number of elements visible to SGML parser,
                       additional variant(s) at end. */
 #define HTML_ALL_ELEMENTS 119
-#define HTML_ELEMENTS 118
 
 
 /*
@@ -981,8 +982,7 @@ Attribute numbers
 #endif
 extern CONST SGML_dtd HTML_dtd;
 
-extern void HTSwitchDTD PARAMS((
-    BOOL new));
+extern void HTSwitchDTD PARAMS((int new_flag));
 
 extern HTTag HTTag_unrecognized;
 extern HTTag HTTag_mixedObject;

@@ -101,10 +101,6 @@ typedef struct _connection {
     BOOL			binary; /* Binary mode? */
 } connection;
 
-#ifndef NIL
-#define NIL 0
-#endif /* !NIL */
-
 /*		Hypertext object building machinery
 */
 #include <HTML.h>
@@ -145,37 +141,40 @@ PRIVATE int data_soc = -1;		/* Socket for data transfer =invalid */
 PRIVATE char *user_entered_password = NULL;
 PRIVATE char *last_username_and_host = NULL;
 
-#define GENERIC_SERVER	   0
-#define MACHTEN_SERVER	   1
-#define UNIX_SERVER	   2
-#define VMS_SERVER	   3
-#define CMS_SERVER	   4
-#define DCTS_SERVER	   5
-#define TCPC_SERVER	   6
-#define PETER_LEWIS_SERVER 7
-#define NCSA_SERVER	   8
-#define WINDOWS_NT_SERVER  9
-#define MS_WINDOWS_SERVER 10
-#define MSDOS_SERVER	  11
-#define APPLESHARE_SERVER 12
-#define NETPRESENZ_SERVER 13
-#define DLS_SERVER	  14
+typedef enum {
+	GENERIC_SERVER
+	, MACHTEN_SERVER
+	, UNIX_SERVER
+	, VMS_SERVER
+	, CMS_SERVER
+	, DCTS_SERVER
+	, TCPC_SERVER
+	, PETER_LEWIS_SERVER
+	, NCSA_SERVER
+	, WINDOWS_NT_SERVER
+	, WINDOWS_2K_SERVER
+	, MS_WINDOWS_SERVER
+	, MSDOS_SERVER
+	, APPLESHARE_SERVER
+	, NETPRESENZ_SERVER
+	, DLS_SERVER
+} eServerType;
 
-PRIVATE int	server_type = GENERIC_SERVER;	/* the type of ftp host */
+PRIVATE eServerType server_type = GENERIC_SERVER; /* the type of ftp host */
 PRIVATE int	unsure_type = FALSE;		/* sure about the type? */
 PRIVATE BOOLEAN use_list = FALSE;		/* use the LIST command? */
 
 PRIVATE int	interrupted_in_next_data_char = FALSE;
 
 #ifdef POLL_PORTS
-PRIVATE unsigned short	port_number = FIRST_TCP_PORT;
+PRIVATE PortNumber	port_number = FIRST_TCP_PORT;
 #endif /* POLL_PORTS */
 
 PRIVATE int	master_socket = -1;	/* Listening socket = invalid	*/
 PRIVATE char	port_command[255];	/* Command for setting the port */
 PRIVATE fd_set	open_sockets;		/* Mask of active channels */
 PRIVATE int	num_sockets;		/* Number of sockets to scan */
-PRIVATE unsigned short	passive_port;	/* Port server specified for data */
+PRIVATE PortNumber	passive_port;	/* Port server specified for data */
 
 
 #define NEXT_CHAR HTGetCharacter()	/* Use function in HTFormat.c */
@@ -303,7 +302,7 @@ PRIVATE int next_data_char NOARGS
 	return FROMASCII(c);
     }
 #else
-    return (unsigned char)(*data_read_pointer++);
+    return UCH(*data_read_pointer++);
 #endif /* NOT_ASCII */
 }
 
@@ -377,7 +376,7 @@ PRIVATE char *help_message_cache_contents NOARGS
 **
 ** On entry,
 **	control	points to the connection which is established.
-**	cmd	points to a command, or is NIL to just get the response.
+**	cmd	points to a command, or is zero to just get the response.
 **
 **	The command should already be terminated with the CRLF pair.
 **
@@ -430,7 +429,7 @@ PRIVATE int write_cmd ARGS1(
 **
 ** On entry,
 **	control	points to the connection which is established.
-**	cmd	points to a command, or is NIL to just get the response.
+**	cmd	points to a command, or is zero to just get the response.
 **
 **	The command must already be terminated with the CRLF pair.
 **
@@ -520,16 +519,6 @@ PRIVATE int response ARGS1(
     return result/100;
 }
 
-#if 0
-PRIVATE int send_cmd_nowait ARGS1(char *, verb)
-{
-    char command[20];
-
-    sprintf(command, "%.*s%c%c", (int) sizeof(command)-4, verb, CR, LF);
-    return write_cmd(command);
-}
-#endif
-
 PRIVATE int send_cmd_1 ARGS1(char *, verb)
 {
     char command[80];
@@ -557,7 +546,7 @@ PRIVATE int send_cmd_2 ARGS2(char *, verb, char *, param)
  *  Some servers need an additional letter after the MACB command.
  */
 PRIVATE int set_mac_binary ARGS1(
-	int,		ServerType)
+	eServerType,	ServerType)
 {
     /* try to set mac binary mode */
     if (ServerType == APPLESHARE_SERVER ||
@@ -576,7 +565,7 @@ PRIVATE int set_mac_binary ARGS1(
  */
 
 PRIVATE void get_ftp_pwd ARGS2(
-	int *,		ServerType,
+	eServerType *,	ServerType,
 	BOOLEAN *,	UseList)
 {
 
@@ -631,7 +620,7 @@ PRIVATE void get_ftp_pwd ARGS2(
  */
 
 PRIVATE void set_unix_dirstyle ARGS2(
-	int *,		ServerType,
+	eServerType *,	ServerType,
 	BOOLEAN *,	UseList)
 {
 
@@ -715,7 +704,7 @@ PRIVATE int get_connection ARGS2(
 	/*
 	**  Allocate and init control struct.
 	*/
-	con = (connection *)calloc(1, sizeof(connection));
+	con = typecalloc(connection);
 	if (con == NULL)
 	    outofmem(__FILE__, "get_connection");
     }
@@ -726,6 +715,7 @@ PRIVATE int get_connection ARGS2(
 
 /* Get node name:
 */
+    CTRACE((tfp, "get_connection(%s)\n", arg));
     {
 	char *p1 = HTParse(arg, "", PARSE_HOST);
 	char *p2 = strrchr(p1, '@');	/* user? */
@@ -905,8 +895,7 @@ PRIVATE int get_connection ARGS2(
 	status = response(command);
 	FREE(command);
 	if (status == HT_INTERRUPTED) {
-	    CTRACE((tfp,
-		       "HTFTP: Interrupted while sending password.\n"));
+	    CTRACE((tfp, "HTFTP: Interrupted while sending password.\n"));
 	    _HTProgress (CONNECTION_INTERRUPTED);
 	    NETCLOSE(control->socket);
 	    control->socket = -1;
@@ -958,9 +947,17 @@ PRIVATE int get_connection ARGS2(
 	    CTRACE((tfp, "HTFTP: Treating as MSDOS (Unix emulation) server.\n"));
 
 	} else if (strncmp(response_text+4, "VMS", 3) == 0) {
-	    server_type = VMS_SERVER;
+	    char *tilde = strstr(arg, "/~");
 	    use_list = TRUE;
-	    CTRACE((tfp, "HTFTP: Treating as VMS server.\n"));
+	    if (tilde != 0
+	     && tilde[2] != 0
+	     && strstr(response_text+4, "MadGoat") != 0) {
+		server_type = UNIX_SERVER;
+		CTRACE((tfp, "HTFTP: Treating VMS as UNIX server.\n"));
+	    } else {
+		server_type = VMS_SERVER;
+		CTRACE((tfp, "HTFTP: Treating as VMS server.\n"));
+	    }
 
 	} else if ((strncmp(response_text+4, "VM/CMS", 6) == 0) ||
 		   (strncmp(response_text+4, "VM ", 3) == 0)) {
@@ -992,6 +989,11 @@ PRIVATE int get_connection ARGS2(
 	} else if (strncmp(response_text+4, "Windows_NT", 10) == 0) {
 	    server_type = WINDOWS_NT_SERVER;
 	    CTRACE((tfp, "HTFTP: Treating as Window_NT server.\n"));
+	    set_unix_dirstyle(&server_type, &use_list);
+
+	} else if (strncmp(response_text+4, "Windows2000", 11) == 0) {
+	    server_type = WINDOWS_2K_SERVER;
+	    CTRACE((tfp, "HTFTP: Treating as Window_2K server.\n"));
 	    set_unix_dirstyle(&server_type, &use_list);
 
 	} else if (strncmp(response_text+4, "MS Windows", 10) == 0) {
@@ -1071,8 +1073,15 @@ PRIVATE int close_master_socket NOARGS
 */
 PRIVATE int get_listen_socket NOARGS
 {
+#ifdef INET6
+    struct sockaddr_storage soc_address;	/* Binary network address */
+    struct sockaddr_in* soc_in = (struct sockaddr_in *)&soc_address;
+    int af;
+    int slen;
+#else
     struct sockaddr_in soc_address;	/* Binary network address */
     struct sockaddr_in* soc_in = &soc_address;
+#endif /* INET6 */
     int new_socket;			/* Will be master_socket */
 
 
@@ -1084,9 +1093,24 @@ PRIVATE int get_listen_socket NOARGS
 	return master_socket;  /* Done already */
 #endif /* !REPEAT_LISTEN */
 
+#ifdef INET6
+    /* query address family of control connection */
+    slen = sizeof(soc_address);
+    if (getsockname(control->socket, (struct sockaddr *)&soc_address,
+		&slen) < 0) {
+	return HTInetStatus("getsockname failed");
+    }
+    af = ((struct sockaddr *)&soc_address)->sa_family;
+    memset(&soc_address, 0, sizeof(soc_address));
+#endif /* INET6 */
+
 /*  Create internet socket
 */
+#ifdef INET6
+    new_socket = socket(af, SOCK_STREAM, IPPROTO_TCP);
+#else
     new_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#endif /* INET6 */
 
     if (new_socket < 0)
 	return HTInetStatus(gettext("socket for master socket"));
@@ -1095,11 +1119,30 @@ PRIVATE int get_listen_socket NOARGS
 
 /*  Search for a free port.
 */
+#ifdef INET6
+    memset(&soc_address, 0, sizeof(soc_address));
+    ((struct sockaddr *)&soc_address)->sa_family = af;
+    switch (af) {
+    case AF_INET:
+#ifdef SIN6_LEN
+	((struct sockaddr *)&soc_address)->sa_len = sizeof(struct sockaddr_in);
+#endif /* SIN6_LEN */
+	break;
+    case AF_INET6:
+#ifdef SIN6_LEN
+	((struct sockaddr *)&soc_address)->sa_len = sizeof(struct sockaddr_in6);
+#endif /* SIN6_LEN */
+	break;
+    default:
+	HTInetStatus("AF");
+    }
+#else
     soc_in->sin_family = AF_INET;	    /* Family = internet, host order  */
     soc_in->sin_addr.s_addr = INADDR_ANY;   /* Any peer address */
+#endif /* INET6 */
 #ifdef POLL_PORTS
     {
-	unsigned short old_port_number = port_number;
+	PortNumber old_port_number = port_number;
 	for (port_number = (old_port_number+1); ; port_number++) {
 	    int status;
 	    if (port_number > LAST_TCP_PORT)
@@ -1107,13 +1150,17 @@ PRIVATE int get_listen_socket NOARGS
 	    if (port_number == old_port_number) {
 		return HTInetStatus("bind");
 	    }
+#ifdef INET6
+	    soc_in->sin_port = htons(port_number);
+#else
 	    soc_address.sin_port = htons(port_number);
+#endif /* INET6 */
 #ifdef SOCKS
 	    if (socks_flag)
 		if ((status=Rbind(new_socket,
 			(struct sockaddr*)&soc_address,
 			    /* Cast to generic sockaddr */
-			sizeof(soc_address)
+			SOCKADDR_LEN(soc_address)
 #ifndef SHORTENED_RBIND
 			,socks_bind_remoteAddr
 #endif /* !SHORTENED_RBIND */
@@ -1124,7 +1171,8 @@ PRIVATE int get_listen_socket NOARGS
 	    if ((status=bind(new_socket,
 		    (struct sockaddr*)&soc_address,
 			    /* Cast to generic sockaddr */
-		    sizeof(soc_address))) == 0) {
+		    SOCKADDR_LEN(soc_address)
+		    )) == 0) {
 		break;
 	    }
 	    CTRACE((tfp, "TCP bind attempt to port %d yields %d, errno=%d\n",
@@ -1146,10 +1194,17 @@ PRIVATE int get_listen_socket NOARGS
 			     (struct sockaddr *)&soc_address,
 			     (void *)&address_length);
 	if (status<0) return HTInetStatus("getsockname");
+#ifdef INET6
+	CTRACE((tfp, "HTFTP: This host is %s\n",
+	    HTInetString((SockA *)soc_in)));
+
+	soc_in->sin_port = 0;	/* Unspecified: please allocate */
+#else
 	CTRACE((tfp, "HTFTP: This host is %s\n",
 	    HTInetString(soc_in)));
 
 	soc_address.sin_port = 0;	/* Unspecified: please allocate */
+#endif /* INET6 */
 #ifdef SOCKS
 	if (socks_flag)
 	    status=Rbind(new_socket,
@@ -1157,7 +1212,11 @@ PRIVATE int get_listen_socket NOARGS
 			 /* Cast to generic sockaddr */
 			 sizeof(soc_address)
 #ifndef SHORTENED_RBIND
+#ifdef INET6
+			socks_bind_remoteAddr
+#else
 			,socks_bind_remoteAddr
+#endif /* INET6 */
 #endif /* !SHORTENED_RBIND */
 						);
 	else
@@ -1165,7 +1224,8 @@ PRIVATE int get_listen_socket NOARGS
 	status=bind(new_socket,
 		    (struct sockaddr*)&soc_address,
 		    /* Cast to generic sockaddr */
-		    sizeof(soc_address));
+		    SOCKADDR_LEN(soc_address)
+		    );
 	if (status<0) return HTInetStatus("bind");
 
 	address_length = sizeof(soc_address);
@@ -1183,9 +1243,15 @@ PRIVATE int get_listen_socket NOARGS
     }
 #endif /* POLL_PORTS */
 
+#ifdef INET6
+    CTRACE((tfp, "HTFTP: bound to port %d on %s\n",
+		(int)ntohs(soc_in->sin_port),
+		HTInetString((SockA *)soc_in)));
+#else
     CTRACE((tfp, "HTFTP: bound to port %d on %s\n",
 		(int)ntohs(soc_in->sin_port),
 		HTInetString(soc_in)));
+#endif /* INET6 */
 
 #ifdef REPEAT_LISTEN
     if (master_socket >= 0)
@@ -1197,7 +1263,11 @@ PRIVATE int get_listen_socket NOARGS
 /*	Now we must find out who we are to tell the other guy
 */
     (void)HTHostName();		/* Make address valid - doesn't work*/
-    sprintf(port_command, "PORT %d,%d,%d,%d,%d,%d%c%c",
+#ifdef INET6
+    switch (((struct sockaddr *)&soc_address)->sa_family) {
+    case AF_INET:
+#endif /* INET6 */
+	sprintf(port_command, "PORT %d,%d,%d,%d,%d,%d%c%c",
 		    (int)*((unsigned char *)(&soc_in->sin_addr)+0),
 		    (int)*((unsigned char *)(&soc_in->sin_addr)+1),
 		    (int)*((unsigned char *)(&soc_in->sin_addr)+2),
@@ -1206,22 +1276,42 @@ PRIVATE int get_listen_socket NOARGS
 		    (int)*((unsigned char *)(&soc_in->sin_port)+1),
 		    CR, LF);
 
+#ifdef INET6
+	break;
 
-/*	Inform TCP that we will accept connections
-*/
-  {
-    int status;
-#ifdef SOCKS
-    if (socks_flag)
-	status = Rlisten(master_socket, 1);
-    else
-#endif /* SOCKS */
-    status = listen(master_socket, 1);
-    if (status < 0) {
-	master_socket = -1;
-	return HTInetStatus("listen");
+    case AF_INET6:
+      {
+	char hostbuf[MAXHOSTNAMELEN];
+	char portbuf[MAXHOSTNAMELEN];
+	getnameinfo((struct sockaddr *)&soc_address,
+	    SOCKADDR_LEN(soc_address),
+	    hostbuf, sizeof(hostbuf), portbuf, sizeof(portbuf),
+	    NI_NUMERICHOST | NI_NUMERICSERV);
+	sprintf(port_command, "EPRT |%d|%s|%s|%c%c", 2, hostbuf, portbuf,
+		CR, LF);
+	break;
+      }
+    default:
+	sprintf(port_command, "JUNK%c%c", CR, LF);
+	break;
     }
-  }
+#endif /* INET6 */
+
+    /*	Inform TCP that we will accept connections
+    */
+    {
+	int status;
+#ifdef SOCKS
+	if (socks_flag)
+	    status = Rlisten(master_socket, 1);
+	else
+#endif /* SOCKS */
+	    status = listen(master_socket, 1);
+	if (status < 0) {
+	    master_socket = -1;
+	    return HTInetStatus("listen");
+	}
+    }
     CTRACE((tfp, "TCP: Master socket(), bind() and listen() all OK\n"));
     FD_SET(master_socket, &open_sockets);
     if ((master_socket+1) > num_sockets)
@@ -1304,7 +1394,7 @@ PRIVATE BOOLEAN is_ls_date ARGS1(
 	char *,		s)
 {
     /* must start with three alpha characters */
-    if (!isalpha(*s++) || !isalpha(*s++) || !isalpha(*s++))
+    if (!isalpha(UCH(*s++)) || !isalpha(UCH(*s++)) || !isalpha(UCH(*s++)))
 	return FALSE;
 
     /* space or HT_NON_BREAK_SPACE */
@@ -1315,14 +1405,14 @@ PRIVATE BOOLEAN is_ls_date ARGS1(
     s++;
 
     /* space or digit */
-    if (!(*s == ' ' || isdigit(*s))) {
+    if (!(*s == ' ' || isdigit(UCH(*s)))) {
 	s++;
 	return FALSE;
     }
     s++;
 
     /* digit */
-    if (!isdigit(*s++))
+    if (!isdigit(UCH(*s++)))
 	return FALSE;
 
     /* space */
@@ -1330,29 +1420,29 @@ PRIVATE BOOLEAN is_ls_date ARGS1(
 	return FALSE;
 
     /* space or digit */
-    if (!(*s == ' ' || isdigit(*s))) {
+    if (!(*s == ' ' || isdigit(UCH(*s)))) {
 	s++;
 	return FALSE;
     }
     s++;
 
     /* digit */
-    if (!isdigit(*s++))
+    if (!isdigit(UCH(*s++)))
 	return FALSE;
 
     /* colon or digit */
-    if (!(*s == ':' || isdigit(*s))) {
+    if (!(*s == ':' || isdigit(UCH(*s)))) {
 	s++;
 	return FALSE;
     }
     s++;
 
     /* digit */
-    if (!isdigit(*s++))
+    if (!isdigit(UCH(*s++)))
 	return FALSE;
 
     /* space or digit */
-    if (!(*s == ' ' || isdigit(*s))) {
+    if (!(*s == ' ' || isdigit(UCH(*s)))) {
 	s++;
 	return FALSE;
     }
@@ -1435,7 +1525,7 @@ PRIVATE void parse_ls_line ARGS2(
     int    size_num=0;
 
     for (i = strlen(line) - 1;
-	 (i > 13) && (!isspace(line[i]) || !is_ls_date(&line[i-12])); i--)
+	 (i > 13) && (!isspace(UCH(line[i])) || !is_ls_date(&line[i-12])); i--)
 	; /* null body */
     line[i] = '\0';
     if (i > 13) {
@@ -1451,7 +1541,7 @@ PRIVATE void parse_ls_line ARGS2(
 	}
     }
     j = i - 14;
-    while (isdigit(line[j])) {
+    while (isdigit(UCH(line[j]))) {
 	size_num += (line[j] - '0') * base;
 	base *= 10;
 	j--;
@@ -1476,16 +1566,16 @@ PRIVATE void parse_dls_line ARGS3(
     int    len;
     char *cps = NULL;
 
-    /* README              763  Information about this server\0
-       bin/                  -  \0
-       etc/                  =  \0
-       ls-lR                 0  \0
-       ls-lR.Z               3  \0
-       pub/                  =  Public area\0
-       usr/                  -  \0
-       morgan               14  -> ../real/morgan\0
+    /* README		   763	Information about this server\0
+       bin/		     -	\0
+       etc/		     =	\0
+       ls-lR		     0	\0
+       ls-lR.Z		     3	\0
+       pub/		     =	Public area\0
+       usr/		     -	\0
+       morgan		    14	-> ../real/morgan\0
        TIMIT.mostlikely.Z\0
-                         79215  \0
+			 79215	\0
 	*/
 
     len = strlen(line);
@@ -1501,9 +1591,9 @@ PRIVATE void parse_dls_line ARGS3(
 	return;
     }
     if (len < 24 || line[23] != ' ' ||
-	(isspace(line[0]) && !*pspilledname)) {
+	(isspace(UCH(line[0])) && !*pspilledname)) {
 	/* this isn't the expected "dls" format! */
-	if (!isspace(line[0]))
+	if (!isspace(UCH(line[0])))
 	    *cps = '\0';
 	if (*pspilledname && !*line) {
 	    entry_info->filename = *pspilledname;
@@ -1527,7 +1617,7 @@ PRIVATE void parse_dls_line ARGS3(
     if (line[j] == '=' || line[j] == '-') {
 	StrAllocCopy(entry_info->type, ENTRY_IS_DIRECTORY);
     } else {
-	while (isdigit(line[j])) {
+	while (isdigit(UCH(line[j]))) {
 	    size_num += (line[j] - '0') * base;
 	    base *= 10;
 	    j--;
@@ -1638,8 +1728,8 @@ PRIVATE void parse_vms_dir_entry ARGS2(
 
     /** Track down the date. **/
     if ((cpd=strchr(cp, '-')) != NULL &&
-	strlen(cpd) > 9 && isdigit(*(cpd-1)) &&
-	isalpha(*(cpd+1)) && *(cpd+4) == '-') {
+	strlen(cpd) > 9 && isdigit(UCH(*(cpd-1))) &&
+	isalpha(UCH(*(cpd+1))) && *(cpd+4) == '-') {
 
 	/** Month **/
 	*(cpd+2) = (char) TOLOWER(*(cpd+2));
@@ -1647,7 +1737,7 @@ PRIVATE void parse_vms_dir_entry ARGS2(
 	sprintf(date, "%.3s ", cpd+1);
 
 	/** Day **/
-	if (isdigit(*(cpd-2)))
+	if (isdigit(UCH(*(cpd-2))))
 	    sprintf(date+4, "%.2s ", cpd-2);
 	else
 	    sprintf(date+4, "%c%.1s ", HT_NON_BREAK_SPACE, cpd-1);
@@ -1667,13 +1757,13 @@ PRIVATE void parse_vms_dir_entry ARGS2(
     if ((cpd=strchr(cp, '/')) != NULL) {
 	/* Appears be in used/allocated format */
 	cps = cpd;
-	while (isdigit(*(cps-1)))
+	while (isdigit(UCH(*(cps-1))))
 	    cps--;
 	if (cps < cpd)
 	    *cpd = '\0';
 	entry_info->size = atoi(cps);
 	cps = cpd+1;
-	while (isdigit(*cps))
+	while (isdigit(UCH(*cps)))
 	    cps++;
 	*cps = '\0';
 	ialloc = atoi(cpd+1);
@@ -1686,7 +1776,7 @@ PRIVATE void parse_vms_dir_entry ARGS2(
 	/* Now let's hunt for a lone, size number    */
 	while ((cps=strtok(NULL, sp)) != NULL) {
 	    cpd = cps;
-	    while (isdigit(*cpd))
+	    while (isdigit(UCH(*cpd)))
 		cpd++;
 	    if (*cpd == '\0') {
 		/* Assume it's blocks */
@@ -1735,7 +1825,7 @@ PRIVATE void parse_ms_windows_dir_entry ARGS2(
 	cps = LYSkipBlanks(cps);
 	cpd = LYSkipNonBlanks(cps);
 	*cpd++ = '\0';
-	if (isdigit(*cps)) {
+	if (isdigit(UCH(*cps))) {
 	    entry_info->size = atoi(cps);
 	} else {
 	    StrAllocCopy(entry_info->type, ENTRY_IS_DIRECTORY);
@@ -1953,7 +2043,7 @@ PRIVATE void parse_cms_dir_entry ARGS2(
 	cp = LYSkipBlanks(cp);
 	cps = LYSkipNonBlanks(cp);
 	*cps++ = '\0';
-	if (isdigit(*cp)) {
+	if (isdigit(UCH(*cp))) {
 	    RecordLength = atoi(cp);
 	}
     }
@@ -1964,7 +2054,7 @@ PRIVATE void parse_cms_dir_entry ARGS2(
 	cp = LYSkipBlanks(cp);
 	cps = LYSkipNonBlanks(cp);
 	*cps++ = '\0';
-	if (isdigit(*cp)) {
+	if (isdigit(UCH(*cp))) {
 	    Records = atoi(cp);
 	}
 	if (Records > 0 && RecordLength > 0) {
@@ -1983,7 +2073,7 @@ PRIVATE void parse_cms_dir_entry ARGS2(
     if (((cps < end) &&
 	 (cps = strchr(cpd, ':')) != NULL) &&
 	(cps < (end - 3) &&
-	 isdigit(*(cps+1)) && isdigit(*(cps+2)) && *(cps+3) == ':')) {
+	 isdigit(UCH(*(cps+1))) && isdigit(UCH(*(cps+2))) && *(cps+3) == ':')) {
 	cps += 3;
 	*cps = '\0';
 	if ((cps - cpd) >= 14) {
@@ -2106,6 +2196,7 @@ PRIVATE EntryInfo * parse_dir_entry ARGS3(
 	case MACHTEN_SERVER:
 	case MSDOS_SERVER:
 	case WINDOWS_NT_SERVER:
+	case WINDOWS_2K_SERVER:
 	case APPLESHARE_SERVER:
 	case NETPRESENZ_SERVER:
 	    /*
@@ -2164,7 +2255,7 @@ PRIVATE EntryInfo * parse_dir_entry ARGS3(
 		**  Strip off " -> pathname".
 		*/
 		for (i = len - 1; (i > 3) &&
-				  (!isspace(entry[i]) ||
+				  (!isspace(UCH(entry[i])) ||
 				   (entry[i-1] != '>')	||
 				   (entry[i-2] != '-') ||
 				   (entry[i-3] != ' ')); i--)
@@ -2803,7 +2894,7 @@ unload_btree:
     if (WasInterrupted || data_soc != -1) { /* should always be true */
 	/*
 	 *  Without closing the data socket first,
-	 *  the response(NIL) later may hang.
+	 *  the response(0) later may hang.
 	 *  Some servers expect the client to fin/ack the close
 	 *  of the data connection before proceeding with the
 	 *  conversation on the control connection. - kw
@@ -2862,7 +2953,12 @@ PUBLIC int HTFTPLoad ARGS4(
 	    if (status < 0) {
 		NETCLOSE (control->socket);
 		control->socket = -1;
+#ifdef INET6
+		if (master_socket >= 0)
+		    (void)close_master_socket ();
+#else
 		close_master_socket ();
+#endif /* INET6 */
 		/* HT_INTERRUPTED would fall through, if we could interrupt
 		   somehow in the middle of it, which we currently can't. */
 		return status;
@@ -2888,12 +2984,74 @@ PUBLIC int HTFTPLoad ARGS4(
 	    CTRACE((tfp, "HTFTP: Port defined.\n"));
 #endif /* REPEAT_PORT */
 	} else {		/* Tell the server to be passive */
-	    char command[LINE_LENGTH+1];
+	    char *command = NULL;
 	    char *p;
 	    int h0, h1, h2, h3, p0, p1;	/* Parts of reply */
+#ifdef INET6
+	    char dst[LINE_LENGTH+1];
+#endif
 
 	    data_soc = status;
 
+#ifdef INET6
+	    status = send_cmd_1(p = "EPSV");
+	    if (status < 0)	/* retry or Bad return */
+		continue;
+	    else if (status != 2) {
+		status = send_cmd_1(p = "PASV");
+		if (status < 0)	/* retry or Bad return */
+		    continue;
+		else if (status != 2) {
+		    return -status;	/* bad reply */
+		}
+	    }
+
+	    if (strcmp(p, "PASV") == 0) {
+		for (p = response_text; *p && *p != ','; p++)
+		    ; /* null body */
+
+		while (--p > response_text && '0' <= *p && *p <= '9')
+		    ; /* null body */
+		status = sscanf(p+1, "%d,%d,%d,%d,%d,%d",
+		       &h0, &h1, &h2, &h3, &p0, &p1);
+		if (status < 4) {
+		    fprintf(tfp, "HTFTP: PASV reply has no inet address!\n");
+		    return -99;
+		}
+		passive_port = (p0<<8) + p1;
+		snprintf(dst, sizeof(dst), "%d.%d.%d.%d", h0, h1, h2, h3);
+	    } else if (strcmp(p, "EPSV") == 0) {
+		unsigned char c0, c1, c2, c3;
+		struct sockaddr_storage ss;
+		int sslen;
+
+		/*
+		 * EPSV bla (|||port|)
+		 */
+		for (p = response_text; *p && !isspace(*p); p++)
+		    ; /* null body */
+		for (/*nothing*/; *p && *p && *p != '('; p++)	/*)*/
+		    ; /* null body */
+		status = sscanf(p, "(%c%c%c%d%c)", &c0, &c1, &c2, &p0, &c3);
+		if (status != 5) {
+		    fprintf(tfp, "HTFTP: EPSV reply has invalid format!\n");
+		    return -99;
+		}
+		passive_port = p0;
+
+		sslen = sizeof(ss);
+		if (getpeername(control->socket, (struct sockaddr *)&ss,
+		    &sslen) < 0) {
+		    fprintf(tfp, "HTFTP: getpeername(control) failed\n");
+		    return -99;
+		}
+		if (getnameinfo((struct sockaddr *)&ss, sslen, dst,
+		    sizeof(dst), NULL, 0, NI_NUMERICHOST)) {
+		    fprintf(tfp, "HTFTP: getnameinfo failed\n");
+		    return -99;
+		}
+	    }
+#else
 	    status = send_cmd_1("PASV");
 	    if (status != 2) {
 		if (status < 0)
@@ -2912,15 +3070,21 @@ PUBLIC int HTFTPLoad ARGS4(
 		fprintf(tfp, "HTFTP: PASV reply has no inet address!\n");
 		return -99;
 	    }
-	    passive_port = (p0<<8) + p1;
+	    passive_port = (PortNumber)((p0<<8) + p1);
+#endif /* INET6 */
 	    CTRACE((tfp, "HTFTP: Server is listening on port %d\n",
 			 passive_port));
 
 	    /* Open connection for data:  */
 
-	    sprintf(command, "ftp://%d.%d.%d.%d:%d/",
+#ifdef INET6
+	    HTSprintf0(&command, "ftp://%s:%d/", dst, passive_port);
+#else
+	    HTSprintf0(&command, "ftp://%d.%d.%d.%d:%d/",
 		    h0, h1, h2, h3, passive_port);
-	    status = HTDoConnect(name, "FTP", passive_port, &data_soc);
+#endif
+	    status = HTDoConnect(command, "FTP data", passive_port, &data_soc);
+	    FREE(command);
 
 	    if (status < 0) {
 		(void) HTInetStatus(gettext("connect for data"));
@@ -3103,6 +3267,7 @@ PUBLIC int HTFTPLoad ARGS4(
 	  {
 	    char *cp1, *cp2;
 	    BOOL included_device = FALSE;
+	    BOOL found_tilde = FALSE;
 	    /** Accept only Unix-style filename **/
 	    if (strchr(filename, ':') != NULL ||
 		strchr(filename, '[') != NULL) {
@@ -3265,8 +3430,10 @@ PUBLIC int HTFTPLoad ARGS4(
 		goto listen;
 	    }
 	    /** Otherwise, go to appropriate directory and doctor filename **/
-	    if (!strncmp(filename, "/~", 2))
+	    if (!strncmp(filename, "/~", 2)) {
 		filename += 2;
+		found_tilde = TRUE;
+	    }
 	    CTRACE((tfp, "check '%s' to translate x/y/ to [.x.y]\n", filename));
 	    if (!included_device &&
 		(cp = strchr(filename, '/')) != NULL &&
@@ -3293,7 +3460,7 @@ PUBLIC int HTFTPLoad ARGS4(
 		}
 		filename = cp1+1;
 	    } else {
-		if (!included_device) {
+		if (!included_device && !found_tilde) {
 		    filename += 1;
 		}
 	    }
@@ -3414,7 +3581,11 @@ PUBLIC int HTFTPLoad ARGS4(
 listen:
     if(!ftp_passive) {
 	/* Wait for the connection */
+#ifdef INET6
+	struct sockaddr_storage soc_address;
+#else
 	struct sockaddr_in soc_address;
+#endif /* INET6 */
 	int	soc_addrlen=sizeof(soc_address);
 #ifdef SOCKS
 	if (socks_flag)
@@ -3450,7 +3621,7 @@ listen:
 	if (final_status > 0) {
 	    if (server_type != CMS_SERVER)
 		if (outstanding-- > 0) {
-		    status = response(NIL);
+		    status = response(0);
 		    if (status < 0 ||
 			(status == 2 && !strncmp(response_text, "221", 3)))
 			outstanding = 0;
@@ -3471,7 +3642,6 @@ listen:
 	status = final_status;
     } else {
 	int rv;
-	int len;
 	char *FileName = HTParse(name, "", PARSE_PATH + PARSE_PUNCTUATION);
 
 	/** Clear any login messages **/
@@ -3489,29 +3659,29 @@ listen:
 	    StrAllocCopy(anchor->content_encoding, HTAtom_name(encoding));
 	    format = HTAtom_for("www/compressed");
 
-	} else if ((len = strlen(FileName)) > 2) {
-	    if ((FileName[len - 1] == 'Z') &&
-		(FileName[len - 2] == '.' ||
-		 FileName[len - 2] == '-' ||
-		 FileName[len - 2] == '_')) {
+	} else {
+	    char *dot;
+	    CompressFileType cft = HTCompressFileType(FileName, "._-", &dot);
 
-		FileName[len - 2] = '\0';
+	    if (cft != cftNone) {
+		*dot = '\0';
 		format = HTFileFormat(FileName, &encoding, NULL);
 		format = HTCharsetFormat(format, anchor, -1);
 		StrAllocCopy(anchor->content_type, format->name);
-		StrAllocCopy(anchor->content_encoding, "x-compress");
 		format = HTAtom_for("www/compressed");
-	    } else if ((len > 3) &&
-		       !strcasecomp((char *)&FileName[len - 2], "gz")) {
-		if (FileName[len - 3] == '.' ||
-		    FileName[len - 3] == '-' ||
-		    FileName[len - 3] == '_') {
-		    FileName[len - 3] = '\0';
-		    format = HTFileFormat(FileName, &encoding, NULL);
-		    format = HTCharsetFormat(format, anchor, -1);
-		    StrAllocCopy(anchor->content_type, format->name);
+
+		switch (cft) {
+		case cftCompress:
+		    StrAllocCopy(anchor->content_encoding, "x-compress");
+		    break;
+		case cftGzip:
 		    StrAllocCopy(anchor->content_encoding, "x-gzip");
-		    format = HTAtom_for("www/compressed");
+		    break;
+		case cftBzip2:
+		    StrAllocCopy(anchor->content_encoding, "x-bzip2");
+		    break;
+		default:
+		    break;
 		}
 	    }
 	}
@@ -3519,11 +3689,6 @@ listen:
 
 	_HTProgress (gettext("Receiving FTP file."));
 	rv = HTParseSocket(format, format_out, anchor, data_soc, sink);
-
-#if 0				/* already done in HTCopy - kw */
-	if (rv == HT_INTERRUPTED)
-	     _HTProgress(TRANSFER_INTERRUPTED);
-#endif
 
 	HTInitInput(control->socket);
 	/* Reset buffering to control connection DD 921208 */
@@ -3552,7 +3717,7 @@ listen:
 	    (void) HTInetStatus("close");	/* Comment only */
 	} else {
 	    if (rv != HT_LOADED && outstanding--) {
-		status = response(NIL);		/* Pick up final reply */
+		status = response(0);		/* Pick up final reply */
 		if (status != 2 && rv != HT_INTERRUPTED && rv != -1) {
 		    data_soc = -1;		/* invalidate it */
 		    init_help_message_cache();  /* to free memory */
@@ -3567,7 +3732,7 @@ listen:
     }
     while (outstanding-- > 0 &&
 	   (status > 0)) {
-	status = response(NIL);
+	status = response(0);
 	if (status == 2 && !strncmp(response_text, "221", 3))
 	    break;
     }

@@ -6,9 +6,9 @@
 #include <HTAlert.h>
 #include <LYCurses.h>
 #include <LYHistory.h>
-#include <LYUtils.h>
 #include <LYStrings.h>
 #include <LYGlobalDefs.h>
+#include <LYUtils.h>
 #include <LYSignal.h>
 #include <GridText.h>
 #include <LYClean.h>
@@ -41,6 +41,15 @@ extern int exec_command(char * cmd, int wait_flag); /* xsystem.c */
 #include <bios.h>
 #endif /* DJGPP_KEYHANDLER */
 
+#ifdef __EMX__
+#  define BOOLEAN OS2_BOOLEAN		/* Conflicts, but is used */
+#  undef HT_ERROR			/* Conflicts too */
+#  define INCL_PM			/* I want some PM functions.. */
+#  define INCL_DOSPROCESS		/* TIB PIB. */
+#  include <os2.h>
+#  undef BOOLEAN
+#endif
+
 #ifdef VMS
 #include <descrip.h>
 #include <libclidef.h>
@@ -52,13 +61,17 @@ extern int exec_command(char * cmd, int wait_flag); /* xsystem.c */
 #ifdef UTMPX_FOR_UTMP
 #include <utmpx.h>
 #define utmp utmpx
+#ifdef UTMPX_FILE
 #ifdef UTMP_FILE
 #undef UTMP_FILE
 #endif /* UTMP_FILE */
-#ifdef    UTMPX_FILE
 #define UTMP_FILE UTMPX_FILE
 #else
+#ifdef __UTMPX_FILE
 #define UTMP_FILE __UTMPX_FILE  /* at least in OS/390  S/390 -- gil -- 2100 */
+#else
+#define UTMP_FILE "/var/adm/utmpx" /* Digital Unix 4.0 */
+#endif
 #endif /* UTMPX_FILE */
 #else
 #include <utmp.h>
@@ -115,7 +128,7 @@ extern int BSDselect PARAMS((int nfds, fd_set * readfds, fd_set * writefds,
  * it no longer applies, since it will reuse that filename at a later time.
  */
 #ifdef EXP_RAND_TEMPNAME
-#if defined(HAVE_RAND) && defined(HAVE_SRAND) && defined(RAND_MAX)
+#if defined(LYNX_RAND_MAX)
 #define USE_RAND_TEMPNAME 1
 #define MAX_TEMPNAME 10000
 #ifndef BITS_PER_CHAR
@@ -139,6 +152,7 @@ PUBLIC	HTList * sug_filenames = NULL;		/* Suggested filenames	 */
 typedef struct _LYTemp {
     struct _LYTemp *next;
     char *name;
+    BOOLEAN outs;
     FILE *file;
 } LY_TEMP;
 
@@ -223,11 +237,6 @@ PUBLIC void highlight ARGS3(
 	if (flag == ON || links[cur].type == WWW_FORM_LINK_TYPE)
 #endif
 	{
-
-#ifdef USE_COLOR_STYLE
-#define LXP (links[cur].lx)
-#define LYP (links[cur].ly)
-#endif
 #ifndef USE_COLOR_STYLE
 	if (links[cur].type == WWW_FORM_LINK_TYPE ||
 	    !links[cur].hightext) {
@@ -242,12 +251,21 @@ PUBLIC void highlight ARGS3(
 	    target1_drawn = YES;
 #endif
 	}
-#else
-	move(links[cur].ly, links[cur].lx);
-	if (flag == ON) {
-	    LynxChangeStyle(s_alink, STACK_ON, 0);
-	} else {
-	    int s, x;
+#else	/* here USE_COLOR_STYLE defined */
+	int s = s_alink;
+
+#ifdef TEXTFIELDS_MAY_NEED_ACTIVATION
+	if ( textfields_need_activation &&
+	     links[cur].type == WWW_FORM_LINK_TYPE &&
+	     F_TEXTLIKE(links[cur].form->type) )
+	    s = s_curedit;
+#endif
+
+
+#  define LXP (links[cur].lx)
+#  define LYP (links[cur].ly)
+	if (flag != ON) {
+	    int x;
 		/*
 		 *  This is where we try to restore the original style when
 		 *  a link is unhighlighted.  The purpose of cached_styles[][]
@@ -257,6 +275,9 @@ PUBLIC void highlight ARGS3(
 		 *  until we find one.
 		 */
 	    if (LYP >= 0 && LYP < CACHEH && LXP >= 0 && LXP < CACHEW) {
+		CTRACE2(TRACE_STYLE,
+			(tfp, "STYLE.highlight.off: cached style @(%d,%d): ",
+			      LYP, LXP));
 		s = cached_styles[LYP][LXP];
 		if (s == 0) {
 		    for (x = LXP-1; x >= 0; x--) {
@@ -265,17 +286,27 @@ PUBLIC void highlight ARGS3(
 				s = cached_styles[LYP][x];
 				cached_styles[LYP][LXP] = s;
 			    }
+			    CTRACE((tfp, "found %d, x_offset=%d.\n",
+				    cached_styles[LYP][x], (int)x-LXP));
 			    break;
 			}
 		    }
-		    if (s == 0)
+		    if (s == 0) {
+			CTRACE((tfp, "not found, assume <a>.\n"));
 			s = s_a;
+		    }
+		} else {
+		    CTRACE((tfp, "found %d.\n", s));
 		}
 	    } else {
+		CTRACE2(TRACE_STYLE, (tfp, "STYLE.highlight.off: can't use cache.\n"));
 		s = s_a;
 	    }
-	    LynxChangeStyle(s, STACK_ON, 0);
+	} else {
+	    CTRACE2(TRACE_STYLE, (tfp, "STYLE.highlight.on: @(%d,%d).\n", LYP, LXP));
 	}
+	LYmove(LYP, LXP);
+	LynxChangeStyle(s, STACK_ON);
 #endif
 	}
 
@@ -289,17 +320,18 @@ PUBLIC void highlight ARGS3(
 		       links[cur].hightext : ""),
 		      (avail_space > links[cur].form->size ?
 				      links[cur].form->size : avail_space));
-	    addstr(buffer);
+	    LYaddstr(buffer);
 
 	    len = strlen(buffer);
 	    for (; len < links[cur].form->size && len < avail_space; len++)
-		addch('_');
+		LYaddch('_');
 
 	} else {
 #if defined(USE_COLOR_STYLE) && !defined(NO_HILIT_FIX)
 	    if (flag == OFF) {
 		hl2_drawn = TRUE;
 		redraw_lines_of_link(cur);
+		CTRACE2(TRACE_STYLE, (tfp, "STYLE.highlight.off: NOFIX branch @(%d,%d).\n", LYP, LXP));
 	    } else
 #endif
 	    if (!hl1_drawn) {
@@ -313,7 +345,7 @@ PUBLIC void highlight ARGS3(
 			      (sizeof(buffer) - 1),
 			      ((LYcols - 1) - links[cur].lx),
 			      utf_flag);
-		addstr(buffer);
+		LYaddstr(buffer);
 	    }
 	}
 
@@ -326,11 +358,15 @@ PUBLIC void highlight ARGS3(
 #endif
 	) {
 	    lynx_stop_link_color (flag == ON, links[cur].inUnderline);
-	    move((links[cur].ly + 1), links[cur].hightext2_offset);
+	    LYmove((links[cur].ly + 1), links[cur].hightext2_offset);
 #ifndef USE_COLOR_STYLE
 	    lynx_start_link_color (flag == ON, links[cur].inUnderline);
 #else
-	    LynxChangeStyle(flag == ON ? s_alink : s_a, ABS_ON, 0);
+	    CTRACE2(TRACE_STYLE,
+		    (tfp, "STYLE.highlight.line2: @(%d,%d), style=%d.\n",
+			  links[cur].ly + 1, links[cur].hightext2_offset,
+			  flag == ON ? s_alink : s_a));
+	    LynxChangeStyle(flag == ON ? s_alink : s_a, ABS_ON);
 #endif
 
 	    for (i = 0; (tmp[0] = links[cur].hightext2[i]) != '\0' &&
@@ -341,10 +377,10 @@ PUBLIC void highlight ARGS3(
 		     */
 		    if (HTCJK != NOCJK && !isascii(tmp[0])) {
 			tmp[1] = links[cur].hightext2[++i];
-			addstr(tmp);
+			LYaddstr(tmp);
 			tmp[1] = '\0';
 		    } else {
-			addstr(tmp);
+			LYaddstr(tmp);
 		    }
 		 }
 	    }
@@ -417,17 +453,11 @@ PUBLIC void highlight ARGS3(
 		   ((Offset + tLen) <= hoffset)) {
 		data = (Data + tlen);
 		offset = (Offset + tLen);
-		if ((case_sensitive ?
-		     (cp = LYno_attr_mbcs_strstr(data,
-						 target,
-						 utf_flag, YES,
-						 &HitOffset,
-						 &LenNeeded)) != NULL :
-		     (cp = LYno_attr_mbcs_case_strstr(data,
-						 target,
-						 utf_flag, YES,
-						 &HitOffset,
-						 &LenNeeded)) != NULL) &&
+		if (((cp = LYno_attr_mb_strstr(data,
+					       target,
+					       utf_flag, YES,
+					       &HitOffset,
+					       &LenNeeded)) != NULL) &&
 		    (offset + LenNeeded) < LYcols) {
 		    Data = cp;
 		    Offset = (offset + HitOffset);
@@ -454,7 +484,7 @@ PUBLIC void highlight ARGS3(
 		 *  Go to the start of the hightext and
 		 *  handle its first character. - FM
 		 */
-		move(hLine, offset);
+		LYmove(hLine, offset);
 		tmp[0] = data[itmp];
 		if (utf_flag && !isascii(tmp[0])) {
 		    if ((*tmp & 0xe0) == 0xc0) {
@@ -490,9 +520,9 @@ PUBLIC void highlight ARGS3(
 		    if (flag != ON) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
-			addstr(tmp);
+			LYaddstr(tmp);
 		    } else {
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    }
 		    tmp[1] = '\0';
 		    written += (utf_extra + 1);
@@ -509,9 +539,9 @@ PUBLIC void highlight ARGS3(
 		    if (flag != ON) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
-			addstr(tmp);
+			LYaddstr(tmp);
 		    } else {
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    }
 		    tmp[1] = '\0';
 		    written += 2;
@@ -523,9 +553,9 @@ PUBLIC void highlight ARGS3(
 		    if (flag != ON) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
-			addstr(tmp);
+			LYaddstr(tmp);
 		    } else {
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    }
 		    written++;
 		}
@@ -589,9 +619,9 @@ PUBLIC void highlight ARGS3(
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
-			    move(hLine, (offset + 1));
+			    LYmove(hLine, (offset + 1));
 			} else {
-			    addstr(tmp);
+			    LYaddstr(tmp);
 			}
 			tmp[1] = '\0';
 			written += (utf_extra + 1);
@@ -610,9 +640,9 @@ PUBLIC void highlight ARGS3(
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
-			    move(hLine, (offset + 1));
+			    LYmove(hLine, (offset + 1));
 			} else {
-			    addstr(tmp);
+			    LYaddstr(tmp);
 			}
 			tmp[1] = '\0';
 			written += 2;
@@ -626,9 +656,9 @@ PUBLIC void highlight ARGS3(
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
-			    move(hLine, (offset + 1));
+			    LYmove(hLine, (offset + 1));
 			} else {
-			    addstr(tmp);
+			    LYaddstr(tmp);
 			}
 			written++;
 		    }
@@ -665,17 +695,11 @@ PUBLIC void highlight ARGS3(
 					      (offset - Offset),
 					      utf_flag);
 		}
-		if ((case_sensitive ?
-		     (cp = LYno_attr_mbcs_strstr(data,
-						 target,
-						 utf_flag, YES,
-						 &HitOffset,
-						 &LenNeeded)) != NULL :
-		     (cp = LYno_attr_mbcs_case_strstr(data,
-						 target,
-						 utf_flag, YES,
-						 &HitOffset,
-						 &LenNeeded)) != NULL) &&
+		if (((cp = LYno_attr_mb_strstr(data,
+					       target,
+					       utf_flag, YES,
+					       &HitOffset,
+					       &LenNeeded)) != NULL) &&
 		    (offset + LenNeeded) < LYcols) {
 		    /*
 		     *	If the hit starts after the end of the hightext,
@@ -716,7 +740,7 @@ highlight_hit_within_hightext:
 	    if (!utf_flag) {
 		data += (Offset - offset);
 	    } else {
-		refresh();
+		LYrefresh();
 		data = LYmbcs_skip_glyphs(data,
 					  (Offset - offset),
 					  utf_flag);
@@ -730,7 +754,7 @@ highlight_hit_within_hightext:
 	     *	Go to the start of the hit and
 	     *	handle its first character. - FM
 	     */
-	    move(hLine, offset);
+	    LYmove(hLine, offset);
 	    tmp[0] = data[itmp];
 	    if (utf_flag && !isascii(tmp[0])) {
 		if ((*tmp & 0xe0) == 0xc0) {
@@ -769,9 +793,9 @@ highlight_hit_within_hightext:
 		    (offset > hoffset && data[itmp+1] != '\0')) {
 		    LYstartTargetEmphasis();
 		    TargetEmphasisON = TRUE;
-		    addstr(tmp);
+		    LYaddstr(tmp);
 		} else {
-		    move(hLine, (offset + 1));
+		    LYmove(hLine, (offset + 1));
 		}
 		tmp[1] = '\0';
 		written += (utf_extra + 1);
@@ -791,9 +815,9 @@ highlight_hit_within_hightext:
 		    (offset > hoffset && data[itmp+1] != '\0')) {
 		    LYstartTargetEmphasis();
 		    TargetEmphasisON = TRUE;
-		    addstr(tmp);
+		    LYaddstr(tmp);
 		} else {
-		    move(hLine, (offset + 1));
+		    LYmove(hLine, (offset + 1));
 		}
 		tmp[1] = '\0';
 		written += 2;
@@ -808,9 +832,9 @@ highlight_hit_within_hightext:
 		    (offset > hoffset && data[itmp+1] != '\0')) {
 		    LYstartTargetEmphasis();
 		    TargetEmphasisON = TRUE;
-		    addstr(tmp);
+		    LYaddstr(tmp);
 		} else {
-		    move(hLine, (offset + 1));
+		    LYmove(hLine, (offset + 1));
 		}
 		written++;
 	    }
@@ -871,9 +895,9 @@ highlight_hit_within_hightext:
 			LYstopTargetEmphasis();
 			TargetEmphasisON = FALSE;
 			LYGetYX(y, offset);
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    } else {
-			addstr(tmp);
+			LYaddstr(tmp);
 		    }
 		    tmp[1] = '\0';
 		    written += (utf_extra + 1);
@@ -892,9 +916,9 @@ highlight_hit_within_hightext:
 			LYstopTargetEmphasis();
 			TargetEmphasisON = FALSE;
 			LYGetYX(y, offset);
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    } else {
-			addstr(tmp);
+			LYaddstr(tmp);
 		    }
 		    tmp[1] = '\0';
 		    written += 2;
@@ -908,9 +932,9 @@ highlight_hit_within_hightext:
 			LYstopTargetEmphasis();
 			TargetEmphasisON = FALSE;
 			LYGetYX(y, offset);
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    } else {
-			addstr(tmp);
+			LYaddstr(tmp);
 		    }
 		    written++;
 		}
@@ -944,17 +968,11 @@ highlight_hit_within_hightext:
 					  (offset - Offset),
 					  utf_flag);
 	    }
-	    if ((case_sensitive ?
-		 (cp = LYno_attr_mbcs_strstr(data,
-					     target,
-					     utf_flag, YES,
-					     &HitOffset,
-					     &LenNeeded)) != NULL :
-		 (cp = LYno_attr_mbcs_case_strstr(data,
-					     target,
-					     utf_flag, YES,
-					     &HitOffset,
-					     &LenNeeded)) != NULL) &&
+	    if (((cp = LYno_attr_mb_strstr(data,
+					   target,
+					   utf_flag, YES,
+					   &HitOffset,
+					   &LenNeeded)) != NULL) &&
 		(offset + LenNeeded) < LYcols) {
 		/*
 		 *  If the hit starts after the end of the hightext,
@@ -979,12 +997,12 @@ highlight_hit_within_hightext:
 		    if (!utf_flag) {
 			data = buffer + (offset - hoffset);
 		    } else {
-			refresh();
+			LYrefresh();
 			data = LYmbcs_skip_glyphs(buffer,
 						  (offset - hoffset),
 						  utf_flag);
 		    }
-		    move(hLine, offset);
+		    LYmove(hLine, offset);
 		    itmp = 0;
 		    written = 0;
 		    len = strlen(data);
@@ -1039,9 +1057,9 @@ highlight_hit_within_hightext:
 				LYstopTargetEmphasis();
 				TargetEmphasisON = FALSE;
 				LYGetYX(y, offset);
-				move(hLine, (offset + 1));
+				LYmove(hLine, (offset + 1));
 			    } else {
-				addstr(tmp);
+				LYaddstr(tmp);
 			    }
 			    tmp[1] = '\0';
 			    written += (utf_extra + 1);
@@ -1060,7 +1078,7 @@ highlight_hit_within_hightext:
 				LYstopTargetEmphasis();
 				TargetEmphasisON = FALSE;
 			    } else {
-				addstr(tmp);
+				LYaddstr(tmp);
 			    }
 			    tmp[1] = '\0';
 			    written += 2;
@@ -1074,7 +1092,7 @@ highlight_hit_within_hightext:
 				LYstopTargetEmphasis();
 				TargetEmphasisON = FALSE;
 			    } else {
-				addstr(tmp);
+				LYaddstr(tmp);
 			    }
 			    written++;
 			}
@@ -1147,17 +1165,11 @@ highlight_search_hightext2:
 		   ((Offset + tLen) <= hoffset)) {
 		data = (Data + tlen);
 		offset = (Offset + tLen);
-		if ((case_sensitive ?
-		     (cp = LYno_attr_mbcs_strstr(data,
-						 target,
-						 utf_flag, YES,
-						 &HitOffset,
-						 &LenNeeded)) != NULL :
-		     (cp = LYno_attr_mbcs_case_strstr(data,
-						 target,
-						 utf_flag, YES,
-						 &HitOffset,
-						 &LenNeeded)) != NULL) &&
+		if (((cp = LYno_attr_mb_strstr(data,
+					       target,
+					       utf_flag, YES,
+					       &HitOffset,
+					       &LenNeeded)) != NULL) &&
 		    (offset + LenNeeded) < LYcols) {
 		    Data = cp;
 		    Offset = (offset + HitOffset);
@@ -1184,7 +1196,7 @@ highlight_search_hightext2:
 		 *  Go to the start of the hightext2 and
 		 *  handle its first character. - FM
 		 */
-		move(hLine, offset);
+		LYmove(hLine, offset);
 		tmp[0] = data[itmp];
 		if (utf_flag && !isascii(tmp[0])) {
 		    if ((*tmp & 0xe0) == 0xc0) {
@@ -1220,9 +1232,9 @@ highlight_search_hightext2:
 		    if (flag != ON) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
-			addstr(tmp);
+			LYaddstr(tmp);
 		    } else {
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    }
 		    tmp[1] = '\0';
 		    written += (utf_extra + 1);
@@ -1239,9 +1251,9 @@ highlight_search_hightext2:
 		    if (flag != ON) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
-			addstr(tmp);
+			LYaddstr(tmp);
 		    } else {
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    }
 		    tmp[1] = '\0';
 		    written += 2;
@@ -1253,9 +1265,9 @@ highlight_search_hightext2:
 		    if (flag != ON) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
-			addstr(tmp);
+			LYaddstr(tmp);
 		    } else {
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    }
 		    written++;
 		}
@@ -1319,9 +1331,9 @@ highlight_search_hightext2:
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
-			    move(hLine, (offset + 1));
+			    LYmove(hLine, (offset + 1));
 			} else {
-			    addstr(tmp);
+			    LYaddstr(tmp);
 			}
 			tmp[1] = '\0';
 			written += (utf_extra + 1);
@@ -1340,9 +1352,9 @@ highlight_search_hightext2:
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
-			    move(hLine, (offset + 1));
+			    LYmove(hLine, (offset + 1));
 			} else {
-			    addstr(tmp);
+			    LYaddstr(tmp);
 			}
 			tmp[1] = '\0';
 			written += 2;
@@ -1356,9 +1368,9 @@ highlight_search_hightext2:
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
-			    move(hLine, (offset + 1));
+			    LYmove(hLine, (offset + 1));
 			} else {
-			    addstr(tmp);
+			    LYaddstr(tmp);
 			}
 			written++;
 		    }
@@ -1394,17 +1406,11 @@ highlight_search_hightext2:
 					      (offset - Offset),
 					      utf_flag);
 		}
-		if ((case_sensitive ?
-		     (cp = LYno_attr_mbcs_strstr(data,
-						 target,
-						 utf_flag, YES,
-						 &HitOffset,
-						 &LenNeeded)) != NULL :
-		     (cp = LYno_attr_mbcs_case_strstr(data,
-						 target,
-						 utf_flag, YES,
-						 &HitOffset,
-						 &LenNeeded)) != NULL) &&
+		if (((cp = LYno_attr_mb_strstr(data,
+					       target,
+					       utf_flag, YES,
+					       &HitOffset,
+					       &LenNeeded)) != NULL) &&
 		    (offset + LenNeeded) < LYcols) {
 		    /*
 		     *	If the hit starts after the end of the hightext2,
@@ -1445,7 +1451,7 @@ highlight_hit_within_hightext2:
 	    if (!utf_flag) {
 		data += (Offset - offset);
 	    } else {
-		refresh();
+		LYrefresh();
 		data = LYmbcs_skip_glyphs(data,
 					  (Offset - offset),
 					  utf_flag);
@@ -1459,7 +1465,7 @@ highlight_hit_within_hightext2:
 	     *	Go to the start of the hit and
 	     *	handle its first character. - FM
 	     */
-	    move(hLine, offset);
+	    LYmove(hLine, offset);
 	    tmp[0] = data[itmp];
 	    if (utf_flag && !isascii(tmp[0])) {
 		if ((*tmp & 0xe0) == 0xc0) {
@@ -1498,9 +1504,9 @@ highlight_hit_within_hightext2:
 		    (offset > hoffset && data[itmp+1] != '\0')) {
 		    LYstartTargetEmphasis();
 		    TargetEmphasisON = TRUE;
-		    addstr(tmp);
+		    LYaddstr(tmp);
 		} else {
-		    move(hLine, (offset + 1));
+		    LYmove(hLine, (offset + 1));
 		}
 		tmp[1] = '\0';
 		written += (utf_extra + 1);
@@ -1520,9 +1526,9 @@ highlight_hit_within_hightext2:
 		    (offset > hoffset && data[itmp+1] != '\0')) {
 		    LYstartTargetEmphasis();
 		    TargetEmphasisON = TRUE;
-		    addstr(tmp);
+		    LYaddstr(tmp);
 		} else {
-		    move(hLine, (offset + 1));
+		    LYmove(hLine, (offset + 1));
 		}
 		tmp[1] = '\0';
 		written += 2;
@@ -1537,9 +1543,9 @@ highlight_hit_within_hightext2:
 		    (offset > hoffset && data[itmp+1] != '\0')) {
 		    LYstartTargetEmphasis();
 		    TargetEmphasisON = TRUE;
-		    addstr(tmp);
+		    LYaddstr(tmp);
 		} else {
-		    move(hLine, (offset + 1));
+		    LYmove(hLine, (offset + 1));
 		}
 		written++;
 	    }
@@ -1600,9 +1606,9 @@ highlight_hit_within_hightext2:
 			LYstopTargetEmphasis();
 			TargetEmphasisON = FALSE;
 			LYGetYX(y, offset);
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    } else {
-			addstr(tmp);
+			LYaddstr(tmp);
 		    }
 		    tmp[1] = '\0';
 		    written += (utf_extra + 1);
@@ -1621,9 +1627,9 @@ highlight_hit_within_hightext2:
 			LYstopTargetEmphasis();
 			TargetEmphasisON = FALSE;
 			LYGetYX(y, offset);
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    } else {
-			addstr(tmp);
+			LYaddstr(tmp);
 		    }
 		    tmp[1] = '\0';
 		    written += 2;
@@ -1637,9 +1643,9 @@ highlight_hit_within_hightext2:
 			LYstopTargetEmphasis();
 			TargetEmphasisON = FALSE;
 			LYGetYX(y, offset);
-			move(hLine, (offset + 1));
+			LYmove(hLine, (offset + 1));
 		    } else {
-			addstr(tmp);
+			LYaddstr(tmp);
 		    }
 		    written++;
 		}
@@ -1673,17 +1679,11 @@ highlight_hit_within_hightext2:
 					  (offset - Offset),
 					  utf_flag);
 	    }
-	    if ((case_sensitive ?
-		 (cp = LYno_attr_mbcs_strstr(data,
-					     target,
-					     utf_flag, YES,
-					     &HitOffset,
-					     &LenNeeded)) != NULL :
-		 (cp = LYno_attr_mbcs_case_strstr(data,
-					     target,
-					     utf_flag, YES,
-					     &HitOffset,
-					     &LenNeeded)) != NULL) &&
+	    if (((cp = LYno_attr_mb_strstr(data,
+					   target,
+					   utf_flag, YES,
+					   &HitOffset,
+					   &LenNeeded)) != NULL) &&
 		(offset + LenNeeded) < LYcols) {
 		/*
 		 *  If the hit starts after the end of the hightext2,
@@ -1708,12 +1708,12 @@ highlight_hit_within_hightext2:
 		    if (!utf_flag) {
 			data = buffer + (offset - hoffset);
 		    } else {
-			refresh();
+			LYrefresh();
 			data = LYmbcs_skip_glyphs(buffer,
 						  (offset - hoffset),
 						  utf_flag);
 		    }
-		    move(hLine, offset);
+		    LYmove(hLine, offset);
 		    itmp = 0;
 		    written = 0;
 		    len = strlen(data);
@@ -1768,9 +1768,9 @@ highlight_hit_within_hightext2:
 				LYstopTargetEmphasis();
 				TargetEmphasisON = FALSE;
 				LYGetYX(y, offset);
-				move(hLine, (offset + 1));
+				LYmove(hLine, (offset + 1));
 			    } else {
-				addstr(tmp);
+				LYaddstr(tmp);
 			    }
 			    tmp[1] = '\0';
 			    written += (utf_extra + 1);
@@ -1789,7 +1789,7 @@ highlight_hit_within_hightext2:
 				LYstopTargetEmphasis();
 				TargetEmphasisON = FALSE;
 			    } else {
-				addstr(tmp);
+				LYaddstr(tmp);
 			    }
 			    tmp[1] = '\0';
 			    written += 2;
@@ -1803,7 +1803,7 @@ highlight_hit_within_hightext2:
 				LYstopTargetEmphasis();
 				TargetEmphasisON = FALSE;
 			    } else {
-				addstr(tmp);
+				LYaddstr(tmp);
 			    }
 			    written++;
 			}
@@ -1839,11 +1839,11 @@ highlight_search_done:
 	    /*
 	     *	Never hide the cursor if there's no FANCY CURSES or SLANG.
 	     */
-	    move(links[cur].ly,
+	    LYmove(links[cur].ly,
 		 ((links[cur].lx > 0) ? (links[cur].lx - 1) : 0));
 
 	if (flag)
-	    refresh();
+	    LYrefresh();
     }
     return;
 }
@@ -2049,50 +2049,64 @@ PUBLIC void statusline ARGS1(
      */
     if (LYStatusLine >= 0) {
 	if (LYStatusLine < LYlines-1) {
-	    move(LYStatusLine, 0);
+	    LYmove(LYStatusLine, 0);
 	} else {
-	    move(LYlines-1, 0);
+	    LYmove(LYlines-1, 0);
 	}
     } else if (user_mode == NOVICE_MODE) {
-	move(LYlines-3, 0);
+	LYmove(LYlines-3, 0);
     } else {
-	move(LYlines-1, 0);
+	LYmove(LYlines-1, 0);
     }
-    clrtoeol();
+    LYclrtoeol();
 
     if (text != NULL && text[0] != '\0') {
-#ifdef HAVE_UTF8_STATUSLINES
-	if (LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8) {
-	    refresh();
+	BOOLEAN has_CJK = FALSE;
+
+	if (HTCJK != NOCJK) {
+	    for (i = 0; buffer[i] != '\0'; i++) {
+		if (buffer[i] & 0x80) {
+		    has_CJK = TRUE;
+		    break;
+		}
+	    }
 	}
-#endif /* HAVE_UTF8_STATUSLINES */
+
+	if (has_CJK
+#ifdef HAVE_UTF8_STATUSLINES
+	    || (LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8)
+#endif
+	    ) {
+	    LYrefresh();
+	}
+
 #ifndef USE_COLOR_STYLE
 	lynx_start_status_color ();
-	addstr (buffer);
+	LYaddstr (buffer);
 	lynx_stop_status_color ();
 #else
 	/* draw the status bar in the STATUS style */
 	{
 		int a=(strncmp(buffer, ALERT_FORMAT, ALERT_PREFIX_LEN) ||
 		       !hashStyles[s_alert].name) ? s_status : s_alert;
-		LynxChangeStyle (a, STACK_ON, 1);
-		addstr(buffer);
-		wbkgdset(stdscr,
+		LynxChangeStyle (a, STACK_ON);
+		LYaddstr(buffer);
+		wbkgdset(LYwin,
 			 ((lynx_has_color && LYShowColor >= SHOW_COLOR_ON)
 			  ? hashStyles[a].color
 			  :A_NORMAL) | ' ');
-		clrtoeol();
+		LYclrtoeol();
 		if (!(lynx_has_color && LYShowColor >= SHOW_COLOR_ON))
-		    wbkgdset(stdscr, A_NORMAL | ' ');
+		    wbkgdset(LYwin, A_NORMAL | ' ');
 		else if (s_normal != NOSTYLE)
-		    wbkgdset(stdscr, hashStyles[s_normal].color | ' ');
+		    wbkgdset(LYwin, hashStyles[s_normal].color | ' ');
 		else
-		    wbkgdset(stdscr, displayStyles[DSTYLE_NORMAL].color | ' ');
-		LynxChangeStyle (a, STACK_OFF, 0);
+		    wbkgdset(LYwin, displayStyles[DSTYLE_NORMAL].color | ' ');
+		LynxChangeStyle (a, STACK_OFF);
 	}
 #endif
     }
-    refresh();
+    LYrefresh();
 
     return;
 }
@@ -2129,23 +2143,23 @@ PUBLIC void noviceline ARGS1(
     if (dump_output_immediately)
 	return;
 
-    move(LYlines-2,0);
+    LYmove(LYlines-2,0);
     /* stop_reverse(); */
-    clrtoeol();
-    addstr(NOVICE_LINE_ONE);
-    clrtoeol();
+    LYclrtoeol();
+    LYaddstr(NOVICE_LINE_ONE);
+    LYclrtoeol();
 #if defined(DIRED_SUPPORT ) && defined(OK_OVERRIDE)
     if (lynx_edit_mode && !no_dired_support)
-	addstr(DIRED_NOVICELINE);
+	LYaddstr(DIRED_NOVICELINE);
     else
 #endif /* DIRED_SUPPORT && OK_OVERRIDE */
 
     if (LYUseNoviceLineTwo)
-	addstr(NOVICE_LINE_TWO);
+	LYaddstr(NOVICE_LINE_TWO);
     else
-	addstr((char *)novice_lines(lineno));
+	LYaddstr((char *)novice_lines(lineno));
 
-    refresh();
+    LYrefresh();
     return;
 }
 
@@ -2215,6 +2229,9 @@ PRIVATE int DontCheck NOARGS
     if (dump_output_immediately)
 	return(TRUE);
 
+    if (LYHaveCmdScript()) /* we may be running from a script */
+	return(TRUE);
+
 #ifdef MISC_EXP
     if (LYNoZapKey)
 	return(TRUE);
@@ -2224,6 +2241,7 @@ PRIVATE int DontCheck NOARGS
      * and expensive operation - TD
      */
 #if HAVE_GETTIMEOFDAY
+#undef timezone			/* U/Win defines a conflicting macro */
     {
 	struct timeval tv;
 	gettimeofday(&tv, (struct timezone *)0);
@@ -2244,7 +2262,7 @@ PUBLIC int HTCheckForInterrupt NOARGS
     int c;
     int cmd;
 #ifndef VMS /* UNIX stuff: */
-#ifndef USE_SLANG
+#if !defined(USE_SLANG) && (defined(UNIX) || defined(__DJGPP__))
     struct timeval socket_timeout;
     int ret = 0;
     fd_set readfds;
@@ -2301,14 +2319,14 @@ PUBLIC int HTCheckForInterrupt NOARGS
 #endif /* !_WINDOWS */
 
 #if defined(PDCURSES)
-    nodelay(stdscr,TRUE);
+    nodelay(LYwin,TRUE);
 #endif /* DOSPATH */
     /*
      * 'c' contains whatever character we're able to read from keyboard
      */
     c = LYgetch();
 #if defined(PDCURSES)
-    nodelay(stdscr,FALSE);
+    nodelay(LYwin,FALSE);
 #endif /* DOSPATH */
 
 #else /* VMS: */
@@ -2344,7 +2362,7 @@ PUBLIC int HTCheckForInterrupt NOARGS
      */
 
 	/** Keyboard 'Z' or 'z', or Control-G or Control-C **/
-    if (TOUPPER(c) == 'Z' || c == 7 || c == 3)
+    if (LYCharIsINTERRUPT(c))
 	return((int)TRUE);
 
 	/* There is a subset of mainloop() actions available at this stage:
@@ -2370,8 +2388,9 @@ PUBLIC int HTCheckForInterrupt NOARGS
 
 	    switch (cmd)
 	    {
-	    case LYK_WHEREIS: /* search within the document */
-	    case LYK_NEXT:	 /* search for the next occurrence in the document */
+	    case LYK_WHEREIS:	/* search within the document */
+	    case LYK_NEXT:	/* search for the next occurrence in the document */
+	    case LYK_PREV:	/* search for the previous occurrence in the document */
 		handle_LYK_WHEREIS(cmd, &do_refresh);
 		if (www_search_result != -1) {
 		    Newline_partial = www_search_result;
@@ -2461,7 +2480,7 @@ PUBLIC int HTCheckForInterrupt NOARGS
  * references a directory.
  */
 PUBLIC BOOLEAN LYisAbsPath ARGS1(
-	char *,		path)
+	CONST char *,	path)
 {
 #ifdef VMS
     return TRUE;
@@ -2469,7 +2488,7 @@ PUBLIC BOOLEAN LYisAbsPath ARGS1(
     BOOLEAN result;
 #if defined(DOSPATH) || defined(__EMX__)
     result = (BOOL) (LYIsPathSep(path[0])
-     || (isalpha(path[0])
+     || (isalpha(UCH(path[0]))
       && (path[1] == ':')
        && LYIsPathSep(path[2])));
 #else
@@ -2487,7 +2506,7 @@ PUBLIC BOOLEAN LYisRootPath ARGS1(
 {
 #if defined(DOSPATH) || defined(__EMX__)
     if (strlen(path) == 3
-     && isalpha(path[0])
+     && isalpha(UCH(path[0]))
      && path[1] == ':'
      && LYIsPathSep(path[2]))
 	return TRUE;
@@ -2710,8 +2729,8 @@ PUBLIC int LYCheckForProxyURL ARGS1(
 	cp1++;
 	if (!*cp) {
 	    return(NOT_A_URL_TYPE);
-	} else if (isdigit((unsigned char)*cp1)) {
-	    while (*cp1 && isdigit((unsigned char)*cp1))
+	} else if (isdigit(UCH(*cp1))) {
+	    while (*cp1 && isdigit(UCH(*cp1)))
 		cp1++;
 	    if (*cp1 && !LYIsHtmlSep(*cp1))
 		return(UNKNOWN_URL_TYPE);
@@ -2823,6 +2842,11 @@ PUBLIC int is_url ARGS1(
 
     } else if (compare_type(cp, "mailto:", 7)) {
 	return(MAILTO_URL_TYPE);
+
+#ifndef DISABLE_BIBP
+    } else if (compare_type(cp, "bibp:", 5)) {
+	return(BIBP_URL_TYPE);
+#endif
 
     } else if (compare_type(cp, "file:", 5)) {
 	if (LYisLocalFile(cp)) {
@@ -3098,7 +3122,7 @@ PUBLIC BOOLEAN LYCanDoHEAD ARGS1(
 	    FREE(temp);
 	    return TRUE;
 	}
-	if (cp && isdigit(cp[1]) && strchr(cp, '-') == NULL) {
+	if (cp && isdigit(UCH(cp[1])) && strchr(cp, '-') == NULL) {
 	    FREE(temp0);
 	    FREE(temp);
 	    return TRUE;
@@ -3135,6 +3159,68 @@ PUBLIC BOOLEAN LYCanDoHEAD ARGS1(
 }
 
 /*
+ * Close an input file.
+ */
+PUBLIC BOOLEAN LYCloseInput ARGS1(
+	FILE *,		fp)
+{
+    if (fp != 0) {
+	int err = ferror(fp);
+	fclose(fp);
+	if (!err) {
+	    return TRUE;
+	}
+    }
+    return FALSE;
+}
+
+/*
+ * Close an output file, reporting any problems with writing to it.
+ */
+PUBLIC BOOLEAN LYCloseOutput ARGS1(
+	FILE *,		fp)
+{
+    if (fp != 0) {
+	int err = ferror(fp);
+	fclose(fp);
+	if (!err) {
+	    return TRUE;
+	}
+    }
+    HTAlert(CANNOT_WRITE_TO_FILE);
+    return FALSE;
+}
+
+/*
+ * Test if we'll be able to write a file.  If not, warn the user.
+ */
+PUBLIC BOOLEAN LYCanWriteFile ARGS1(
+	CONST char*,	filename)
+{
+    if (LYCloseOutput(fopen(filename, "w"))) {
+	remove(filename);
+	return TRUE;
+    } else {
+	_statusline(NEW_FILENAME_PROMPT);
+	return FALSE;
+    }
+}
+
+/*
+ * Test if we'll be able to read a file.
+ */
+PUBLIC BOOLEAN LYCanReadFile ARGS1(
+	CONST char*,	filename)
+{
+    FILE *fp;
+
+    if ((fp = fopen(filename, "r")) != 0) {
+	return LYCloseInput(fp);
+    }
+    return FALSE;
+}
+
+/*
  *  Remove backslashes from any string.
  */
 PUBLIC void remove_backslashes ARGS1(
@@ -3157,10 +3243,6 @@ PUBLIC void remove_backslashes ARGS1(
     return;
 }
 
-#if HAVE_UTMP
-extern char *ttyname PARAMS((int fd));
-#endif
-
 /*
  *  Checks to see if the current process is attached
  *  via a terminal in the local domain.
@@ -3168,42 +3250,42 @@ extern char *ttyname PARAMS((int fd));
  */
 PUBLIC BOOLEAN inlocaldomain NOARGS
 {
-#if ! HAVE_UTMP
-    CTRACE((tfp, "LYUtils: inlocaldomain() not support.\n"));
-    return(TRUE);
-#else
+#if HAVE_UTMP
     int n;
     FILE *fp;
     struct utmp me;
     char *cp, *mytty = NULL;
 
-    if ((cp=ttyname(0)))
+    if ((cp = ttyname(0)))
 	mytty = strrchr(cp, '/');
 
-    if (mytty && (fp=fopen(UTMP_FILE, "r")) != NULL) {
-	    mytty++;
-	    do {
-		n = fread((char *) &me, sizeof(struct utmp), 1, fp);
-	    } while (n>0 && !STREQ(me.ut_line,mytty));
-	    (void) fclose(fp);
+    if (mytty && (fp = fopen(UTMP_FILE, "r")) != NULL) {
+	mytty++;
+	do {
+	    n = fread((char *) &me, sizeof(struct utmp), 1, fp);
+	} while (n > 0 && !STREQ(me.ut_line, mytty));
+	(void) LYCloseInput(fp);
 
-	    if (n > 0 &&
-		strlen(me.ut_host) > strlen(LYLocalDomain) &&
-		STREQ(LYLocalDomain,
-		  me.ut_host+strlen(me.ut_host)-strlen(LYLocalDomain)) )
-		return(TRUE);
+	if (n > 0 &&
+	    strlen(me.ut_host) > strlen(LYLocalDomain) &&
+	    STREQ(LYLocalDomain,
+		  me.ut_host + strlen(me.ut_host) - strlen(LYLocalDomain)) )
+	    return(TRUE);
 #ifdef LINUX
 /* Linux fix to check for local user. J.Cullen 11Jul94		*/
-	    if ((n > 0) && (strlen(me.ut_host) == 0))
-		return(TRUE);
+	if ((n > 0) && (strlen(me.ut_host) == 0))
+	    return(TRUE);
 #endif /* LINUX */
 
     } else {
-	CTRACE((tfp,"Could not get ttyname or open UTMP file %s\n", UTMP_FILE));
+	CTRACE((tfp, "Could not get ttyname or open UTMP file %s\n", UTMP_FILE));
     }
 
     return(FALSE);
-#endif /* !HAVE_UTMP */
+#else
+    CTRACE((tfp, "LYUtils: inlocaldomain() not support.\n"));
+    return(TRUE);
+#endif /* HAVE_UTMP */
 }
 
 #if HAVE_SIGACTION
@@ -3367,10 +3449,20 @@ PUBLIC void size_change ARGS1(
 #endif /* TIOCGSIZE */
 #endif /* HAVE_SIZECHANGE */
 
+#ifdef __EMX__
+    {
+	int scrsize[2];
+
+	_scrsize(scrsize);
+	LYcols = scrsize[0];
+	LYlines = scrsize[1];
+    }
+#endif
+
     if (LYlines <= 0)
-	LYlines = 24;
+	LYlines = DFT_ROWS;
     if (LYcols <= 0)
-	LYcols = 80;
+	LYcols = DFT_COLS;
 #endif /* USE_SLANG */
 
     /*
@@ -3380,6 +3472,11 @@ PUBLIC void size_change ARGS1(
 	recent_sizechange = TRUE;
 	CTRACE((tfp, "Window size changed from (%d,%d) to (%d,%d)\n",
 		old_lines, old_cols, LYlines, LYcols));
+#if defined(CAN_SWITCH_DISPLAY_CHARSET) && defined(CAN_AUTODETECT_DISPLAY_CHARSET)
+	/* May need to reload the font due to different char-box size */
+	if (current_char_set != auto_display_charset)
+	    Switch_Display_Charset(current_char_set, SWITCH_DISPLAY_CHARSET_SIZECHANGE);
+#endif
     }
 #ifdef SIGWINCH
     LYExtSignal (SIGWINCH, size_change);
@@ -3574,7 +3671,7 @@ PUBLIC void change_sug_filename ARGS1(
 		   *cp == '<' || *cp == '>' || *cp == '#' ||
 		   *cp == '%' || *cp == '*' || *cp == '`' ||
 		   *cp == '~' || *cp == '^' || *cp == '|' ||
-		   *cp <  ' ' || ((unsigned char)*cp) > 126) {
+		   *cp <  ' ' || (UCH(*cp)) > 126) {
 	    *cp = '-';
 	}
     }
@@ -3771,9 +3868,10 @@ PRIVATE int fmt_tempname ARGS3(
     }
 #else
 #ifdef USE_RAND_TEMPNAME
+#define SIZE_TEMPNAME ((MAX_TEMPNAME / BITS_PER_CHAR) + 1)
     static BOOL first = TRUE;
     static int names_used = 0;
-    static unsigned char *used_tempname;
+    static unsigned char used_tempname[SIZE_TEMPNAME];
     unsigned offset, mask;
 #endif
     static unsigned counter;
@@ -3788,12 +3886,8 @@ PRIVATE int fmt_tempname ARGS3(
      */
 #ifdef USE_RAND_TEMPNAME
     if (first) {
-	srand((unsigned)((long)time((time_t *)0) + (long)result));
+	lynx_srand((unsigned)((long)time((time_t *)0) + (long)result));
 	first = FALSE;
-	used_tempname = typecallocn(unsigned char,
-				(MAX_TEMPNAME / BITS_PER_CHAR) + 1);
-	if (used_tempname == 0)
-	    outofmem(__FILE__, "fmt_tempname");
     }
 
     /* We don't really need all of the bits from rand().  The high-order bits
@@ -3803,7 +3897,8 @@ PRIVATE int fmt_tempname ARGS3(
      */
     counter = MAX_TEMPNAME;
     while (names_used < MAX_TEMPNAME) {
-	counter = ( (float)MAX_TEMPNAME * rand() ) / RAND_MAX + 1;
+	counter = (unsigned)(( (float)MAX_TEMPNAME * lynx_rand() ) / LYNX_RAND_MAX + 1);
+	counter %= SIZE_TEMPNAME;	/* just in case... */
 	/*
 	 * Avoid reusing a temporary name, since there are places in the code
 	 * which can refer to a temporary filename even after it has been
@@ -3817,8 +3912,8 @@ PRIVATE int fmt_tempname ARGS3(
 	    break;
 	}
     }
-    if (counter >= MAX_TEMPNAME)
-	HTAlert("Too many tempfiles");
+    if (names_used >= MAX_TEMPNAME)
+	HTAlert(gettext("Too many tempfiles"));
 #else
     counter++;
 #endif
@@ -3913,114 +4008,101 @@ PUBLIC int number2arrows ARGS1(
 /* skip the special flags when processing "all" and "default": */
 #define N_SPECIAL_RESTRICT_OPTIONS 2
 
-PRIVATE CONST char *restrict_name[] = {
-       "default" ,
-       "all"     ,
-       "inside_telnet" ,
-       "outside_telnet",
-       "telnet_port"   ,
-       "inside_ftp"    ,
-       "outside_ftp"   ,
-       "inside_rlogin" ,
-       "outside_rlogin",
-       "suspend"       ,
-       "editor"        ,
-       "shell"	       ,
-       "bookmark"      ,
-       "multibook"     ,
-       "bookmark_exec" ,
-       "option_save"   ,
-       "print"	       ,
-       "download"      ,
-       "disk_save"     ,
-       "exec"	       ,
-       "lynxcgi"       ,
-       "exec_frozen"   ,
-       "goto"	       ,
-       "jump"	       ,
-       "file_url"      ,
-#ifndef DISABLE_NEWS
-       "news_post"     ,
-       "inside_news"   ,
-       "outside_news"  ,
+PRIVATE CONST struct {
+    CONST char *name;
+    BOOLEAN *flag;
+    BOOLEAN can;
+} restrictions[] = {
+    { "default",	&had_restrictions_default, TRUE },
+    { "all",		&had_restrictions_all,	TRUE },
+    { "inside_telnet",	&no_inside_telnet,	CAN_ANONYMOUS_INSIDE_DOMAIN_TELNET },
+    { "outside_telnet",	&no_outside_telnet,	CAN_ANONYMOUS_OUTSIDE_DOMAIN_TELNET },
+    { "telnet_port",	&no_telnet_port,	CAN_ANONYMOUS_GOTO_TELNET_PORT },
+    { "inside_ftp",	&no_inside_ftp,		CAN_ANONYMOUS_INSIDE_DOMAIN_FTP },
+    { "outside_ftp",	&no_outside_ftp,	CAN_ANONYMOUS_OUTSIDE_DOMAIN_FTP },
+    { "inside_rlogin",	&no_inside_rlogin,	CAN_ANONYMOUS_INSIDE_DOMAIN_RLOGIN },
+    { "outside_rlogin",	&no_outside_rlogin,	CAN_ANONYMOUS_OUTSIDE_DOMAIN_RLOGIN },
+    { "suspend",	&no_suspend,		TRUE },
+    { "editor",		&no_editor,		TRUE },
+    { "shell",		&no_shell,		TRUE },
+    { "bookmark",	&no_bookmark,		TRUE },
+    { "multibook",	&no_multibook,		TRUE },
+    { "bookmark_exec",	&no_bookmark_exec,	TRUE },
+    { "option_save",	&no_option_save,	TRUE },
+    { "print",		&no_print,		CAN_ANONYMOUS_PRINT },
+    { "download",	&no_download,		TRUE },
+    { "disk_save",	&no_disk_save,		TRUE },
+#if defined(EXEC_LINKS) || defined(EXEC_SCRIPTS)
+    { "exec",		&no_exec,		LOCAL_EXECUTION_LINKS_ALWAYS_OFF_FOR_ANONYMOUS },
 #endif
-       "mail"	       ,
-       "dotfiles"      ,
-       "useragent"     ,
+    { "lynxcgi",	&no_lynxcgi,		TRUE },
+    { "exec_frozen",	&exec_frozen,		TRUE },
+    { "goto",		&no_goto,		CAN_ANONYMOUS_GOTO },
+    { "jump",		&no_jump,		CAN_ANONYMOUS_JUMP },
+    { "file_url",	&no_file_url,		TRUE },
+#ifndef DISABLE_NEWS
+    { "news_post",	&no_newspost,		TRUE },
+    { "inside_news",	&no_inside_news,	CAN_ANONYMOUS_INSIDE_DOMAIN_READ_NEWS },
+    { "outside_news",	&no_outside_news,	CAN_ANONYMOUS_OUTSIDE_DOMAIN_READ_NEWS },
+#endif
+    { "mail",		&no_mail,		CAN_ANONYMOUS_MAIL },
+    { "dotfiles",	&no_dotfiles,		TRUE },
+    { "useragent",	&no_useragent,		TRUE },
+#ifdef SUPPORT_CHDIR
+    { "chdir",		&no_chdir,		TRUE },
+#endif
 #ifdef DIRED_SUPPORT
-       "dired_support" ,
+    { "dired_support",	&no_dired_support,	TRUE },
 #ifdef OK_PERMIT
-       "change_exec_perms",
+    { "change_exec_perms", &no_change_exec_perms, TRUE },
 #endif /* OK_PERMIT */
 #endif /* DIRED_SUPPORT */
 #ifdef USE_EXTERNALS
-       "externals" ,
+    { "externals",	&no_externals,		TRUE },
 #endif
-       "lynxcfg_info" ,
+    { "lynxcfg_info",	&no_lynxcfg_info,	CAN_ANONYMOUS_VIEW_LYNXCFG_INFO },
 #ifndef NO_CONFIG_INFO
-       "lynxcfg_xinfo" ,
+    { "lynxcfg_xinfo",	&no_lynxcfg_xinfo,	CAN_ANONYMOUS_VIEW_LYNXCFG_EXTENDED_INFO },
 #ifdef HAVE_CONFIG_H
-       "compileopts_info",
+    { "compileopts_info", &no_compileopts_info,	CAN_ANONYMOUS_VIEW_COMPILEOPTS_INFO },
 #endif
 #endif
-       (char *) 0     };
-
-	/* restrict_name and restrict_flag structure order
-	 * must be maintained exactly!
-	 */
-
-PRIVATE BOOLEAN *restrict_flag[] = {
-       &had_restrictions_default,
-       &had_restrictions_all,
-       &no_inside_telnet,
-       &no_outside_telnet,
-       &no_telnet_port,
-       &no_inside_ftp,
-       &no_outside_ftp,
-       &no_inside_rlogin,
-       &no_outside_rlogin,
-       &no_suspend  ,
-       &no_editor   ,
-       &no_shell    ,
-       &no_bookmark ,
-       &no_multibook ,
-       &no_bookmark_exec,
-       &no_option_save,
-       &no_print    ,
-       &no_download ,
-       &no_disk_save,
-       &no_exec     ,
-       &no_lynxcgi  ,
-       &exec_frozen ,
-       &no_goto     ,
-       &no_jump     ,
-       &no_file_url ,
+    /* put "goto" restrictions on the end, since they are a refinement */
+#ifndef DISABLE_BIBP
+    { "goto_bibp",	&no_goto_bibp,		CAN_ANONYMOUS_GOTO_BIBP	},
+#endif
+#ifdef HAVE_CONFIG_H
+#ifndef NO_CONFIG_INFO
+    { "goto_configinfo", &no_goto_configinfo,	CAN_ANONYMOUS_GOTO_CONFIGINFO },
+#endif
+#endif
+    { "goto_cso",	&no_goto_cso,		CAN_ANONYMOUS_GOTO_CSO },
+    { "goto_file",	&no_goto_file,		CAN_ANONYMOUS_GOTO_FILE },
+#ifndef DISABLE_FINGER
+    { "goto_finger",	&no_goto_finger,	CAN_ANONYMOUS_GOTO_FINGER },
+#endif
+    { "goto_ftp",	&no_goto_ftp,		CAN_ANONYMOUS_GOTO_FTP },
+#ifndef DISABLE_GOPHER
+    { "goto_gopher",	&no_goto_gopher,	CAN_ANONYMOUS_GOTO_GOPHER },
+#endif
+    { "goto_http",	&no_goto_http,		CAN_ANONYMOUS_GOTO_HTTP },
+    { "goto_https",	&no_goto_https,		CAN_ANONYMOUS_GOTO_HTTPS },
+    { "goto_lynxcgi",	&no_goto_lynxcgi,	CAN_ANONYMOUS_GOTO_LYNXCGI },
+    { "goto_lynxexec",	&no_goto_lynxexec,	CAN_ANONYMOUS_GOTO_LYNXEXEC },
+    { "goto_lynxprog",	&no_goto_lynxprog,	CAN_ANONYMOUS_GOTO_LYNXPROG },
+    { "goto_mailto",	&no_goto_mailto,	CAN_ANONYMOUS_GOTO_MAILTO },
 #ifndef DISABLE_NEWS
-       &no_newspost ,
-       &no_inside_news,
-       &no_outside_news,
+    { "goto_news",	&no_goto_news,		CAN_ANONYMOUS_GOTO_NEWS },
+    { "goto_nntp",	&no_goto_nntp,		CAN_ANONYMOUS_GOTO_NNTP },
 #endif
-       &no_mail     ,
-       &no_dotfiles ,
-       &no_useragent ,
-#ifdef DIRED_SUPPORT
-       &no_dired_support,
-#ifdef OK_PERMIT
-       &no_change_exec_perms,
-#endif /* OK_PERMIT */
-#endif /* DIRED_SUPPORT */
-#ifdef USE_EXTERNALS
-       &no_externals ,
+    { "goto_rlogin",	&no_goto_rlogin,	CAN_ANONYMOUS_GOTO_RLOGIN },
+#ifndef DISABLE_NEWS
+    { "goto_snews",	&no_goto_snews,		CAN_ANONYMOUS_GOTO_SNEWS },
 #endif
-       &no_lynxcfg_info ,
-#ifndef NO_CONFIG_INFO
-       &no_lynxcfg_xinfo ,
-#ifdef HAVE_CONFIG_H
-       &no_compileopts_info ,
-#endif
-#endif
-       (BOOLEAN *) 0  };
-
+    { "goto_telnet",	&no_goto_telnet,	CAN_ANONYMOUS_GOTO_TELNET },
+    { "goto_tn3270",	&no_goto_tn3270,	CAN_ANONYMOUS_GOTO_TN3270 },
+    { "goto_wais",	&no_goto_wais,		CAN_ANONYMOUS_GOTO_WAIS },
+};
 
 /*  This will make no difference between '-' and '_'. It does only in/equality
     compare. It assumes that p2 can't contain dashes, but p1 can.
@@ -4028,9 +4110,9 @@ PRIVATE BOOLEAN *restrict_flag[] = {
     value of zero) for compare of commandline options -VH
  */
 PUBLIC BOOL strn_dash_equ ARGS3(
-	CONST char*	,p1,
-	CONST char*	,p2,
-	int	,len)
+	CONST char*,	p1,
+	CONST char*,	p2,
+	int,		len)
 {
     while (len--) {
 	if (!*p2)
@@ -4066,117 +4148,116 @@ PUBLIC BOOL strn_dash_equ ARGS3(
 #	define RESTRICT_NM_EQU(a,b,len) STRNEQ(a,b,len)
 #endif
 
+/*
+ * Returns the inx'th name from the restrictions table, or null if inx is
+ * out of range.
+ */
+PUBLIC CONST char *index_to_restriction ARGS1(
+    int,	inx)
+{
+    if (inx >= 0 && inx < (int) TABLESIZE(restrictions))
+	return restrictions[inx].name;
+    return NULL;
+}
+
+/*
+ * Returns the value TRUE/FALSE of a given restriction, or -1 if it is not
+ * one that we recognize.
+ */
+PUBLIC int find_restriction ARGS2(
+    CONST char *,	name,
+    int,		len)
+{
+    unsigned i;
+    if (len < 0)
+	len = strlen(name);
+    for (i=0; i < TABLESIZE(restrictions); i++) {
+	if (RESTRICT_NM_EQU(name, restrictions[i].name, len)) {
+	    return (*restrictions[i].flag);
+	}
+    }
+    return -1;
+}
 
 PUBLIC void parse_restrictions ARGS1(
-	CONST char *,	s)
+    CONST char *,	s)
 {
-      CONST char *p;
-      CONST char *word;
-      int i;
+    CONST char *p;
+    CONST char *word;
+    unsigned i;
+    BOOLEAN found;
 
-      p = s;
-      while (*p) {
-	  p = LYSkipCBlanks(p);
-	  if (*p == '\0')
-	      break;
-	  word = p;
-	  while (*p != ',' && *p != '\0')
-	      p++;
+    p = s;
+    while (*p) {
+	p = LYSkipCBlanks(p);
+	if (*p == '\0')
+	    break;
+	word = p;
+	while (*p != ',' && *p != '\0')
+	    p++;
 
-	  if (RESTRICT_NM_EQU(word, "all", p-word)) {
-	      /* set all restrictions */
-	      for (i=N_SPECIAL_RESTRICT_OPTIONS; restrict_flag[i]; i++)
-		  *restrict_flag[i] = TRUE;
-	  }
+	found = FALSE;
+	if (RESTRICT_NM_EQU(word, "all", p-word)) {
+	    found = TRUE;
+	    for (i = N_SPECIAL_RESTRICT_OPTIONS; i < TABLESIZE(restrictions); i++)
+		*(restrictions[i].flag) = TRUE;
+	} else if (RESTRICT_NM_EQU(word, "default", p-word)) {
+	    found = TRUE;
+	    for (i = N_SPECIAL_RESTRICT_OPTIONS; i < TABLESIZE(restrictions); i++)
+		*(restrictions[i].flag) = !restrictions[i].can;
+	} else {
+	    for (i=0; i < TABLESIZE(restrictions); i++) {
+		if (RESTRICT_NM_EQU(word, restrictions[i].name, p-word)) {
+		    *(restrictions[i].flag) = TRUE;
+		    found = TRUE;
+		    break;
+		}
+	    }
+	}
+	if (!found) {
+	    printf("%s: %.*s", gettext("unknown restriction"), p-word, word);
+	    exit(EXIT_FAILURE);
+	}
+	if (*p)
+	    p++;
+    }
 
-	  if (RESTRICT_NM_EQU(word, "default", p-word)) {
-	      /* set all restrictions */
-	      for (i=N_SPECIAL_RESTRICT_OPTIONS; restrict_flag[i]; i++)
-		  *restrict_flag[i] = TRUE;
-
-	     /* reset these to defaults */
-	     no_inside_telnet = !(CAN_ANONYMOUS_INSIDE_DOMAIN_TELNET);
-	    no_outside_telnet = !(CAN_ANONYMOUS_OUTSIDE_DOMAIN_TELNET);
-#ifndef DISABLE_NEWS
-	       no_inside_news = !(CAN_ANONYMOUS_INSIDE_DOMAIN_READ_NEWS);
-	      no_outside_news = !(CAN_ANONYMOUS_OUTSIDE_DOMAIN_READ_NEWS);
+    /*
+     * If shell is restricted, set restrictions on related topics.
+     */
+    if (no_shell) {
+	no_goto_lynxexec = TRUE;
+	no_goto_lynxprog = TRUE;
+	no_goto_lynxcgi = TRUE;
+#ifdef EXEC_LINKS
+	local_exec_on_local_files = TRUE;
 #endif
-		no_inside_ftp = !(CAN_ANONYMOUS_INSIDE_DOMAIN_FTP);
-	       no_outside_ftp = !(CAN_ANONYMOUS_OUTSIDE_DOMAIN_FTP);
-	     no_inside_rlogin = !(CAN_ANONYMOUS_INSIDE_DOMAIN_RLOGIN);
-	    no_outside_rlogin = !(CAN_ANONYMOUS_OUTSIDE_DOMAIN_RLOGIN);
-		      no_goto = !(CAN_ANONYMOUS_GOTO);
-		  no_goto_cso = !(CAN_ANONYMOUS_GOTO_CSO);
-		 no_goto_file = !(CAN_ANONYMOUS_GOTO_FILE);
-#ifndef DISABLE_FINGER
-	       no_goto_finger = !(CAN_ANONYMOUS_GOTO_FINGER);
-#endif
-		  no_goto_ftp = !(CAN_ANONYMOUS_GOTO_FTP);
-#ifndef DISABLE_GOPHER
-	       no_goto_gopher = !(CAN_ANONYMOUS_GOTO_GOPHER);
-#endif
-		 no_goto_http = !(CAN_ANONYMOUS_GOTO_HTTP);
-		no_goto_https = !(CAN_ANONYMOUS_GOTO_HTTPS);
-	      no_goto_lynxcgi = !(CAN_ANONYMOUS_GOTO_LYNXCGI);
-	     no_goto_lynxexec = !(CAN_ANONYMOUS_GOTO_LYNXEXEC);
-	     no_goto_lynxprog = !(CAN_ANONYMOUS_GOTO_LYNXPROG);
-	       no_goto_mailto = !(CAN_ANONYMOUS_GOTO_MAILTO);
-#ifndef DISABLE_NEWS
-		 no_goto_news = !(CAN_ANONYMOUS_GOTO_NEWS);
-		 no_goto_nntp = !(CAN_ANONYMOUS_GOTO_NNTP);
-#endif
-	       no_goto_rlogin = !(CAN_ANONYMOUS_GOTO_RLOGIN);
-#ifndef DISABLE_NEWS
-		no_goto_snews = !(CAN_ANONYMOUS_GOTO_SNEWS);
-#endif
-	       no_goto_telnet = !(CAN_ANONYMOUS_GOTO_TELNET);
-	       no_goto_tn3270 = !(CAN_ANONYMOUS_GOTO_TN3270);
-		 no_goto_wais = !(CAN_ANONYMOUS_GOTO_WAIS);
-	       no_telnet_port = !(CAN_ANONYMOUS_GOTO_TELNET_PORT);
-		      no_jump = !(CAN_ANONYMOUS_JUMP);
-		      no_mail = !(CAN_ANONYMOUS_MAIL);
-		     no_print = !(CAN_ANONYMOUS_PRINT);
-	      no_lynxcfg_info = !(CAN_ANONYMOUS_VIEW_LYNXCFG_INFO);
-#ifndef NO_CONFIG_INFO
-	     no_lynxcfg_xinfo = !(CAN_ANONYMOUS_VIEW_LYNXCFG_EXTENDED_INFO);
-#ifdef HAVE_CONFIG_H
-	  no_compileopts_info = !(CAN_ANONYMOUS_VIEW_COMPILEOPTS_INFO);
-#endif
-#endif
-	   no_goto_configinfo = !(CAN_ANONYMOUS_GOTO_CONFIGINFO);
-#if defined(EXEC_LINKS) || defined(EXEC_SCRIPTS)
-		      no_exec = LOCAL_EXECUTION_LINKS_ALWAYS_OFF_FOR_ANONYMOUS;
-#endif /* EXEC_LINKS || EXEC_SCRIPTS */
-	  }
-
-	  for (i=0; restrict_name[i]; i++) {
-	     if (RESTRICT_NM_EQU(word, restrict_name[i], p-word)) {
-		 *restrict_flag[i] = TRUE;
-		 break;
-	     }
-	  }
-	  if (*p)
-	      p++;
-      }
-      return;
+    }
 }
 
 PUBLIC void print_restrictions_to_fd ARGS1(
     FILE *,	fp)
 {
-    int i, count = 0;
-    for (i=0; restrict_name[i]; i++) {
-	if (*restrict_flag[i] == TRUE)
+    unsigned i, count = 0;
+
+    for (i=0; i < TABLESIZE(restrictions); i++) {
+	if (*(restrictions[i].flag) == TRUE) {
 	    count++;
+	}
     }
     if (!count) {
 	fprintf(fp, gettext("No restrictions set.\n"));
 	return;
     }
     fprintf(fp, gettext("Restrictions set:\n"));
-    for (i=0; restrict_name[i]; i++) {
-	if (*restrict_flag[i] == TRUE) {
-	    fprintf(fp, "   %s\n", restrict_name[i]);
+    for (i=0; i < TABLESIZE(restrictions); i++) {
+	if (*(restrictions[i].flag) == TRUE) {
+	    /* if "goto" is restricted, don't bother tell about its
+	     * refinements
+	     */
+	    if (strncmp(restrictions[i].name, "goto_", 5)
+	     || !no_goto)
+		fprintf(fp, "   %s\n", restrictions[i].name);
 	}
     }
 }
@@ -4367,7 +4448,6 @@ PUBLIC void LYConvertToURL ARGS2(
     char *cp = NULL;
 #ifndef VMS
     struct stat st;
-    FILE *fptemp = NULL;
 #endif /* !VMS */
 
     if (!old_string || *old_string == '\0')
@@ -4385,7 +4465,7 @@ PUBLIC void LYConvertToURL ARGS2(
 #endif /* DOSPATH */
 
     *AllocatedString = NULL;  /* so StrAllocCopy doesn't free it */
-    StrAllocCopy(*AllocatedString,"file://localhost");
+    StrAllocCopy(*AllocatedString, "file://localhost");
 
     if (*old_string != '/') {
 	char *fragment = NULL;
@@ -4472,7 +4552,7 @@ PUBLIC void LYConvertToURL ARGS2(
 		fragment = NULL;
 		if (strchr(old_string, '[') ||
 		    ((cp = strchr(old_string, ':')) != NULL &&
-		     !isdigit((unsigned char)cp[1])) ||
+		     !isdigit(UCH(cp[1]))) ||
 		    !LYExpandHostForURL((char **)&old_string,
 					URLDomainPrefixes,
 					URLDomainSuffixes)) {
@@ -4510,7 +4590,7 @@ PUBLIC void LYConvertToURL ARGS2(
 	    }
 	    if (strchr(old_string, '[') ||
 		((cp = strchr(old_string, ':')) != NULL &&
-		 !isdigit((unsigned char)cp[1])) ||
+		 !isdigit(UCH(cp[1]))) ||
 		!LYExpandHostForURL((char **)&old_string,
 				    URLDomainPrefixes,
 				    URLDomainSuffixes)) {
@@ -4551,7 +4631,7 @@ have_VMS_URL:
 	    chk = GetFullPathNameA(old_string, MAX_PATH + 1,
 			fullpath, &filepart);
 	    if (chk != 0) {
-		StrAllocCopy(temp, HTDOS_wwwName(fullpath));
+		StrAllocCopy(temp, wwwName(fullpath));
 		StrAllocCat(*AllocatedString, temp);
 		FREE(temp);
 		CTRACE((tfp, "Converted '%s' to '%s'\n",
@@ -4607,11 +4687,7 @@ have_VMS_URL:
 	     */
 #if defined (DOSPATH) || defined (__EMX__) || defined (WIN_EX)
 	    if (old_string[1] != ':' && old_string[1] != '|') {
-#ifdef DOSPATH
-		StrAllocCopy(temp, HTDOS_wwwName(curdir));
-#else
 		StrAllocCopy(temp, wwwName(curdir));
-#endif
 		LYAddHtmlSep(&temp);
 		LYstrncpy(curdir, temp, (sizeof(curdir) - 1));
 		StrAllocCat(temp, old_string);
@@ -4633,7 +4709,7 @@ have_VMS_URL:
 	    LYTrimRelFromAbsPath(temp);
 	    CTRACE((tfp, "Converted '%s' to '%s'\n", old_string, temp));
 	    if ((stat(temp, &st) > -1) ||
-		(fptemp = fopen(temp, "r")) != NULL) {
+		LYCanReadFile(temp)) {
 		/*
 		 *  It is a subdirectory or file on the local system.
 		 */
@@ -4671,7 +4747,7 @@ have_VMS_URL:
 
 		if (strcmp(temp2, temp) != 0 &&
 		    ((stat(temp2, &st) > -1) ||
-		     (fptemp = fopen(temp2, "r")) != NULL)) {
+		     LYCanReadFile(temp2))) {
 		    /*
 		     *	It is a subdirectory or file on the local system
 		     *	with escaped characters and/or a fragment to be
@@ -4743,7 +4819,7 @@ have_VMS_URL:
 		    p = (char *)Home_Dir();
 		    q = temp2 ? temp2 : temp;
 
-		    if (strlen(q) == 3 && isalpha(q[0]) && q[1] == ':') {
+		    if (strlen(q) == 3 && isalpha(UCH(q[0])) && q[1] == ':') {
 			sprintf(buff,
 			    "'%s' not exist, Goto LynxHome '%s'.", q, p);
 			_statusline(buff);
@@ -4778,10 +4854,6 @@ have_VMS_URL:
 	    }
 	    FREE(temp);
 	    FREE(temp2);
-	    if (fptemp) {
-		fclose(fptemp);
-		fptemp = NULL;
-	    }
 	}
 #endif /* VMS */
     } else {
@@ -4799,7 +4871,7 @@ have_VMS_URL:
 #else
 	    StrAllocCat(*AllocatedString, "/");
 	} else if ((stat(old_string, &st) > -1) ||
-		   (fptemp = fopen(old_string, "r")) != NULL) {
+		   LYCanReadFile(old_string)) {
 	    /*
 	     *	It is an absolute directory or file
 	     *	on the local system. - KW
@@ -4811,10 +4883,6 @@ have_VMS_URL:
 	    StrAllocCat(*AllocatedString, cp);
 	    FREE(cp);
 	    FREE(temp);
-	    if (fptemp) {
-		fclose(fptemp);
-		fptemp = NULL;
-	    }
 	    CTRACE((tfp, "Converted '%s' to '%s'\n",
 			old_string, *AllocatedString));
 #endif /* VMS */
@@ -4855,14 +4923,14 @@ have_VMS_URL:
 
 #if defined(_WINDOWS) /* 1998/06/23 (Tue) 16:45:20 */
 
-PUBLIC int win32_check_interrupt()
+PUBLIC int win32_check_interrupt(void)
 {
     int c;
 
     if (kbhit()) {
-	c = getch();
+	c = wgetch(LYwin);
 	/** Keyboard 'Z' or 'z', or Control-G or Control-C **/
-	if (TOUPPER(c) == 'Z' || c == 7 || c == 3 || c == 0x1b) {
+	if (LYCharIsINTERRUPT(c) || c == 0x1b) {
 	    return TRUE;
 	}
     }
@@ -4878,7 +4946,7 @@ void sleep(unsigned sec)
 	for (i = 0; i < 10; i++) {
 	    Sleep(100);
 	    if (kbhit()) {
-		c = getch();
+		c = wgetch(LYwin);
 		return;
 	    }
 	}
@@ -4917,6 +4985,11 @@ PUBLIC BOOLEAN LYExpandHostForURL ARGS3(
     char *Fragment = NULL;
     BOOLEAN GotHost = FALSE;
     BOOLEAN Startup = (BOOL) (helpfilepath == NULL);
+#ifdef INET6
+    struct addrinfo hints, *res;
+    int error;
+#endif /* INET6 */
+
 #ifdef _WINDOWS
     int hoststat;
     struct hostent  *phost;	/* Pointer to host - See netdb.h */
@@ -4970,7 +5043,7 @@ PUBLIC BOOLEAN LYExpandHostForURL ARGS3(
      *	filling in the host field. - FM
      */
     if ((StrColon = strrchr(Str, ':')) != NULL &&
-	isdigit((unsigned char)StrColon[1])) {
+	isdigit(UCH(StrColon[1]))) {
 	if (StrColon == Str) {
 	    FREE(Str);
 	    return GotHost;
@@ -4990,10 +5063,19 @@ PUBLIC BOOLEAN LYExpandHostForURL ARGS3(
 	StrAllocCat(MsgStr, FIRST_SEGMENT);
 	HTProgress(MsgStr);
     } else if (Startup && !dump_output_immediately) {
-	fprintf(stdout, "%s '%s'%s\n", WWW_FIND_MESSAGE, host, FIRST_SEGMENT);
+	fprintf(stdout, "%s '%s'%s\r\n", WWW_FIND_MESSAGE, host, FIRST_SEGMENT);
     }
 
+#ifdef INET6
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = PF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    error = getaddrinfo(host, "80", &hints, &res);
+
+    if (!error && res)
+#else
     if (LYGetHostByName(host) != NULL)
+#endif /* INET6 */
     {
 	/*
 	 *  Clear any residual interrupt. - FM
@@ -5013,7 +5095,7 @@ PUBLIC BOOLEAN LYExpandHostForURL ARGS3(
 	FREE(MsgStr);
 	return GotHost;
     }
-    else if (LYCursesON && 
+    else if (LYCursesON &&
 #if defined(__DJGPP__) && !defined(WATT32)
 	HTCheckForInterrupt()
 #else /* normal systems */
@@ -5103,7 +5185,7 @@ PUBLIC BOOLEAN LYExpandHostForURL ARGS3(
 	    }
 	    StrAllocCat(Host, DomainSuffix);
 	    if ((HostColon = strrchr(Host, ':')) != NULL &&
-		isdigit((unsigned char)HostColon[1])) {
+		isdigit(UCH(HostColon[1]))) {
 		*HostColon = '\0';
 	    }
 	    StrAllocCopy(host, Host);
@@ -5890,7 +5972,7 @@ PUBLIC time_t LYmktime ARGS2(
      *	Skip any lead alphabetic "Day, " field and
      *	seek a numeric day field. - FM
      */
-    while (*s != '\0' && !isdigit((unsigned char)*s))
+    while (*s != '\0' && !isdigit(UCH(*s)))
 	s++;
     if (*s == '\0')
 	return(0);
@@ -5899,7 +5981,7 @@ PUBLIC time_t LYmktime ARGS2(
      *	Get the numeric day and convert to an integer. - FM
      */
     start = s;
-    while (*s != '\0' && isdigit((unsigned char)*s))
+    while (*s != '\0' && isdigit(UCH(*s)))
 	s++;
     if (*s == '\0' || (s - start) > 2)
 	return(0);
@@ -5911,18 +5993,18 @@ PUBLIC time_t LYmktime ARGS2(
     /*
      *	Get the month string and convert to an integer. - FM
      */
-    while (*s != '\0' && !isalnum((unsigned char)*s))
+    while (*s != '\0' && !isalnum(UCH(*s)))
 	s++;
     if (*s == '\0')
 	return(0);
     start = s;
-    while (*s != '\0' && isalnum((unsigned char)*s))
+    while (*s != '\0' && isalnum(UCH(*s)))
 	s++;
     if ((*s == '\0') ||
-	(s - start) < (isdigit((unsigned char)*(s - 1)) ? 2 : 3) ||
-	(s - start) > (isdigit((unsigned char)*(s - 1)) ? 2 : 9))
+	(s - start) < (isdigit(UCH(*(s - 1))) ? 2 : 3) ||
+	(s - start) > (isdigit(UCH(*(s - 1))) ? 2 : 9))
 	return(0);
-    LYstrncpy(temp, start, (isdigit((unsigned char)*(s - 1)) ? 2 : 3));
+    LYstrncpy(temp, start, (isdigit(UCH(*(s - 1))) ? 2 : 3));
     switch (TOUPPER(temp[0])) {
 	case '0':
 	case '1':
@@ -6002,12 +6084,12 @@ PUBLIC time_t LYmktime ARGS2(
     /*
      *	Get the numeric year string and convert to an integer. - FM
      */
-    while (*s != '\0' && !isdigit((unsigned char)*s))
+    while (*s != '\0' && !isdigit(UCH(*s)))
 	s++;
     if (*s == '\0')
 	return(0);
     start = s;
-    while (*s != '\0' && isdigit((unsigned char)*s))
+    while (*s != '\0' && isdigit(UCH(*s)))
 	s++;
     if ((s - start) == 4) {
 	LYstrncpy(temp, start, 4);
@@ -6036,7 +6118,7 @@ PUBLIC time_t LYmktime ARGS2(
     /*
      *	Get the numeric hour string and convert to an integer. - FM
      */
-    while (*s != '\0' && !isdigit((unsigned char)*s))
+    while (*s != '\0' && !isdigit(UCH(*s)))
 	s++;
     if (*s == '\0') {
 	hour = 0;
@@ -6044,7 +6126,7 @@ PUBLIC time_t LYmktime ARGS2(
 	seconds = 0;
     } else {
 	start = s;
-	while (*s != '\0' && isdigit((unsigned char)*s))
+	while (*s != '\0' && isdigit(UCH(*s)))
 	    s++;
 	if (*s != ':' || (s - start) > 2)
 	    return(0);
@@ -6054,12 +6136,12 @@ PUBLIC time_t LYmktime ARGS2(
 	/*
 	 *  Get the numeric minutes string and convert to an integer. - FM
 	 */
-	while (*s != '\0' && !isdigit((unsigned char)*s))
+	while (*s != '\0' && !isdigit(UCH(*s)))
 	    s++;
 	if (*s == '\0')
 	    return(0);
 	start = s;
-	while (*s != '\0' && isdigit((unsigned char)*s))
+	while (*s != '\0' && isdigit(UCH(*s)))
 	    s++;
 	if (*s != ':' || (s - start) > 2)
 	    return(0);
@@ -6069,12 +6151,12 @@ PUBLIC time_t LYmktime ARGS2(
 	/*
 	 *  Get the numeric seconds string and convert to an integer. - FM
 	 */
-	while (*s != '\0' && !isdigit((unsigned char)*s))
+	while (*s != '\0' && !isdigit(UCH(*s)))
 	    s++;
 	if (*s == '\0')
 	    return(0);
 	start = s;
-	while (*s != '\0' && isdigit((unsigned char)*s))
+	while (*s != '\0' && isdigit(UCH(*s)))
 	    s++;
 	if (*s == '\0' || (s - start) > 2)
 	    return(0);
@@ -6277,6 +6359,7 @@ PRIVATE FILE *OpenHiddenFile ARGS2(char *, name, char *, mode)
 {
     FILE *fp = 0;
     struct stat data;
+    BOOLEAN binary = strchr(mode, 'b') != 0;
 
 #if defined(O_CREAT) && defined(O_EXCL) /* we have fcntl.h or kindred? */
     /*
@@ -6294,7 +6377,7 @@ PRIVATE FILE *OpenHiddenFile ARGS2(char *, name, char *, mode)
 	}
 	if (fd >= 0) {
 #if defined(O_BINARY) && defined(__CYGWIN__)
-	    if (mode[1] == 'b')
+	    if (binary)
 		setmode(fd, O_BINARY);
 #endif
 	    fp = fdopen(fd, mode);
@@ -6307,7 +6390,7 @@ PRIVATE FILE *OpenHiddenFile ARGS2(char *, name, char *, mode)
 	 && chmod(name, HIDE_CHMOD) == 0)
 	    fp = fopen(name, mode);
 	else if (lstat(name, &data) != 0)
-	    fp = OpenHiddenFile(name, "w");
+	    fp = OpenHiddenFile(name, binary ? BIN_W : TXT_W);
     /*
      * This is less stringent, but reasonably portable.  For new files, the
      * umask will suffice; however if the file already exists we'll change
@@ -6334,10 +6417,10 @@ PRIVATE FILE *OpenHiddenFile ARGS2(char *, name, char *, mode)
 PUBLIC FILE *LYNewBinFile ARGS1(char *, name)
 {
 #ifdef VMS
-    FILE *fp = fopen (name, "wb", "mbc=32");
+    FILE *fp = fopen (name, BIN_W, "mbc=32");
     chmod(name, HIDE_CHMOD);
 #else
-    FILE *fp = OpenHiddenFile(name, "wb");
+    FILE *fp = OpenHiddenFile(name, BIN_W);
 #endif
     return fp;
 }
@@ -6347,12 +6430,12 @@ PUBLIC FILE *LYNewTxtFile ARGS1(char *, name)
     FILE *fp;
 
 #ifdef VMS
-    fp = fopen (name, "w", "shr=get");
+    fp = fopen (name, TXT_W, "shr=get");
     chmod(name, HIDE_CHMOD);
 #else
     SetDefaultMode(O_TEXT);
 
-    fp = OpenHiddenFile(name, "w");
+    fp = OpenHiddenFile(name, TXT_W);
 
     SetDefaultMode(O_BINARY);
 #endif
@@ -6365,12 +6448,12 @@ PUBLIC FILE *LYAppendToTxtFile ARGS1(char *, name)
     FILE *fp;
 
 #ifdef VMS
-    fp = fopen (name, "a+", "shr=get");
+    fp = fopen (name, TXT_A, "shr=get");
     chmod(name, HIDE_CHMOD);
 #else
     SetDefaultMode(O_TEXT);
 
-    fp = OpenHiddenFile(name, "a+");
+    fp = OpenHiddenFile(name, TXT_A);
 
     SetDefaultMode(O_BINARY);
 #endif
@@ -6410,13 +6493,10 @@ PUBLIC BOOLEAN LYCachedTemp ARGS2(
 	char *,		result,
 	char **,	cached)
 {
-    FILE *fp;
-
     if (*cached) {
 	LYstrncpy(result, *cached, LY_MAXPATH);
 	FREE(*cached);
-	if ((fp = fopen(result, "r")) != NULL) {
-	    fclose(fp);
+	if (LYCanReadFile(result)) {
 	    remove(result);
 	}
 	return TRUE;
@@ -6437,7 +6517,7 @@ PUBLIC FILE *LYOpenTemp ARGS3(
 {
     FILE *fp = 0;
     BOOL txt = TRUE;
-    BOOL wrt = 'r';
+    char wrt = 'r';
     LY_TEMP *p;
 
     CTRACE((tfp, "LYOpenTemp(,%s,%s)\n", suffix, mode));
@@ -6451,9 +6531,49 @@ PUBLIC FILE *LYOpenTemp ARGS3(
 	case 'b':	txt = FALSE;	break;
 	default:
 		CTRACE((tfp, "%s @%d: BUG\n", __FILE__, __LINE__));
-		return fp;
+		return 0;
 	}
     }
+
+    /*
+     * Verify if the given space looks secure enough.  Otherwise, make a
+     * secure subdirectory of that.
+     */
+#if defined(UNIX) && defined(HAVE_MKTEMP)
+    if (lynx_temp_subspace == 0)
+    {
+	BOOL make_it = FALSE;
+	struct stat sb;
+
+	if (lstat(lynx_temp_space, &sb) == 0
+	 && S_ISDIR(sb.st_mode)) {
+	    if (sb.st_uid != getuid()
+	     || (sb.st_mode & (S_IWOTH | S_IWGRP)) != 0) {
+		make_it = TRUE;
+		CTRACE((tfp, "lynx_temp_space is not our directory %s owner %d mode %03o\n",
+			     lynx_temp_space, (int) sb.st_uid, (int) sb.st_mode & 0777));
+	    }
+	} else {
+	    make_it = TRUE;
+	    CTRACE((tfp, "lynx_temp_space is not a directory %s\n", lynx_temp_space));
+	}
+	if (make_it) {
+	    int old_mask = umask(HIDE_UMASK);
+	    StrAllocCat(lynx_temp_space, "XXXXXX");
+	    if (mktemp(lynx_temp_space) == 0
+	     || mkdir(lynx_temp_space, 0700) < 0) {
+		printf("%s: %s\n", lynx_temp_space, LYStrerror(errno));
+		exit(EXIT_FAILURE);
+	    }
+	    umask(old_mask);
+	    lynx_temp_subspace = 1;
+	    StrAllocCat(lynx_temp_space, "/");
+	    CTRACE((tfp, "made subdirectory %s\n", lynx_temp_space));
+	} else {
+	    lynx_temp_subspace = -1;
+	}
+    }
+#endif
 
     do {
 	if (!fmt_tempname(result, lynx_temp_space, suffix))
@@ -6488,6 +6608,7 @@ PUBLIC FILE *LYOpenTemp ARGS3(
 	p->next = ly_temp;
 	StrAllocCopy((p->name), result);
 	p->file = fp;
+	p->outs = (wrt != 'r');
 	ly_temp = p;
     } else {
 	outofmem(__FILE__, "LYOpenTemp");
@@ -6704,6 +6825,19 @@ PUBLIC FILE *LYOpenScratch ARGS2(
     return fp;
 }
 
+PRIVATE void LY_close_temp ARGS1(
+	LY_TEMP *,	p)
+{
+    if (p->file != 0) {
+	if (p->outs) {
+	    LYCloseOutput(p->file);
+	} else {
+	    LYCloseInput(p->file);
+	}
+	p->file = 0;
+    }
+}
+
 /*
  * Close a temp-file, given its name
  */
@@ -6716,10 +6850,7 @@ PUBLIC void LYCloseTemp ARGS1(
     if ((p = FindTempfileByName(name)) != 0) {
 	CTRACE((tfp, "...LYCloseTemp(%s)%s\n", name,
 	    (p->file != 0) ? ", closed" : ""));
-	if (p->file != 0) {
-	    fclose(p->file);
-	    p->file = 0;
-	}
+	LY_close_temp(p);
     }
 }
 
@@ -6733,8 +6864,7 @@ PUBLIC void LYCloseTempFP ARGS1(
 
     CTRACE((tfp, "LYCloseTempFP\n"));
     if ((p = FindTempfileByFP(fp)) != 0) {
-	fclose(p->file);
-	p->file = 0;
+	LY_close_temp(p);
 	CTRACE((tfp, "...LYCloseTempFP(%s)\n", p->name));
     }
 }
@@ -6757,8 +6887,7 @@ PUBLIC int LYRemoveTemp ARGS1(
 		} else {
 		    ly_temp = p->next;
 		}
-		if (p->file != 0)
-		    fclose(p->file);
+		LY_close_temp(p);
 		code = HTSYS_remove(name);
 		CTRACE((tfp, "...LYRemoveTemp done(%d)%s\n", code,
 		       (p->file != 0) ? ", closed" : ""));
@@ -6782,13 +6911,13 @@ PUBLIC void LYCleanupTemp NOARGS
 	LYRemoveTemp(ly_temp->name);
     }
 #ifdef UNIX
-    if (lynx_temp_subspace) {
+    if (lynx_temp_subspace > 0) {
 	char result[LY_MAXPATH];
 	LYstrncpy(result, lynx_temp_space, sizeof(result)-1);
 	LYTrimPathSep(result);
 	CTRACE((tfp, "LYCleanupTemp removing %s\n", result));
 	rmdir(result);
-	lynx_temp_subspace = FALSE;
+	lynx_temp_subspace = -1;
     }
 #endif
 }
@@ -6807,6 +6936,31 @@ PUBLIC void LYRenamedTemp ARGS2(
 	StrAllocCopy((p->name), newname);
     }
 }
+
+#ifndef DISABLE_BIBP
+/*
+ *  Check that bibhost defines the BibP icon.
+ */
+PUBLIC void LYCheckBibHost NOARGS
+{
+    DocAddress bibhostIcon;
+    BOOLEAN saveFlag;
+
+    bibhostIcon.address = NULL;
+    StrAllocCopy(bibhostIcon.address, BibP_bibhost);
+    StrAllocCat(bibhostIcon.address, "bibp1.0/bibpicon.jpg");
+    bibhostIcon.post_data = NULL;
+    bibhostIcon.post_content_type = NULL;
+    bibhostIcon.bookmark = FALSE;
+    bibhostIcon.isHEAD = FALSE;
+    bibhostIcon.safe = FALSE;
+    saveFlag = traversal;
+    traversal = TRUE;  /* Hack to force error response. */
+    BibP_bibhost_available = HTLoadAbsolute(&bibhostIcon) == YES;
+    traversal = saveFlag;
+    BibP_bibhost_checked = TRUE;
+}
+#endif /* !DISABLE_BIBP */
 
 /*
  *  Management of User Interface Pages. - kw
@@ -7044,13 +7198,20 @@ PUBLIC BOOLEAN LYValidateFilename ARGS2(
 #else
 
 #ifndef __EMX__
-    if (!LYIsPathSep(*given)) {
+    if (!LYisAbsPath(given)) {
 #if defined(__DJGPP__) || defined(_WINDOWS)
     if (strchr(result, ':') != NULL)
 	cp = NULL;
     else
 #endif /*  __DJGPP__ || _WINDOWS */
-	cp = original_dir;
+	{
+#ifdef SUPPORT_CHDIR
+	    static char buf[LY_MAXPATH];
+	    cp = Current_Dir(buf);
+#else
+	    cp = original_dir;
+#endif
+	}
     }
     else
 #endif /* __EMX__*/
@@ -7083,7 +7244,6 @@ PUBLIC BOOLEAN LYValidateFilename ARGS2(
 PUBLIC int LYValidateOutput ARGS1(
 	char *,		filename)
 {
-    FILE *fp;
     int c;
 
     /*
@@ -7104,8 +7264,7 @@ PUBLIC int LYValidateOutput ARGS1(
     /*
      *  See if it already exists.
      */
-    if ((fp = fopen(filename, "r")) != NULL) {
-	fclose(fp);
+    if (LYCanReadFile(filename)) {
 #ifdef VMS
 	c = HTConfirm(FILE_EXISTS_HPROMPT);
 #else
@@ -7134,31 +7293,15 @@ PUBLIC void LYLocalFileToURL ARGS2(
 
     leaf = wwwName(source);
 
+    if (!LYisAbsPath(source)) {
+	char temp[LY_MAXPATH];
+	Current_Dir(temp);
+	StrAllocCat(*target, temp);
+    }
     if (!LYIsHtmlSep(*leaf))
 	LYAddHtmlSep(target);
     StrAllocCat(*target, leaf);
 }
-
-#ifdef NOTDEFINED
-/* FIXME: this may be useful for pages that do not allow nested pages */
-PUBLIC int LYOpenInternalPage ARGS2(
-	FILE **,  fp0,
-	char **, newfile)
-{
-    static char tempfile[LY_MAXPATH];
-
-    LYRemoveTemp(tempfile);
-    if ((*fp0 = LYOpenTemp(tempfile, HTML_SUFFIX, "w")) == NULL) {
-	HTAlert(CANNOT_OPEN_TEMP);
-	return(-1);
-    }
-
-    LYLocalFileToURL(newfile, tempfile);
-    LYforce_no_cache = TRUE;  /* don't cache this doc */
-
-    return(0);  /* OK */
-}
-#endif
 
 PUBLIC void BeginInternalPage ARGS3(
 	FILE *, fp0,
@@ -7331,7 +7474,9 @@ PUBLIC int LYCopyFile ARGS2(
 	char *,		src,
 	char *,		dst)
 {
-#if defined(DOSPATH)		/* thanks to Hiroyuki Senshu */
+    int code;
+
+#if defined(DOSPATH) || defined(__CYGWIN__) /* thanks to Hiroyuki Senshu */
 
 #define BUF_SIZE	1024
 
@@ -7339,26 +7484,22 @@ PUBLIC int LYCopyFile ARGS2(
     unsigned char buff[BUF_SIZE];
     int len;
 
-    fin = fopen(src, "rb");
-    if (fin == NULL)
-	return EOF;
-
-    fout = fopen(dst, "wb");
-    if (fout == NULL) {
-	fclose(fin);		/* it was opened, yes? */
-	return EOF;
+    code = EOF;
+    if ((fin = fopen(src, BIN_R)) != 0) {
+	if ((fout = fopen(dst, BIN_W)) != 0) {
+	    code = 0;
+	    while ((len = fread(buff, 1, BUF_SIZE, fin)) > 0) {
+		fwrite(buff, 1, len, fout);
+		if (ferror(fout)) {
+		    code = EOF;
+		    break;
+		}
+	    }
+	    LYCloseOutput(fout);
+	}
+	LYCloseInput(fin);
     }
-
-    while ((len = fread(buff, 1, BUF_SIZE, fin)) > 0) {
-	fwrite(buff, 1, len, fout);
-    }
-    fclose(fin);
-    fclose(fout);
-
-    return 0;
-
 #else
-    int code;
     char *the_command = 0;
 
     HTAddParam(&the_command, COPY_COMMAND, 1, COPY_PATH);
@@ -7372,8 +7513,12 @@ PUBLIC int LYCopyFile ARGS2(
     start_curses();
 
     FREE(the_command);
-    return code;
 #endif
+
+    if (code) {
+	HTAlert(CANNOT_WRITE_TO_FILE);
+    }
+    return code;
 }
 
 /*
@@ -7389,6 +7534,9 @@ PUBLIC int LYSystem ARGS1(
     BOOLEAN sigtstp_saved = FALSE;
 #endif
     int saved_errno = 0;
+#ifdef __EMX__
+    int scrsize[4];
+#endif
 
     fflush(stdout);
     fflush(stderr);
@@ -7408,6 +7556,8 @@ PUBLIC int LYSystem ARGS1(
        Native command-(non)-shell will not tolerate this. */
     {
 	char *space = command, *slash = command;
+
+	_scrsize(scrsize);
 	while (*space && *space != ' ' && *space != '\t')
 	    space++;
 	while (slash < space && *slash != '/')
@@ -7509,6 +7659,9 @@ PUBLIC int LYSystem ARGS1(
 	FREE(command);
 #if !defined(UCX) || !defined(VAXC) /* errno not modifiable ?? */
     set_errno(saved_errno);	/* may have been clobbered */
+#endif
+#ifdef __EMX__			/* Check whether the screen size changed */
+    size_change(0);
 #endif
     return code;
 }
@@ -7641,6 +7794,131 @@ PUBLIC void LYsetXDisplay ARGS1(
     }
 }
 
+#ifdef __EMX__
+
+static int proc_type = -1;
+static PPIB pib;
+HAB hab;
+HMQ hmq;
+
+PRIVATE void morph_PM NOARGS
+{
+    PTIB tib;
+    int first = 0;
+
+    if (proc_type == -1) {
+	DosGetInfoBlocks(&tib, &pib);
+	proc_type = pib->pib_ultype;
+	first = 1;
+    }
+    if (pib->pib_ultype != 3)		/* 2 is VIO */
+	pib->pib_ultype = 3;		/* 3 is PM */
+    if (first)
+	hab = WinInitialize(0);
+    /* 64 messages if before OS/2 3.0, ignored otherwise */
+    hmq = WinCreateMsgQueue(hab, 64);
+    WinCancelShutdown(hmq, 1);	/* Do not inform us on shutdown */
+}
+
+PRIVATE void unmorph_PM NOARGS
+{
+    WinDestroyMsgQueue(hmq);
+    pib->pib_ultype = proc_type;
+}
+
+PUBLIC int size_clip NOARGS
+{
+    return 8192;
+}
+
+/* Code partialy stolen from FED editor. */
+
+PUBLIC int put_clip ARGS1(char *, s)
+{
+    int sz = strlen(s) + 1;
+    int ret = EOF, nl = 0;
+    char *pByte = 0, *s1 = s, c, *t;
+
+    while ((c = *s1++)) {
+	if (c == '\r' && *s1 == '\n')
+	    s1++;
+	else if (c == '\n')
+	    nl++;
+    }
+    if (DosAllocSharedMem((PPVOID)&pByte, 0, sz + nl,
+			  PAG_WRITE | PAG_COMMIT | OBJ_GIVEABLE | OBJ_GETTABLE))
+	return ret;
+
+    if (!nl)
+	memcpy(pByte, s, sz);
+    else {
+	t = pByte;
+	while ((c = *t++ = *s++))
+	    if (c == '\n' && (t == pByte + 1 || t[-2] != '\r'))
+		t[-1] = '\r', *t++ = '\n';
+    }
+
+    morph_PM();
+    if(!hab)
+	goto fail;
+
+    WinOpenClipbrd(hab);
+    WinEmptyClipbrd(hab);
+    if (WinSetClipbrdData(hab, (ULONG) pByte, CF_TEXT, CFI_POINTER))
+	ret = 0;
+    WinCloseClipbrd(hab);
+    unmorph_PM();
+    if (ret == 0)
+	return 0;
+  fail:
+    DosFreeMem((PPVOID)&pByte);
+    return EOF;
+}
+
+static int clip_open;
+
+/* get_clip_grab() returns a pointer to the string in the system area.
+   get_clip_release() should be called ASAP after this. */
+
+PUBLIC char* get_clip_grab NOARGS
+{
+    char *ClipData;
+    ULONG ulFormat;
+    int sz;
+
+    morph_PM();
+    if(!hab)
+	return 0;
+    if (clip_open)
+	get_clip_release();
+
+    WinQueryClipbrdFmtInfo(hab, CF_TEXT, &ulFormat);
+    if(ulFormat != CFI_POINTER) {
+	unmorph_PM();
+	return 0;
+    }
+    WinOpenClipbrd(hab);
+    clip_open = 1;
+    ClipData = (char *)WinQueryClipbrdData(hab, CF_TEXT);
+    sz = strlen(ClipData);
+    if(!ClipData || !sz) {
+	get_clip_release();
+	return 0;
+    }
+    return ClipData;
+}
+
+PUBLIC void get_clip_release NOARGS
+{
+    if (!clip_open)
+	return;
+    WinCloseClipbrd(hab);
+    clip_open = 0;
+    unmorph_PM();
+}
+
+#endif
+
 #if defined(WIN_EX)	/* 1997/10/16 (Thu) 20:13:28 */
 
 #define	MAX_DOS_PATH	128	/* exactly 80 */
@@ -7694,40 +7972,42 @@ PUBLIC int put_clip(char *szBuffer)
     return 0;
 }
 
-PUBLIC int get_clip(char *szBuffer, int size)
+static HANDLE m_hLogData;
+static int m_locked;
+
+/* get_clip_grab() returns a pointer to the string in the system area.
+   get_clip_release() should be called ASAP after this. */
+
+PUBLIC char* get_clip_grab()
 {
     HANDLE hWnd;
-    HANDLE m_hLogData;
     LPTSTR pLogData;
-    int val;
 
     hWnd = NULL;
     if (!OpenClipboard(hWnd)) {
 	return 0;
     }
 
-    lstrcpy(szBuffer, "");
     m_hLogData = GetClipboardData(CF_TEXT);
 
     if (m_hLogData == NULL) {
-	val = 0;
-    } else {
-	pLogData = (LPTSTR) GlobalLock(m_hLogData);
-
-	val = strlen((LPTSTR) pLogData);
-	if (size > val)
-	    lstrcpy(szBuffer, (LPTSTR) pLogData);
-	else {
-	    val = size - 1;
-	    lstrcpyn(szBuffer, (LPTSTR) pLogData, val);
-	    szBuffer[val] = '\0';
-	}
-
-	GlobalUnlock(m_hLogData);
+	CloseClipboard();
+	m_locked = 0;
+	return 0;
     }
-    CloseClipboard();
+    pLogData = (LPTSTR) GlobalLock(m_hLogData);
 
-    return val;
+    m_locked = 1;
+    return pLogData;
+}
+
+PUBLIC void get_clip_release()
+{
+    if (!m_locked)
+	return;
+    GlobalUnlock(m_hLogData);
+    CloseClipboard();
+    m_locked = 0;
 }
 
 
@@ -7791,11 +8071,6 @@ PUBLIC char * w32_strerror(DWORD ercode)
      */
     if (ercode > WSABASEERR) {
 	hModule = GetModuleHandle("wsock32");
-#if 0
-	if (hModule == NULL) {
-	    hModule = LoadLibrary("wsock32");
-	}
-#endif
 	if (hModule == NULL)
 	    ercode = GetLastError();
 	else
@@ -7811,12 +8086,6 @@ PUBLIC char * w32_strerror(DWORD ercode)
 		  msg_buff,
 		  sizeof(msg_buff),
 		  NULL);
-
-#if 0
-    if (hModule) {
-	FreeLibrary(hModule);
-    }
-#endif
 
     strcpy(tmp_buff, msg_buff);
     p = q = tmp_buff;

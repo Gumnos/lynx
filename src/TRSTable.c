@@ -10,6 +10,7 @@
 #include <HTStyle.h>		/* for HT_LEFT, HT_CENTER, HT_RIGHT */
 #include <LYCurses.h>
 #include <TRSTable.h>
+#include <LYGlobalDefs.h>
 
 #include <LYLeaks.h>
 
@@ -21,59 +22,117 @@
 #define ROWS_GROWBY 2
 #endif
 
-#define MAX_STBL_POS (LYcols-1)
+#ifdef USE_CURSES_PADS
+#  define MAX_STBL_POS (LYwideLines ? MAX_COLS - 1 : LYcols-1)
+#else
+#  define MAX_STBL_POS (LYcols-1)
+#endif
 
 /* must be different from HT_ALIGN_NONE and HT_LEFT, HT_CENTER etc.: */
-#define RESERVEDCELL (-2)  /* cell's alignment field is overloaded, this
-			      value means cell was reserved by ROWSPAN */
-#define EOCOLG (-2)	/* sumcols' Line field isn't used for line info, this
-			      special value means end of COLGROUP */
+#define RESERVEDCELL (-2)	/* cell's alignment field is overloaded, this
+				   value means cell was reserved by ROWSPAN */
+#define EOCOLG (-2)		/* sumcols' Line field isn't used for line info, this
+				   special value means end of COLGROUP */
+#ifndef NO_AGGRESSIVE_NEWROW
+#  define NO_AGGRESSIVE_NEWROW	0
+#endif
+
 typedef enum {
-    CS_invalid = -1,
-    CS_new     =  0,
-    CS__0,			/* new, at BOL */
+    CS_invalid = -1,		/* cell "before the first",
+				   or empty lines after [ce]bc,
+				   or TRST aborted */
+    CS__new     =  0,
+    CS__0new,			/* new, at BOL */
     CS__0eb,			/* starts at BOL, empty, break */
     CS__eb,			/* empty, break */
     CS__0cb,			/* starts at BOL, content, break */
     CS__cb,			/* content, break */
-    CS__0f,			/* starts at BOL, finished */
+    CS__0ef,			/* starts at BOL, empty, finished */
     CS__ef,			/* empty, finished */
     CS__0cf,			/* starts at BOL, content, finished */
     CS__cf,			/* content, finished */
-    CS__ebc,			/* empty, break, more content */
-    CS__cbc			/* content, break, more content */
+    CS__ebc,			/* empty, break, more content (maybe @BOL) */
+    CS__cbc			/* content, break, more content (maybe @BOL) */
 } cellstate_t;
 
 typedef struct _STable_states {
-    cellstate_t	prev_state;
-    cellstate_t	state;
-    int		lineno;		/* last line no. looked at */
-    int		icell_core;	/* first/best 'core' cell in row so far */
-    int		x_td;		/* x pos of currently open cell or -1 */
-    int		pending_len;	/* if state is CS__0?[ec]b (??) */
+    cellstate_t	prev_state;	/* Contents type of the previous cell */
+    cellstate_t	state;		/* Contents type of the worked-on cell */
+    int		lineno;		/* Start line of the current cell */
+    int		icell_core;	/* -1 or the 1st cell with <BR></TD> on row */
+    int		x_td;		/* x start pos of the current cell or -1 */
+    int		pending_len;	/* For multiline cells, the length of
+				   the part on the first line (if
+				   state is CS__0?[ec]b) (??), or 0 */
 } STable_states;
 
-
 typedef struct _STable_cellinfo {
-	int	Line;		/* lineno in doc (zero-based) */
+	int	cLine;		/* lineno in doc (zero-based): -1 for
+				   contentless cells (and cells we do
+				   not want to measure and count?),
+				   line-of-the-start otherwise.  */
 	int	pos;		/* column where cell starts */
 	int	len;		/* number of character positions */
 	int	colspan;	/* number of columns to span */
-	short	alignment;	/* one of HT_LEFT, HT_CENTER, HT_RIGHT,
+	int	alignment;	/* one of HT_LEFT, HT_CENTER, HT_RIGHT,
 				   or RESERVEDCELL */
 } STable_cellinfo;
 
+enum ended_state {
+	ROW_not_ended,
+	ROW_ended_by_endtr,
+	ROW_ended_by_splitline
+};
+
+#define HAS_END_OF_CELL			1
+#define HAS_BEG_OF_CELL			2
+#define IS_CONTINUATION_OF_CELL		4
+#define OFFSET_IS_VALID			8
+#define OFFSET_IS_VALID_LAST_CELL	0x10
+#define BELIEVE_OFFSET			0x20
+
 typedef struct _STable_rowinfo {
+    /* Each row may be displayed on many display lines, but we fix up
+       positions of cells on this display line only: */
 	int	Line;		/* lineno in doc (zero-based) */
 	int	ncells;		/* number of table cells */
-/*	int	pending_skip;*/	/* skip this many after finishing open cell */
+
+    /* What is the meaning of this?!  It is set if:
+       [search for	def of fixed_line	below]
+
+       a1) a non-last cell is not at BOL,
+       a2) a non-last cell has something on the first line,
+       b) a >=3-lines-cell not at BOL, the first row non-empty, the 2nd empty;
+       c) a multiline cell not at BOL, the first row non-empty, the rest empty;
+       d) a multiline cell not at BOL, the first row non-empty;
+       e) a singleline non-empty cell not at BOL;
+
+       Summary: have seen a cell which is one of:
+		(Notation: B: at BOL; L: last; E: the first row is non-empty)
+
+		bcde:	!B && !E
+		a1:	!L && !B
+		a2:	!L && !E
+
+       Or: has at least two of !B, !L, !E, or: has at most one of B,L,E.
+
+       REMARK: If this variable is not set, but icell_core is, Line is
+       reset to the line of icell_core.
+     */
 	BOOL	fixed_line;	/* if we have a 'core' line of cells */
+	enum ended_state ended;	/* if we saw </tr> etc */
+	int	content;	/* Whether contains end-of-cell etc */
+	int	offset;		/* >=0 after line break in a multiline cell */
 	int	allocated;	/* number of table cells allocated */
 	STable_cellinfo * cells;
-	short	alignment;	/* global align attribute for this row */
+	int	alignment;	/* global align attribute for this row */
 } STable_rowinfo;
 
 struct _STable_info {
+#ifdef EXP_NESTED_TABLES
+	struct _STable_info *enclosing;	/* The table which contain us */
+	struct _TextAnchor  *enclosing_last_anchor_before_stbl;
+#endif
 	int	startline;	/* lineno where table starts (zero-based) */
 	int	nrows;		/* number of rows */
 	int	ncols;		/* number of rows */
@@ -143,23 +202,52 @@ struct _STable_info {
 PRIVATE int Stbl_finishCellInRow PARAMS((
     STable_rowinfo *	me,
     STable_states *	s,
-    BOOL		certain,
+    int			end_td,
     int			lineno,
     int			pos));
 PRIVATE int Stbl_finishRowInTable PARAMS((
     STable_info *	me));
 
+PRIVATE CONST char * cellstate_s ARGS1(
+	cellstate_t,	state)
+{
+    CONST char *result = "?";
+
+    switch (state) {
+    case CS_invalid:	result = "CS_invalid";	break;
+    case CS__new:	result = "CS__new";	break;
+    case CS__0new:	result = "CS__0new";	break;
+    case CS__0eb:	result = "CS__0eb";	break;
+    case CS__eb:	result = "CS__eb";	break;
+    case CS__0cb:	result = "CS__0cb";	break;
+    case CS__cb:	result = "CS__cb";	break;
+    case CS__0ef:	result = "CS__0ef";	break;
+    case CS__ef:	result = "CS__ef";	break;
+    case CS__0cf:	result = "CS__0cf";	break;
+    case CS__cf:	result = "CS__cf";	break;
+    case CS__ebc:	result = "CS__ebc";	break;
+    case CS__cbc:	result = "CS__cbc";	break;
+    }
+    return result;
+}
 
 PUBLIC struct _STable_info * Stbl_startTABLE ARGS1(
     short,		alignment)
 {
     STable_info *me = typecalloc(STable_info);
+
+    CTRACE2(TRACE_TRST,
+	    (tfp, "TRST:Stbl_startTABLE(align=%d)\n", (int)alignment));
     if (me) {
 	me->alignment = alignment;
 	me->rowgroup_align = HT_ALIGN_NONE;
 	me->pending_colgroup_align = HT_ALIGN_NONE;
 	me->s.x_td = -1;
 	me->s.icell_core = -1;
+#ifdef EXP_NESTED_TABLES
+	if (nested_tables)
+	    me->enclosing = 0;
+#endif
     }
     return me;
 }
@@ -175,6 +263,8 @@ PRIVATE void free_rowinfo ARGS1(
 PUBLIC void Stbl_free ARGS1(
     STable_info *,	me)
 {
+    CTRACE2(TRACE_TRST,
+	    (tfp, "TRST:Stbl_free()\n"));
     if (me && me->allocated_rows && me->rows) {
 	int i;
 	for (i = 0; i < me->allocated_rows; i++)
@@ -196,8 +286,8 @@ PRIVATE int Stbl_addCellToRow ARGS9(
     int,		ncolinfo,
     STable_states *,	s,
     int,		colspan,
-    short,		alignment,
-    BOOL,		isheader,
+    int,		alignment,
+    int,		isheader,
     int,		lineno,
     int *,		ppos)
 {
@@ -206,18 +296,26 @@ PRIVATE int Stbl_addCellToRow ARGS9(
     int last_colspan = me->ncells ?
 	me->cells[me->ncells - 1].colspan : 1;
     cellstate_t newstate;
+    int ret;
 
+    CTRACE2(TRACE_TRST,
+	    (tfp, "TRST:Stbl_addCellToRow, line=%d, pos=%d, colspan=%d\n",
+		   lineno, *ppos, colspan));
+    CTRACE2(TRACE_TRST,
+	    (tfp, " ncells=%d, stateLine=%d, pending_len=%d, pstate=%s, state=%s\n",
+		   me->ncells, s->lineno, s->pending_len,
+		   cellstate_s(s->prev_state), cellstate_s(s->state)));
     if (me->ncells == 0)
 	s->prev_state = CS_invalid;
     else if (s->prev_state == CS_invalid ||
-	     (/*s->state != CS_new && */ s->state != CS__0 &&
-	      s->state != CS__ef && s->state != CS__0f))
+	     (s->state != CS__0new &&
+	      s->state != CS__ef && s->state != CS__0ef))
 	s->prev_state = s->state;
 
     if (me->ncells == 0 || *ppos == 0)
-	newstate = CS__0;
+	newstate = CS__0new;
     else
-	newstate = CS_new;
+	newstate = CS__new;
 
     if (me->ncells > 0 && s->pending_len > 0) {
 	if (s->prev_state != CS__cbc)
@@ -231,21 +329,20 @@ PRIVATE int Stbl_addCellToRow ARGS9(
 	    if (me->ncells == 0 || *ppos == 0) {
 		switch (s->prev_state) {
 		case CS_invalid:
-		case CS__0:
+		case CS__0new:
 		case CS__0eb:
 		case CS__0cb:
-		case CS__0f:
+		case CS__0ef:
 		case CS__0cf:
 		    if (me->ncells > 0)
 			for (i = me->ncells + last_colspan - 2;
 			     i >= me->ncells - 1; i--) {
 			    me->cells[i].pos = *ppos;
-			    me->cells[i].Line = lineno;
+			    me->cells[i].cLine = lineno;
 			}
 		    me->Line = lineno;
-		    /* s->lineno = lineno; */
 		    break;
-		case CS_new:
+		case CS__new:
 		case CS__eb:
 		case CS__ef:
 		case CS__cf:
@@ -255,31 +352,31 @@ PRIVATE int Stbl_addCellToRow ARGS9(
 		    *ppos = me->cells[me->ncells - 1].pos +
 			me->cells[me->ncells - 1].len;
 		}
-	    } else {
+	    } else {	/* last cell multiline, ncells != 0, pos != 0 */
 		switch (s->prev_state) {
-		case CS__0:
+		case CS__0new:
 		case CS__0eb:
-		case CS__0f:
+		case CS__0ef:
+		    /* Do not fail, but do not set fixed_line either */
 		    break;
 		case CS__cb:
-		    return -1;
+		    goto trace_and_fail;
 		case CS__cf:
-/*		    HTAlert("foo woo!!"); */
-		    return -1;
+		    goto trace_and_fail;
 		case CS__0cb:
 		case CS__0cf:
 		    if (*ppos > me->cells[0].pos)
 			me->Line = lineno;
-		    me->fixed_line = YES;
+		    me->fixed_line = YES; /* type=a def of fixed_line i */
 		    break;
-		case CS_new:
+		case CS__new:
 		case CS__eb:
 		case CS__ef:
 		default:
-		    me->fixed_line = YES;
+		    me->fixed_line = YES; /* type=e def of fixed_line ii */
 		    break;
 		case CS__cbc:
-		    return -1;
+		    goto trace_and_fail;
 		}
 	    }
 	}
@@ -288,7 +385,7 @@ PRIVATE int Stbl_addCellToRow ARGS9(
 	    case CS__cb:
 	    case CS__cf:
 		if (*ppos > 0)
-		    return -1;
+		    goto trace_and_fail;
 		else
 		    *ppos = me->cells[me->ncells - 1].pos /* == 0 */ +
 			me->cells[me->ncells - 1].len;
@@ -299,21 +396,16 @@ PRIVATE int Stbl_addCellToRow ARGS9(
 		    *ppos = me->cells[me->ncells - 1].pos /* == 0 */ +
 			me->cells[me->ncells - 1].len;
 		break;
-	    case CS__0:
-	    case CS__0f:
+	    case CS__0new:
+	    case CS__0ef:
 	    case CS__0eb:
-/*		me->Line = lineno; */
 		break;
-	    case CS_new:
+	    case CS__new:
 	    case CS__eb:
 	    case CS__ef:
 	    default:
 		*ppos = me->cells[me->ncells - 1].pos;	break;
 	    case CS__cbc:
-/*		*ppos = me->cells[me->ncells - 1].pos +
-		    me->cells[me->ncells - 1].len;
-		if (*ppos > 0)
-		    return -1; */
 		break;
 	    case CS_invalid:
 		break;
@@ -323,10 +415,10 @@ PRIVATE int Stbl_addCellToRow ARGS9(
     } else {			/* lineno == s->lineno: */
 	switch (s->prev_state) {
 	case CS_invalid:
-	case CS__0:
+	case CS__0new:
 	case CS__0eb:		/* cannot happen */
 	case CS__0cb:		/* cannot happen */
-	case CS__0f:
+	case CS__0ef:
 	case CS__0cf:		/* ##302?? set icell_core? or only in finish? */
 	    break;
 	case CS__eb:		/* cannot happen */
@@ -336,10 +428,10 @@ PRIVATE int Stbl_addCellToRow ARGS9(
 	case CS__ebc:		/* should have done smth in finish */
 	case CS__cbc:		/* should have done smth in finish */
 	    break;
-	case CS_new:
+	case CS__new:
 	case CS__cf:
 	    if (me->fixed_line && me->Line != lineno) {
-		return -1;
+		goto trace_and_fail;
 	    } else {
 		me->fixed_line = YES;
 		me->Line = lineno;
@@ -347,61 +439,6 @@ PRIVATE int Stbl_addCellToRow ARGS9(
 	}
     }
 
-#if 0				/* MEGA_COMMENTOUT */
-    if (lineno != me->Line) {
-	if (!me->fixed_line) {
-	    if (me->ncells == 0 ||
-		(*ppos == 0 && me->cells[me->ncells - 1].pos == 0)) {
-		if (me->ncells > 0)
-		    for (i = me->ncells + last_colspan - 2;
-			 i >= 0; i--) {
-			me->cells[i].pos = *ppos;
-			me->cells[i].Line = lineno;
-		    }
-		me->Line = lineno;
-		s->state = CS__0;
-	    }
-	    if (*ppos > 0 && me->ncells > 0 &&
-		(me->cells[me->ncells - 1].pos > 0 ||
-		 me->cells[me->ncells - 1].len > 0)) {
-		me->fixed_line = YES;
-
-	    }
-	}
-	if (me->fixed_line && lineno != me->Line) {
-	    if (me->cells[me->ncells - 1].pos > 0 &&
-		me->cells[me->ncells - 1].len > 0) {
-		return -1;
-	    } else if (me->cells[me->ncells - 1].pos == 0 &&
-		       me->cells[me->ncells - 1].len > 0) {
-		if (*ppos > 0 && *ppos > me->cells[0].pos)
-		    me->Line = lineno;
-		else
-		    *ppos = me->cells[me->ncells - 1].pos; /* == 0 */
-	    } else /* if (me->cells[me->ncells - 1].pos == 0 &&
-		       me->cells[me->ncells - 1].len <= 0) {
-		me->Line = lineno;
-	    } else */ {
-		*ppos = me->cells[me->ncells - 1].pos;
-	    }
-	}
-#if 0
-	for (i = 0; i < me->ncells; i++) {
-	    if (me->cells[i].Line == lineno) {
-		break;
-	    } else if (me->cells[i].len <= 0) {
-		me->cells[i].Line = lineno;
-		/* @@@ reset its pos too ?? */
-	    } else {
-		break;
-	    }
-	}
-	if (i < me->ncells && me->cells[i].Line != lineno)
-	    return -1;
-	me->Line = lineno;
-#endif
-    }
-#endif /* MEGA_COMMENTOUT */
     s->state = newstate;
 
     if (me->ncells > 0 && me->cells[me->ncells - 1].colspan > 1) {
@@ -430,18 +467,18 @@ PRIVATE int Stbl_addCellToRow ARGS9(
 		me->allocated += growby;
 		me->cells = cells;
 	    } else {
-		return -1;
+		goto trace_and_fail;
 	    }
 	}
     }
 
-    me->cells[me->ncells].Line = lineno;
+    me->cells[me->ncells].cLine = lineno;
     me->cells[me->ncells].pos = *ppos;
     me->cells[me->ncells].len = -1;
     me->cells[me->ncells].colspan = colspan;
 
     if (alignment != HT_ALIGN_NONE)
-	    me->cells[me->ncells].alignment = alignment;
+	me->cells[me->ncells].alignment = alignment;
     else {
 	if (ncolinfo >= me->ncells + 1)
 	    me->cells[me->ncells].alignment = colinfo[me->ncells].alignment;
@@ -453,7 +490,7 @@ PRIVATE int Stbl_addCellToRow ARGS9(
 	    me->cells[me->ncells].alignment = isheader ? HT_CENTER : HT_LEFT;
     }
     for (i = me->ncells + 1; i < me->ncells + colspan; i++) {
-	me->cells[i].Line = lineno;
+	me->cells[i].cLine = lineno;
 	me->cells[i].pos = *ppos;
 	me->cells[i].len = -1;
 	me->cells[i].colspan = 0;
@@ -461,7 +498,17 @@ PRIVATE int Stbl_addCellToRow ARGS9(
     }
     me->cells[me->ncells + colspan].pos = -1; /* not yet used */
     me->ncells++;
-    return (me->ncells - 1);
+
+    ret = me->ncells - 1;
+  trace_and_return:
+    CTRACE2(TRACE_TRST,
+	    (tfp, " => prev_state=%s, state=%s, ret=%d\n",
+		  cellstate_s(s->prev_state), cellstate_s(s->state), ret));
+    return (ret);
+
+  trace_and_fail:
+    ret = -1;
+    goto trace_and_return;
 }
 
 /* returns -1 on error, 0 otherwise */
@@ -474,6 +521,10 @@ PRIVATE int Stbl_reserveCellsInRow ARGS3(
     STable_cellinfo *cells;
     int i;
     int growby = icell + colspan - me->allocated;
+
+    CTRACE2(TRACE_TRST,
+	    (tfp, "TRST:Stbl_reserveCellsInRow(icell=%d, colspan=%d\n",
+		  icell, colspan));
     if (growby > 0) {
 	cells = realloc(me->cells,
 			(me->allocated + growby)
@@ -489,7 +540,7 @@ PRIVATE int Stbl_reserveCellsInRow ARGS3(
 	}
     }
     for (i = icell; i < icell + colspan; i++) {
-	me->cells[i].Line = -1;
+	me->cells[i].cLine = -1;
 	me->cells[i].pos = -1;
 	me->cells[i].len = -1;
 	me->cells[i].colspan = 0;
@@ -499,29 +550,41 @@ PRIVATE int Stbl_reserveCellsInRow ARGS3(
     return 0;
 }
 
+/* Returns -1 on failure. */
 PRIVATE int Stbl_finishCellInRow ARGS5(
     STable_rowinfo *,	me,
     STable_states *,	s,
-    BOOL,		certain,
+    int,		end_td,
     int,		lineno,
     int,		pos)
 {
     STable_cellinfo *lastcell;
     cellstate_t newstate = CS_invalid;
-    BOOL broken = NO, empty;
+    int multiline = NO, empty;
+    int ret;
+
+    CTRACE2(TRACE_TRST,
+	    (tfp, "TRST:Stbl_finishCellInRow line=%d pos=%d end_td=%d ncells=%d pnd_len=%d\n",
+		  lineno, pos, (int)end_td, me->ncells, s->pending_len));
 
     if (me->ncells <= 0)
 	return -1;
     lastcell = me->cells + (me->ncells - 1);
-    broken = (lineno != lastcell->Line || lineno != s->lineno);
-    empty = broken ? (pos == 0) : (pos <= s->x_td);
-    if (broken) {
-	if (!certain) {
+    multiline = (lineno != lastcell->cLine || lineno != s->lineno);
+    empty = multiline ? (pos == 0) : (pos <= s->x_td);
+
+    CTRACE2(TRACE_TRST,
+	    (tfp, " [lines: lastCell=%d state=%d multi=%d] empty=%d (prev)state=(%s) %s\n",
+		  lastcell->cLine, s->lineno, multiline, empty,
+		  cellstate_s(s->prev_state), cellstate_s(s->state)));
+
+    if (multiline) {
+	if ((end_td & TRST_ENDCELL_MASK) == TRST_ENDCELL_LINEBREAK) {
 	    switch (s->state) {
 	    case CS_invalid:
 		newstate = empty ? CS_invalid : CS__cbc;
 		break;
-	    case CS__0:
+	    case CS__0new:
 		newstate = empty ? CS__0eb : CS__0cb;
 		break;
 	    case CS__0eb:
@@ -529,38 +592,35 @@ PRIVATE int Stbl_finishCellInRow ARGS5(
 		s->state = newstate;
 		if (me->fixed_line) {
 		    if (empty)
-			return lastcell->len <= 0 ? 0 : lastcell->len;
+			ret = (lastcell->len <= 0 ? 0 : lastcell->len);
 		    else
-			return lastcell->len <= 0 ? 0 : -1;
+			ret = (lastcell->len <= 0 ? 0 : -1);
 		} else {
 		    if (empty)
-			return lastcell->len <= 0 ? 0 : lastcell->len;
+			ret = (lastcell->len <= 0 ? 0 : lastcell->len);
 		    else
-			return lastcell->len <= 0 ? 0 : 0;
+			ret = (lastcell->len <= 0 ? 0 : 0);
 		}
+		goto trace_and_return;
 	    case CS__0cb:
 		if (!me->fixed_line) {
-		    if (empty) { /* ##462_return_0 */
-/*			if (s->icell_core == -1)
-			    s->icell_core = lastcell->Line; */ /* we don't know yet */
-			/* lastcell->Line = lineno; */
-		    } else {	/* !empty */
+		    if (!empty) {
 			if (s->icell_core == -1)
 			    me->Line = -1;
 		    }
 		}
-		if (s->pending_len && empty) { /* ##470_why_that?? */
-		    if ((me->fixed_line && me->Line == lastcell->Line) ||
+		if (s->pending_len && empty) { /* First line non-empty */
+		    if ((me->fixed_line && me->Line == lastcell->cLine) ||
 			s->icell_core == me->ncells - 1)
 			lastcell->len = s->pending_len;
 		    s->pending_len = 0;
 		} /* @@@ for empty do smth. about ->Line / ->icell_core !! */
 		newstate = empty ? CS__0cb : CS__cbc; /* ##474_needs_len!=-1? */
 		break;
-	    case CS__0f:
+	    case CS__0ef:
 	    case CS__0cf:
 		break;
-	    case CS_new:
+	    case CS__new:
 		newstate = empty ? CS__eb : CS__cb;
 		break;
 	    case CS__eb:	/* ##484_set_pending_ret_0_if_empty? */
@@ -568,42 +628,46 @@ PRIVATE int Stbl_finishCellInRow ARGS5(
 		s->state = newstate;
 		if (me->fixed_line) {
 		    if (empty)
-			return lastcell->len <= 0 ? 0 : lastcell->len;
+			ret = (lastcell->len <= 0 ? 0 : lastcell->len);
 		    else
-			return lastcell->len <= 0 ? 0 : -1;
+			ret = (lastcell->len <= 0 ? 0 : -1);
 		} else {
 		    if (empty)
-			return lastcell->len <= 0 ? 0 : lastcell->len;
+			ret = (lastcell->len <= 0 ? 0 : lastcell->len);
 		    else
-			return lastcell->len <= 0 ? 0 : -1;
+			ret = (lastcell->len <= 0 ? 0 : -1);
 		}
+		goto trace_and_return;
 	    case CS__cb:
 		if (s->pending_len && empty) { /* ##496: */
 		    lastcell->len = s->pending_len;
 		    s->pending_len = 0;
 		} /* @@@ for empty do smth. about ->Line / ->icell_core !! */
+		ret = -1;
 		if (empty) {
 		    if (!me->fixed_line) {
-			me->fixed_line = YES;
-			me->Line = lastcell->Line; /* should've happened in break */
+			me->fixed_line = YES; /* type=b def of fixed_line i */
+			me->Line = lastcell->cLine; /* should've happened in break */
 		    } else {
-			if (me->Line != lastcell->Line)
-			    return -1;
+			if (me->Line != lastcell->cLine)
+			    goto trace_and_return;
 		    }
 		} else {
 		    if (!me->fixed_line) {
-			me->fixed_line = YES;
-			me->Line = lastcell->Line; /* should've happened in break */
+			me->fixed_line = YES; /* type=b def of fixed_line ii */
+			me->Line = lastcell->cLine; /* should've happened in break */
 		    }
 		    s->state = CS__cbc;
-		    return -1;
+		    goto trace_and_return;
 		}
 		newstate = empty ? CS__cb : CS__cbc;
 		break;
 	    case CS__ef:
-		return 0;
+		ret = 0;
+		goto trace_and_return;
 	    case CS__cf:
-		return lastcell->len; /* ##523_change_state? */
+		ret = lastcell->len; /* ##523_change_state? */
+		goto trace_and_return;
 	    case CS__cbc:
 		if (!me->fixed_line) {
 		    if (empty) {
@@ -621,7 +685,7 @@ PRIVATE int Stbl_finishCellInRow ARGS5(
 	    default:
 		break;
 	    }
-	} else {		/* broken, certain: */
+	} else {		/* multiline cell, processing </TD>: */
 	    s->x_td = -1;
 	    switch (s->state) {
 	    case CS_invalid:
@@ -629,29 +693,31 @@ PRIVATE int Stbl_finishCellInRow ARGS5(
 		if (!empty && lastcell->len > 0) {
 		    newstate = CS__0cf;
 		    s->state = newstate;
-		    return -1;
+		    ret = -1;
+		    goto trace_and_return;
 		}
 				/* ##541_set_len_0_Line_-1_sometimes: */
 		lastcell->len = 0;
-		lastcell->Line = -1;
+		lastcell->cLine = -1;
 		 /* fall thru ##546 really fall thru??: */
 		newstate = empty ? CS_invalid : CS__cbc;	break;
-	    case CS__0:
-		newstate = empty ? CS__0f  : CS__0cf;	break;
+	    case CS__0new:
+		newstate = empty ? CS__0ef  : CS__0cf;	break;
 	    case CS__0eb:
-		newstate = empty ? CS__0f  : CS__0cf;		/* ebc?? */
+		newstate = empty ? CS__0ef  : CS__0cf;		/* ebc?? */
 		s->state = newstate;
 		if (me->fixed_line) {
 		    if (empty)
-			return lastcell->len <= 0 ? 0 : lastcell->len;
+			ret = (lastcell->len <= 0 ? 0 : lastcell->len);
 		    else
-			return lastcell->len <= 0 ? 0 : -1;
+			ret = (lastcell->len <= 0 ? 0 : -1);
 		} else {
 		    if (empty)
-			return lastcell->len <= 0 ? 0 : lastcell->len;
+			ret = (lastcell->len <= 0 ? 0 : lastcell->len);
 		    else
-			return lastcell->len <= 0 ? 0 : 0;
+			ret = (lastcell->len <= 0 ? 0 : 0);
 		}
+		goto trace_and_return;
 	    case CS__0cb:
 		if (s->pending_len) {
 		    if (empty)
@@ -663,8 +729,9 @@ PRIVATE int Stbl_finishCellInRow ARGS5(
 		if (!me->fixed_line) {
 		    if (empty) {
 			if (s->icell_core == -1)
+			    /* first cell before <BR></TD> => the core cell */
 			    s->icell_core = me->ncells - 1;
-			/* lastcell->Line = lineno; */
+			/* lastcell->cLine = lineno; */
 		    } else {	/* !empty */
 			if (s->icell_core == -1)
 			    me->Line = -1;
@@ -675,42 +742,44 @@ PRIVATE int Stbl_finishCellInRow ARGS5(
 		    s->pending_len = 0;
 		} /* @@@ for empty do smth. about ->Line / ->icell_core !! */
 		newstate = empty ? CS__0cf : CS__cbc;	break;
-	    case CS__0f:
-		newstate = CS__0f;
+	    case CS__0ef:
+		newstate = CS__0ef;
 		/* FALLTHRU */
 	    case CS__0cf:
 		break;
-	    case CS_new:
+	    case CS__new:
 		newstate = empty ? CS__ef  : CS__cf;	break;
 	    case CS__eb:
 		newstate = empty ? CS__ef  : CS__ef; /* ##579??? !!!!! */
 		s->state = newstate;
 		if (me->fixed_line) {
 		    if (empty)
-			return lastcell->len <= 0 ? 0 : lastcell->len;
+			ret = (lastcell->len <= 0 ? 0 : lastcell->len);
 		    else
-			return lastcell->len <= 0 ? 0 : -1;
+			ret = (lastcell->len <= 0 ? 0 : -1);
 		} else {
 		    if (empty)
-			return lastcell->len <= 0 ? 0 : lastcell->len;
+			ret = (lastcell->len <= 0 ? 0 : lastcell->len);
 		    else
-			return lastcell->len <= 0 ? 0 : -1;
+			ret = (lastcell->len <= 0 ? 0 : -1);
 		}
+		goto trace_and_return;
 	    case CS__cb:
 		if (s->pending_len && empty) {
 		    lastcell->len = s->pending_len;
 		    s->pending_len = 0;
 		}
+		ret = -1;
 		if (empty) {
 		    if (!me->fixed_line) {
-			me->fixed_line = YES;
-			me->Line = lastcell->Line; /* should've happened in break */
+			me->fixed_line = YES; /* type=c def of fixed_line */
+			me->Line = lastcell->cLine; /* should've happened in break */
 		    } else {
-			if (me->Line != lastcell->Line)
-			    return -1;
+			if (me->Line != lastcell->cLine)
+			    goto trace_and_return;
 		    }
 		} else {
-		    return -1;
+		    goto trace_and_return;
 		}
 		newstate = empty ? CS__cf  : CS__cbc;	break;
 	    case CS__ef:		/* ignored error */
@@ -721,118 +790,122 @@ PRIVATE int Stbl_finishCellInRow ARGS5(
 		if (!me->fixed_line) {
 		    if (!empty) {
 			if (s->icell_core == -1)
-			    lastcell->Line = -1;
+			    lastcell->cLine = -1;
 		    }
 		}
 		s->pending_len = 0;
 		newstate = empty ? CS_invalid : CS__cbc;	break;
 	    case CS__cbc:	/* ##586 */
 		lastcell->len = 0; /* ##613 */
-		if (me->fixed_line && me->Line == lastcell->Line)
-		    return -1;
+		ret = -1;
+		if (me->fixed_line && me->Line == lastcell->cLine)
+		    goto trace_and_return;
 		if (!me->fixed_line) {
 		    if (empty) {
 			if (s->icell_core == -1)
 			    me->Line = lineno;
-			/* lastcell->Line = lineno; */
-#if 0	/* ?? */
-		    } else {	/* !empty */
-			if (s->icell_core == -1)
-			    me->Line = -1;
-#endif
 		    }
 		}
 		s->pending_len = 0; /* ##629 v */
 		newstate = empty ? CS_invalid : CS__cbc;	break;
 	    }
 	}
-    } else {			/* (!broken) */
-	if (!certain) {
+    } else {				/* (!multiline) */
+	if ((end_td & TRST_ENDCELL_MASK) == TRST_ENDCELL_LINEBREAK) {
 	    switch (s->state) {
 	    case CS_invalid:
-	    case CS__0:
+	    case CS__0new:
 		s->pending_len = empty ? 0 : pos - lastcell->pos;
 		newstate = empty ? CS__0eb : CS__0cb;
 		s->state = newstate;
-		return 0; /* or 0 for xlen to s->pending_len?? */
+		ret = 0; /* or 0 for xlen to s->pending_len?? */
+		goto trace_and_return;
 	    case CS__0eb:	/* cannot happen */
 		newstate = CS__eb;
 		break;
 	    case CS__0cb:	/* cannot happen */
 		newstate = CS__cb;
 		break;
-	    case CS__0f:
+	    case CS__0ef:
 	    case CS__0cf:
 		break;
-	    case CS_new:
+	    case CS__new:
+		ret = -1;
 		if (!empty && s->prev_state == CS__cbc)	/* ##609: */
-		    return -1;
+		    goto trace_and_return;
 		if (!empty) {
 		    if (!me->fixed_line) {
-			me->fixed_line = YES;
+			me->fixed_line = YES; /* type=d def of fixed_line */
 			me->Line = lineno;
 		    } else {
 			if (me->Line != lineno)
-			    return -1;
+			    goto trace_and_return;
 		    }
 		}
 		newstate = empty ? CS__eb : CS__cb;
 		s->state = newstate;
 		if (!me->fixed_line) {
 		    s->pending_len = empty ? 0 : pos - lastcell->pos;
-		    return 0;
+		    ret = 0;
+		    goto trace_and_return;
 		} else {
 		    s->pending_len = 0;
 		    lastcell->len = empty ? 0 : pos - lastcell->pos;
-		    return lastcell->len;
+		    ret = lastcell->len;
+		    goto trace_and_return;
 		}
 	    case CS__eb:	/* cannot happen */
 		newstate = empty ? CS__eb : CS__ebc;	break;
 	    case CS__cb:	/* cannot happen */
 		newstate = empty ? CS__cb : CS__cbc;	break;
 	    case CS__ef:
-		return 0;
+		ret = 0;
+		goto trace_and_return;
 	    case CS__cf:
-		return lastcell->len;
+		ret = lastcell->len;
+		goto trace_and_return;
 	    case CS__cbc:	/* ??? */
 		break;
 	    default:
 		break;
 	    }
-	} else {		/* !broken, certain: */
+	} else {		/* !multiline, processing </TD>: */
 	    s->x_td = -1;
 	    switch (s->state) {
 	    case CS_invalid:	/* ##691_no_lastcell_len_for_invalid: */
-		if (!(me->fixed_line && me->Line == lastcell->Line))
+		if (!(me->fixed_line && me->Line == lastcell->cLine))
 		    lastcell->len = 0;
 		/* FALLTHRU */
-	    case CS__0:
-		newstate = empty ? CS__0f  : CS__0cf;	break; /* ##630 */
+	    case CS__0new:
+		newstate = empty ? CS__0ef  : CS__0cf;	break; /* ##630 */
 	    case CS__0eb:
-		newstate = empty ? CS__0f : CS__0f;	break; /* ??? */
+		newstate = empty ? CS__0ef : CS__0ef;	break; /* ??? */
 	    case CS__0cb:
 		newstate = empty ? CS__0cf : CS__cbc;	break; /* ??? */
-	    case CS__0f:
-		newstate = CS__0f;			break; /* ??? */
+	    case CS__0ef:
+		newstate = CS__0ef;			break; /* ??? */
 	    case CS__0cf:
 		break;		/* ??? */
-	    case CS_new:
+	    case CS__new:
+		ret = -1;
 		if (!empty && s->prev_state == CS__cbc)
-		    return -1;
+		    goto trace_and_return;
 		if (!empty) { /* ##642_set_fixed!: */
 		    if (!me->fixed_line) {
-			me->fixed_line = YES;
+			me->fixed_line = YES; /* type=e def of fixed_line */
 			me->Line = lineno;
 		    } else {
 			if (me->Line != lineno)
-			    return -1;
+			    goto trace_and_return;
 		    }
 		}
 		if (lastcell->len < 0)
 		    lastcell->len = empty ? 0 : pos - lastcell->pos;
 		newstate = empty ? CS__ef  : CS__cf;
 		s->state = newstate;
-		return (me->fixed_line && lineno != me->Line) ? -1 : lastcell->len;
+		ret = ((me->fixed_line && lineno != me->Line)
+		       ? -1 : lastcell->len);
+		goto trace_and_return;
 	    case CS__eb:
 		newstate = empty ? CS__ef  : CS__cf;	break; /* ??? */
 	    case CS__cb:
@@ -843,57 +916,24 @@ PRIVATE int Stbl_finishCellInRow ARGS5(
 		break;
 	    }
 	    lastcell->len = pos - lastcell->pos;
-	} /* if (!certain) ... else */
-    } /* if (broken) ... else */
+	} /* if (!end_td) ... else */
+    } /* if (multiline) ... else */
 
-#if 0				/* MEGA_COMMENTOUT */
-    if (lineno != me->cells[0].Line) {
-#if 0
-	int i;
-	for (i = ncells - 1; i >= 0; i--) {
-	    if (!(me->cells[i].len == 0 || me->cells[i].colspan == 0))
-		break;
-	}
-#endif
-	if (lineno >= lastcell->Line) {
-	    if (me->fixed_line) {
-		if (pos == 0) {
-		    if (lastcell->len <= 0) {
-			return 0;
-		    } else {
-			return lastcell->len;
-		    }
-		} else {	/* pos != 0 */
-		    if (lastcell->len <= 0 && lineno > lastcell->Line && lastcell->Line <= me->Line) {
-			return 0;
-		    } else {
-			return -1;
-		    }
-		}
-	    } else {	/* not me->fixed_line */
-		if (pos == 0) {
-		    if (lastcell->len <= 0) {
-			return 0;
-		    } else {
-			return lastcell->len;
-		    }
-		} else {	/* pos != 0 */
-		    if (lastcell->len <= 0) {
-			return 0;
-		    } else {
-			if (me->ncells == 1 || lastcell->pos == 0) {
-			    return 0;
-			} else
-			    return -1;
-		    }
-		}
-	    }
-	}
-    }
-#endif /* MEGA_COMMENTOUT */
     s->state = newstate;
+    ret = lastcell->len;
+#ifdef EXP_NESTED_TABLES
+    if (nested_tables) {
+	if (ret == -1 && pos == 0)
+	    ret = 0; /* XXXX Hack to allow trailing <P> in multiline cells. */
+    }
+#endif
+
 /*    lastcell->len = pos - lastcell->pos; */
-    return (lastcell->len);
+  trace_and_return:
+    CTRACE2(TRACE_TRST,
+	    (tfp, " => prev_state=%s, state=%s, return=%d\n",
+		  cellstate_s(s->prev_state), cellstate_s(s->state), ret));
+    return ret;
 }
 
 /*
@@ -911,9 +951,13 @@ PRIVATE int Stbl_reserveCellsInTable ARGS4(
     STable_rowinfo *rows, *row;
     int growby;
     int i;
+
     if (me->nrows <= 0)
 	return -1;		/* must already have at least one row */
 
+    CTRACE2(TRACE_TRST,
+	    (tfp, "TRST:Stbl_reserveCellsInTable(icell=%d, colspan=%d, rowspan=%d)\n",
+		  icell, colspan, rowspan));
     if (rowspan == 0) {
 	if (!me->rowspans2eog.cells) {
 	    me->rowspans2eog.cells = typecallocn(STable_cellinfo, icell + colspan);
@@ -935,6 +979,8 @@ PRIVATE int Stbl_reserveCellsInTable ARGS4(
 	for (i = 0; i < growby; i++) {
 	    row = rows + me->allocated_rows + i;
 	    row->allocated = 0;
+	    row->offset = 0;
+	    row->content = 0;
 	    if (!me->rowspans2eog.allocated) {
 		row->cells = NULL;
 	    } else {
@@ -974,6 +1020,8 @@ PRIVATE void Stbl_cancelRowSpans ARGS1(
     STable_info *,	me)
 {
     int i;
+
+    CTRACE2(TRACE_TRST, (tfp, "TRST:Stbl_cancelRowSpans()"));
     for (i = me->nrows; i < me->allocated_rows; i++) {
 	if (!me->rows[i].ncells) { /* should always be the case */
 	    FREE(me->rows[i].cells);
@@ -989,27 +1037,20 @@ PRIVATE void Stbl_cancelRowSpans ARGS1(
  */
 PUBLIC int Stbl_addRowToTable ARGS3(
     STable_info *,	me,
-    short,		alignment,
+    int,		alignment,
     int,		lineno)
 {
     STable_rowinfo *rows, *row;
     STable_states * s = &me->s;
+
+    CTRACE2(TRACE_TRST,
+	    (tfp, "TRST:Stbl_addRowToTable(alignment=%d, lineno=%d)\n",
+		  alignment, lineno));
     if (me->nrows > 0 && me->rows[me->nrows-1].ncells > 0) {
 	if (s->pending_len > 0)
 	    me->rows[me->nrows-1].cells[me->rows[me->nrows-1].ncells - 1].len = s->pending_len;
 	s->pending_len = 0;
-/*	if (me->rows[me->nrows-1].cells[me->rows[me->nrows-1].ncells - 1].len >= 0 &&
-	    me->rows[me->nrows-1].cells[me->rows[me->nrows-1].ncells - 1].Line == lineno)
-	    Stbl_finishCellInTable(me, YES,
-				   lineno,
-		me->rows[me->nrows-1].cells[me->rows[me->nrows-1].ncells - 1].pos +
-		me->rows[me->nrows-1].cells[me->rows[me->nrows-1].ncells - 1].len); */
     }
-#if 0
-    s->prev_state = s->state = CS_invalid;
-    s->lineno = -1;
-    s->icell_core = -1;
-#endif
     Stbl_finishRowInTable(me);
     if (me->nrows > 0 && me->rows[me->nrows-1].Line == lineno)
 	me->rows[me->nrows-1].Line = -1;
@@ -1048,6 +1089,8 @@ PUBLIC int Stbl_addRowToTable ARGS3(
 		    row->ncells = 0;
 		    row->fixed_line = NO;
 		    row->alignment = HT_ALIGN_NONE;
+		    row->offset = 0;
+		    row->content = 0;
 		}
 	    }
 	    if (rows) {
@@ -1074,6 +1117,7 @@ PUBLIC int Stbl_addRowToTable ARGS3(
 	me->pending_colgroup_next = 0;
     }
     me->rows[me->nrows].Line = -1; /* not yet used */
+    me->rows[me->nrows].ended = ROW_not_ended; /* No </tr> yet */
     return (me->nrows - 1);
 }
 
@@ -1086,10 +1130,13 @@ PRIVATE int Stbl_finishRowInTable ARGS1(
     STable_rowinfo *lastrow;
     STable_states * s = &me->s;
     int ncells;
+
+    CTRACE2(TRACE_TRST, (tfp, "TRST:Stbl_finishRowInTable()\n"));
     if (!me->rows || !me->nrows)
 	return -1;		/* no row started! */
     lastrow = me->rows + (me->nrows - 1);
     ncells = lastrow->ncells;
+    lastrow->ended = ROW_ended_by_endtr;
     if (lastrow->ncells > 0) {
 	if (s->pending_len > 0)
 	    lastrow->cells[lastrow->ncells - 1].len = s->pending_len;
@@ -1098,12 +1145,9 @@ PRIVATE int Stbl_finishRowInTable ARGS1(
     s->prev_state = s->state = CS_invalid;
     s->lineno = -1;
 
-#if 0
-    if (lastrow->Line == -1 && s->icell_core >= 0)
-#endif
     if (s->icell_core >= 0 && !lastrow->fixed_line &&
-	lastrow->cells[s->icell_core].Line >= 0)
-	lastrow->Line = lastrow->cells[s->icell_core].Line;
+	lastrow->cells[s->icell_core].cLine >= 0)
+	lastrow->Line = lastrow->cells[s->icell_core].cLine;
     s->icell_core = -1;
     return (me->nrows);
 }
@@ -1169,39 +1213,227 @@ PRIVATE int get_remaining_colspan ARGS5(
 			ncols_sofar - (me->ncells + last_colspan - 1));
     } else {
 	for (i = me->ncells + last_colspan - 1; i < ncolinfo - 1; i++)
-	    if (colinfo[i].Line == EOCOLG)
+	    if (colinfo[i].cLine == EOCOLG)
 		break;
 	colspan = i - (me->ncells + last_colspan - 2);
     }
     return colspan;
 }
 
+#ifdef EXP_NESTED_TABLES
+/* Returns -1 on failure, 1 if faking was performed, 0 if not needed. */
+PRIVATE int Stbl_fakeFinishCellInTable ARGS4(
+    STable_info *,	me,
+    STable_rowinfo *,	lastrow,
+    int,		lineno,
+    int,		finishing)	/* Processing finish or start */
+{
+    STable_states * s = &me->s;
+    int fake = 0;
+
+    switch (s->state) {			/* We care only about trailing <BR> */
+    case CS_invalid:
+    case CS__0new:
+    case CS__0ef:
+    case CS__0cf:
+    case CS__new:
+    case CS__cbc:
+    case CS__ef:
+    case CS__cf:
+    default:
+	/* <BR></TD> may produce these (XXXX instead of CS__cbf?).  But if
+	   finishing==0, the caller already checked that we are on a
+	   different line.  */
+	if (finishing==0)
+	    fake = 1;
+	break;		/* Either can't happen, or may be ignored */
+    case CS__eb:
+    case CS__0eb:
+    case CS__0cb:
+    case CS__cb:
+	fake = 1;
+	break;
+    }
+    if (fake) {
+	/* The previous action we did was putting a linebreak.  Now we
+	   want to put another one.  Fake necessary
+	   </TD></TR><TR><TD></TD><TD> (and possibly </TD>) instead. */
+	int ncells = lastrow->ncells;
+	int i;
+	int al = lastrow->alignment;
+	int cs = lastrow->cells[lastrow->ncells - 1].colspan;
+	int rs = 1;			/* XXXX How to find rowspan? */
+	int ih = 0;			/* XXXX How to find is_header? */
+	int end_td = (TRST_ENDCELL_ENDTD | TRST_FAKING_CELLS);
+	int need_reserved = 0;
+	int prev_reserved_last = -1;
+	STable_rowinfo *prev_row;
+	int prev_row_n2 = lastrow - me->rows;
+
+	CTRACE2(TRACE_TRST,
+		(tfp, "TRST:Stbl_fakeFinishCellInTable(lineno=%d, finishing=%d) START FAKING\n",
+		      lineno, finishing));
+
+	/* Although here we use pos=0, this may commit the previous
+	   cell which had <BR> as a last element.  This may overflow
+	   the screen width, so the additional checks performed in
+	   Stbl_finishCellInTable (comparing to Stbl_finishCellInRow)
+	   are needed. */
+	if (finishing) {
+	    /* Fake </TD> at BOL */
+	    if (Stbl_finishCellInTable(me, end_td, lineno, 0, 0) < 0) {
+		return -1;
+	    }
+	}
+
+	/* Fake </TR> at BOL */
+	/* Stbl_finishCellInTable(lineno, 0, 0);*/ /* Needed? */
+
+	/* Fake <TR> at BOL */
+	if (Stbl_addRowToTable(me, al, lineno) < 0) {
+	    return -1;
+	}
+	lastrow = me->rows + (me->nrows - 1);
+	lastrow->content = IS_CONTINUATION_OF_CELL;
+	for (i = 0; i < lastrow->allocated; i++) {
+	    if (lastrow->cells[i].alignment == RESERVEDCELL) {
+		need_reserved = 1;
+		break;
+	    }
+	}
+
+	prev_row = me->rows + prev_row_n2;
+	for (i = ncells; i < prev_row->allocated; i++) {
+	    if (prev_row->cells[i].alignment == RESERVEDCELL)
+		prev_reserved_last = i;
+	}
+	if (need_reserved || prev_reserved_last >= 0) {
+	    /* Oups, we are going to stomp over a line which somebody
+	       cares about already, or the previous line had reserved
+	       cells which were not skipped over.
+
+	       Remember that STable_rowinfo is about logical (TR)
+	       table lines, not displayed lines.  We need to duplicate
+	       the reservation structure when we fake new logical lines.  */
+	    int prev_row_n = prev_row - me->rows;
+	    STable_rowinfo *rows = realloc(me->rows,
+					   (me->allocated_rows + 1)
+					   * sizeof(STable_rowinfo));
+	    int need_cells = prev_reserved_last + 1;
+	    int n;
+
+	    if (!rows)
+		return -1; /* ignore silently, no free memory, may be recoverable */
+
+	    CTRACE2(TRACE_TRST,
+		    (tfp, "TRST:Stbl_fakeFinishCellInTable REALLOC ROWSPAN\n"));
+	    me->rows = rows;
+	    lastrow = me->rows + (me->nrows - 1);
+	    prev_row = me->rows + prev_row_n;
+	    me->allocated_rows++;
+
+	    /* Insert a duplicate row after lastrow */
+	    for (n = me->allocated_rows - me->nrows - 1; n >= 0; --n)
+		lastrow[n + 1] = lastrow[n];
+
+	    /* Ignore cells, they belong to the next row now */
+	    lastrow->allocated = 0;
+	    lastrow->cells = 0;
+	    if (need_cells) {
+		lastrow->cells = typecallocn(STable_cellinfo, need_cells);
+		/* ignore silently, no free memory, may be recoverable */
+		if (!lastrow->cells) {
+		    return -1;
+		}
+		lastrow->allocated = need_cells;
+		memcpy(lastrow->cells, prev_row->cells,
+		       lastrow->allocated * sizeof(STable_cellinfo));
+
+		i = -1;
+		while (++i < ncells) {
+		    /* Stbl_addCellToTable grants RESERVEDCELL, but we do not
+		       want this action for fake cells.
+		       XXX Maybe always fake RESERVEDCELL instead of explicitly
+		       creating/destroying cells?  */
+		    if (lastrow->cells[i].alignment == RESERVEDCELL)
+			lastrow->cells[i].alignment = HT_LEFT;
+		}
+	    }
+	}
+
+	/* Fake <TD></TD>...<TD> (and maybe a </TD>) at BOL. */
+	CTRACE2(TRACE_TRST,
+		(tfp, "TRST:Stbl_fakeFinishCellInTable FAKE %d elts%s\n",
+		      ncells, (finishing ? ", last unfinished" : "")));
+	i = 0;
+	while (++i <= ncells) {
+	    /* XXXX A lot of args may be wrong... */
+	    if (Stbl_addCellToTable(me, (i==ncells ? cs : 1), rs, al,
+				    ih, lineno, 0, 0) < 0) {
+		return -1;
+	    }
+	    lastrow->content &= ~HAS_BEG_OF_CELL; /* BEG_OF_CELL was fake */
+	    /* We cannot run out of width here, so it is safe to not
+	       call Stbl_finishCellInTable(), but Stbl_finishCellInRow. */
+	    if (!finishing || (i != ncells)) {
+		if (Stbl_finishCellInRow(lastrow, s, end_td, lineno, 0) < 0) {
+		    return -1;
+		}
+	    }
+	}
+	CTRACE2(TRACE_TRST,
+		(tfp, "TRST:Stbl_fakeFinishCellInTable(lineno=%d) FINISH FAKING\n",
+		      lineno));
+	return 1;
+    }
+    return 0;
+}
+#endif
+
 /*
  * Returns -1 on error, otherwise 0.
  */
-PUBLIC int Stbl_addCellToTable ARGS7(
+PUBLIC int Stbl_addCellToTable ARGS8(
     STable_info *,	me,
     int,		colspan,
     int,		rowspan,
-    short,		alignment,
-    BOOL,		isheader,
+    int,		alignment,
+    int,		isheader,
     int,		lineno,
+    int,		offset_not_used_yet GCC_UNUSED,
     int,		pos)
 {
     STable_states * s = &me->s;
     STable_rowinfo *lastrow;
     STable_cellinfo *sumcols, *sumcol;
     int i, icell, ncells, sumpos;
-#if 0
-    int prevsumpos, advance;
-#endif
 
+    CTRACE2(TRACE_TRST,
+	    (tfp, "TRST:Stbl_addCellToTable(lineno=%d, pos=%d, isheader=%d, cs=%d, rs=%d, al=%d)\n",
+		  lineno, pos, (int)isheader, colspan, rowspan, alignment));
     if (!me->rows || !me->nrows)
 	return -1;		/* no row started! */
 				/* ##850_fail_if_fail?? */
-    Stbl_finishCellInTable(me, YES,
-			   lineno, pos);
+    if (me->rows[me->nrows - 1].ended != ROW_not_ended)
+	Stbl_addRowToTable(me, alignment, lineno);
+    Stbl_finishCellInTable(me, TRST_ENDCELL_ENDTD, lineno, 0, pos);
     lastrow = me->rows + (me->nrows - 1);
+
+#ifdef EXP_NESTED_TABLES
+    if (nested_tables) {
+	/* If the last cell was finished by <BR></TD>, we need to fake an
+	   appropriate amount of cells */
+	if (!NO_AGGRESSIVE_NEWROW && pos == 0 && lastrow->ncells > 0
+	    && lastrow->cells[lastrow->ncells-1].cLine != lineno) {
+	    int rc = Stbl_fakeFinishCellInTable(me, lastrow, lineno, 0);
+
+	    if (rc < 0)
+		return -1;
+	    if (rc)
+		lastrow = me->rows + (me->nrows - 1);
+	}
+    }
+#endif
     if (colspan == 0) {
 	colspan = get_remaining_colspan(lastrow, me->sumcols, me->ncolinfo,
 					colspan, me->ncols);
@@ -1220,6 +1452,7 @@ PUBLIC int Stbl_addCellToTable ARGS7(
 	/* me->rows may now have been realloc'd, make lastrow valid pointer */
 	lastrow = me->rows + (me->nrows - 1);
     }
+    lastrow->content |= HAS_BEG_OF_CELL;
 
     {
 	int growby = 0;
@@ -1237,7 +1470,7 @@ PUBLIC int Stbl_addCellToTable ARGS7(
 		    sumcol->pos = sumcols[me->allocated_sumcols-1].pos;
 		    sumcol->len = 0;
 		    sumcol->colspan = 0;
-		    sumcol->Line = 0;
+		    sumcol->cLine = 0;
 		    sumcol->alignment = HT_ALIGN_NONE;
 		}
 	    }
@@ -1249,11 +1482,6 @@ PUBLIC int Stbl_addCellToTable ARGS7(
 	    }
 	}
     }
-#if 0
-    if (icell + colspan > me->ncols) {
-	me->sumcols[icell + colspan].pos = -1; /* not yet used @@@ ??? */
-    }
-#endif
     if (icell + 1 > me->ncols) {
 	me->ncols = icell + 1;
     }
@@ -1265,33 +1493,7 @@ PUBLIC int Stbl_addCellToTable ARGS7(
     update_sumcols0(me->sumcols, lastrow, sumpos,
 		    sumpos - (ncells > 0 ? me->sumcols[icell].pos : me->sumcols[icell].pos),
 		    icell, 0, me->allocated_sumcols);
-#if 0
-    prevsumpos = me->sumcols[icell].pos;
-    advance = sumpos - prevsumpos;
-    if (advance > 0) {
-	for (i = icell; i < me->allocated_sumcols; i++) {
-	    if (me->sumcols[i].pos >= 0)
-		me->sumcols[i].pos += advance;
-	    else {
-		me->sumcols[i].pos = sumpos;
-		break;
-	    }
-	}
-    }
-#endif
 
-
-#if 0
-	int prevopos = (ncells > 0 ? lastrow->cells[ncells-1].pos : 0);
-	int prevnpos = (ncells > 0 ? me->sumcols[ncells-1].pos : 0);
-#endif
-#if 0
-    if (pos > me->maxpos) {
-	me->maxpos = pos;
-	if (me->maxpos > /* @@@ max. line length we can accept */ MAX_STBL_POS)
-	    return -1;
-    }
-#endif
     me->maxpos = me->sumcols[me->allocated_sumcols-1].pos;
     if (me->maxpos > /* @@@ max. line length we can accept */ MAX_STBL_POS)
 	return -1;
@@ -1301,29 +1503,52 @@ PUBLIC int Stbl_addCellToTable ARGS7(
 /*
  * Returns -1 on error, otherwise 0.
  */
-PUBLIC int Stbl_finishCellInTable ARGS4(
+PUBLIC int Stbl_finishCellInTable ARGS5(
     STable_info *,	me,
-    BOOL,		certain,
+    int,		end_td,
     int,		lineno,
+    int,		offset,
     int,		pos)
 {
     STable_states * s = &me->s;
     STable_rowinfo *lastrow;
     int len, xlen, icell;
     int i;
+
+    CTRACE2(TRACE_TRST,
+	    (tfp, "TRST:Stbl_finishCellInTable(lineno=%d, pos=%d, off=%d, end_td=%d)\n",
+		  lineno, pos, offset, (int)end_td));
     if (me->nrows == 0)
 	return -1;
     lastrow = me->rows + (me->nrows - 1);
     icell = lastrow->ncells - 1;
     if (icell < 0)
 	return icell;
-    if (s->x_td == -1)
-	return certain ? -1 : 0;
-    len = Stbl_finishCellInRow(lastrow, s, certain, lineno, pos);
+    if (s->x_td == -1) {	/* Stray </TD> or just-in-case, as on </TR> */
+	if ((end_td & TRST_ENDCELL_MASK) == TRST_ENDCELL_LINEBREAK)
+	    lastrow->ended = ROW_ended_by_splitline;
+	return 0;
+    }
+
+#ifdef EXP_NESTED_TABLES
+    if (nested_tables) {
+	if (!NO_AGGRESSIVE_NEWROW && !(end_td & TRST_FAKING_CELLS)) {
+	    int rc = Stbl_fakeFinishCellInTable(me, lastrow, lineno, 1);
+
+	    if (rc) {
+		if (rc < 0)
+		    return -1;
+		lastrow = me->rows + (me->nrows - 1);
+		icell = lastrow->ncells - 1;
+	    }
+	}
+    }
+#endif
+    len = Stbl_finishCellInRow(lastrow, s, end_td, lineno, pos);
     if (len == -1)
 	return len;
     xlen = (len > 0) ? len : s->pending_len; /* ##890 use xlen if fixed_line?: */
-    if (lastrow->fixed_line && lastrow->Line == lineno)
+    if (lastrow->Line == lineno)
 	len = xlen;
     if (lastrow->cells[icell].colspan > 1) {
 	/*
@@ -1350,19 +1575,6 @@ PUBLIC int Stbl_finishCellInTable ARGS4(
 	/* @@@ could overcount? */
 	if (len > spanlen)
 	    me->maxlen += (len - spanlen);
-#if 0	/* this is all quite bogus! */
-	if (me->sumcols[icell].colspan > 1)
-	    me->sumcols[icell+me->sumcols[icell].colspan].pos =
-		HTMAX(me->sumcols[icell].pos + len,
-		      me->sumcols[icell+me->sumcols[icell].colspan].pos);
-	if (lastrow->cells[icell].colspan > me->sumcols[icell].colspan) {
-	    me->sumcols[icell].colspan = lastrow->cells[icell].colspan;
-	    if (me->sumcols[icell].colspan > 1)
-		me->sumcols[icell+me->sumcols[icell].colspan].pos =
-		    HTMAX(me->sumcols[icell].pos + len,
-			  me->sumcols[icell+me->sumcols[icell].colspan].pos);
-	}
-#endif
     } else if (len > me->sumcols[icell].len) {
 	if (me->sumcols[icell + 1].colspan >= -1)
 	    me->maxlen += (len - me->sumcols[icell].len);
@@ -1375,44 +1587,23 @@ PUBLIC int Stbl_finishCellInTable ARGS4(
 			me->allocated_sumcols);
 	me->maxpos = me->sumcols[me->allocated_sumcols-1].pos;
     }
-#if 0
-    if (len > 0) {
-	int sumpos = pos;
-	int ispan = lastrow->cells[icell].colspan;
-	int prevsumpos = me->sumcols[icell + ispan].pos;
-	int advance;
-	if (lastrow->cells[icell].pos + len > sumpos)
-	    sumpos = lastrow->cells[icell].pos + len;
-	if (me->sumcols[icell+ispan-1].pos + me->sumcols[icell+ispan-1].len > sumpos)
-	    sumpos = me->sumcols[icell+ispan-1].pos + me->sumcols[icell+ispan-1].len;
-	advance = sumpos - prevsumpos;
-	if (advance > 0) {
-	    for (i = icell + ispan; i < me->allocated_sumcols; i++) {
-		if (me->sumcols[i].colspan < -1) {
-		    if (i + me->sumcols[i].colspan < icell + ispan) {
-			advance = sumpos - me->sumcols[i].pos;
-			if (i > 0)
-			    advance = HTMAX(advance,
-					    me->sumcols[i-1].pos + me->sumcols[i-1].len
-					    - (me->sumcols[i].pos));
-			if (advance <= 0)
-			    break;
-		    }
-		}
-		if (me->sumcols[i].pos >= 0)
-		    me->sumcols[i].pos += advance;
-		else {
-		    me->sumcols[i].pos = sumpos;
-		    break;
-		}
-	    }
-	}
-	me->maxpos = me->sumcols[me->allocated_sumcols-1].pos;
-    }
-#endif
 
-    if (me->maxlen + (xlen - len) > MAX_STBL_POS)
-	return -1;
+    if ((end_td & TRST_ENDCELL_MASK) == TRST_ENDCELL_LINEBREAK) {
+	lastrow->ended = ROW_ended_by_splitline;
+	lastrow->content |= BELIEVE_OFFSET;
+	lastrow->offset = offset;
+    }
+
+#ifdef EXP_NESTED_TABLES /* maxlen may already include contribution of a cell in this column */
+    if (nested_tables) {
+	if (me->maxlen > MAX_STBL_POS)
+	    return -1;
+    } else
+#endif
+    {
+	if (me->maxlen + (xlen - len) > MAX_STBL_POS)
+	    return -1;
+    }
     if (me->maxpos > /* @@@ max. line length we can accept */ MAX_STBL_POS)
 	return -1;
 
@@ -1436,12 +1627,15 @@ PUBLIC int Stbl_addColInfo ARGS4(
     STable_cellinfo *sumcols, *sumcol;
     int i, icolinfo;
 
+    CTRACE2(TRACE_TRST,
+	    (tfp, "TRST:Stbl_addColInfo(cs=%d, al=%d, isgroup=%d)\n",
+		  colspan, alignment, (int)isgroup));
     if (isgroup) {
 	if (me->pending_colgroup_next > me->ncolinfo)
 	    me->ncolinfo = me->pending_colgroup_next;
 	me->pending_colgroup_next = me->ncolinfo + colspan;
 	if (me->ncolinfo > 0)
-	    me->sumcols[me->ncolinfo -  1].Line = EOCOLG;
+	    me->sumcols[me->ncolinfo -  1].cLine = EOCOLG;
 	me->pending_colgroup_align = alignment;
     } else {
 	for (i = me->pending_colgroup_next - 1;
@@ -1469,7 +1663,7 @@ PUBLIC int Stbl_addColInfo ARGS4(
 		    sumcol->pos = sumcols[me->allocated_sumcols-1].pos;
 		    sumcol->len = 0;
 		    sumcol->colspan = 0;
-		    sumcol->Line = 0;
+		    sumcol->cLine = 0;
 		}
 	    }
 	    if (sumcols) {
@@ -1495,10 +1689,11 @@ PUBLIC int Stbl_addColInfo ARGS4(
 PUBLIC int Stbl_finishColGroup ARGS1(
     STable_info *,	me)
 {
+    CTRACE2(TRACE_TRST, (tfp, "TRST:Stbl_finishColGroup()\n"));
     if (me->pending_colgroup_next >= me->ncolinfo) {
 	me->ncolinfo = me->pending_colgroup_next;
 	if (me->ncolinfo > 0)
-	    me->sumcols[me->ncolinfo -  1].Line = EOCOLG;
+	    me->sumcols[me->ncolinfo -  1].cLine = EOCOLG;
     }
     me->pending_colgroup_next = 0;
     me->pending_colgroup_align = HT_ALIGN_NONE;
@@ -1509,6 +1704,7 @@ PUBLIC int Stbl_addRowGroup ARGS2(
     STable_info *,	me,
     short,		alignment)
 {
+    CTRACE2(TRACE_TRST, (tfp, "TRST:Stbl_addRowGroup()\n"));
     Stbl_cancelRowSpans(me);
     me->rowgroup_align = alignment;
     return 0;			/* that's all! */
@@ -1521,6 +1717,7 @@ PUBLIC int Stbl_finishTABLE ARGS1(
     int i;
     int curpos = 0;
 
+    CTRACE2(TRACE_TRST, (tfp, "TRST:Stbl_finishTABLE()\n"));
     if (!me || me->nrows <= 0 || me->ncols <= 0) {
 	return -1;
     }
@@ -1528,13 +1725,101 @@ PUBLIC int Stbl_finishTABLE ARGS1(
 	if (s->pending_len > 0)
 	    me->rows[me->nrows-1].cells[me->rows[me->nrows-1].ncells - 1].len = s->pending_len;
 	s->pending_len = 0;
-/*	if (me->rows[me->nrows-1].cells[me->rows[me->nrows-1].ncells - 1].len >= 0)
-	    Stbl_finishCellInTable(me, YES,
-		me->rows[me->nrows-1].cells[me->rows[me->nrows-1].ncells - 1].Line,
-		me->rows[me->nrows-1].cells[me->rows[me->nrows-1].ncells - 1].pos +
-		me->rows[me->nrows-1].cells[me->rows[me->nrows-1].ncells - 1].len); */
     }
     Stbl_finishRowInTable(me);
+    /* take into account offsets on multi-line cells.
+       XXX We cannot do it honestly, since two cells on the same row may
+       participate in multi-line table entries, and we preserve only
+       one offset per row.  This implementation may ignore
+       horizontal offsets for the last row of a multirow table entry.  */
+    for (i = 0; i < me->nrows - 1; i++) {
+	int j = i + 1, leading = i, non_empty = 0;
+	STable_rowinfo *nextrow = me->rows + j;
+	int minoffset, have_offsets;
+	int foundcell = -1, max_width;
+
+	if ((nextrow->content & (IS_CONTINUATION_OF_CELL | HAS_BEG_OF_CELL | BELIEVE_OFFSET))
+	    != (IS_CONTINUATION_OF_CELL | BELIEVE_OFFSET))
+	    continue;			/* Not a continuation line */
+	minoffset = nextrow[-1].offset;	/* Line before first continuation */
+	CTRACE2(TRACE_TRST, (tfp, "TRST:Stbl_finishTABLE, l=%d, offset=%d, ended=%d.\n",
+			     i, nextrow[-1].offset, nextrow[-1].ended));
+
+	/* Find the common part of the requested offsets */
+	while (j < me->nrows
+	       && ((nextrow->content & (IS_CONTINUATION_OF_CELL | HAS_BEG_OF_CELL | BELIEVE_OFFSET))
+		   == (IS_CONTINUATION_OF_CELL | BELIEVE_OFFSET))) {
+	    if (minoffset > nextrow->offset)
+		minoffset = nextrow->offset;
+	    CTRACE2(TRACE_TRST, (tfp, "TRST:Stbl_finishTABLE, l=%d, offset=%d, ended=%d.\n",
+				 j, nextrow->offset, nextrow[-1].ended));
+	    nextrow++;
+	    j++;
+	}
+	i = j - 1;			/* Continue after this line */
+	/* Cancel the common part of offsets */
+	j = leading;			/* Restart */
+	nextrow = me->rows + j;		/* Line before first continuation */
+	have_offsets = 0;
+	nextrow->content |= OFFSET_IS_VALID_LAST_CELL;
+	while (j <= i) {		/* A continuation line */
+	    nextrow->offset -= minoffset;
+	    nextrow->content |= OFFSET_IS_VALID;
+	    if (nextrow->offset)
+		have_offsets = 1;
+	    nextrow++;
+	    j++;
+	}
+	if (!have_offsets)
+	    continue;			/* No offsets to deal with */
+
+	/* Find the cell number */
+	foundcell = -1;
+	j = leading + 1;		/* Restart */
+	nextrow = me->rows + j;		/* First continuation line */
+	while (foundcell == -1 && j <= i) { /* A continuation line */
+	    int curcell = -1;
+
+	    while (foundcell == -1 && ++curcell < nextrow->ncells)
+		if (nextrow->cells[curcell].len)
+		    foundcell = curcell, non_empty = j;
+	    nextrow++;
+	    j++;
+	}
+	if (foundcell == -1)		/* Can it happen? */
+	    continue;
+	/* Find the max width */
+	max_width = 0;
+	j = leading;			/* Restart */
+	nextrow = me->rows + j;		/* Include the pre-continuation line */
+	while (j <= i) {		/* A continuation line */
+	    if (nextrow->ncells > foundcell) {
+		int curwid = nextrow->cells[foundcell].len + nextrow->offset;
+
+		if (curwid > max_width)
+		    max_width = curwid;
+	    }
+	    nextrow++;
+	    j++;
+	}
+	/* Update the widths */
+	j = non_empty;			/* Restart from the first nonempty */
+	nextrow = me->rows + j;
+	/* Register the increase of the width */
+	update_sumcols0(me->sumcols, me->rows + non_empty,
+			0 /* width only */, max_width,
+			foundcell, nextrow->cells[foundcell].colspan,
+			me->allocated_sumcols);
+	j = leading;			/* Restart from pre-continuation */
+	nextrow = me->rows + j;
+	while (j <= i) {		/* A continuation line */
+	    if (nextrow->ncells > foundcell)
+		nextrow->cells[foundcell].len = max_width;
+	    nextrow++;
+	    j++;
+	}
+    }					/* END of Offsets processing */
+
     for (i = 0; i < me->ncols; i++) {
 	if (me->sumcols[i].pos < curpos) {
 	    me->sumcols[i].pos = curpos;
@@ -1545,20 +1830,15 @@ PUBLIC int Stbl_finishTABLE ARGS1(
 	    curpos += me->sumcols[i].len;
 	}
     }
-#if 0				/* ??? */
-    for (j = 0; j < me->nrows; j++) {
-	STable_rowinfo *row = me->rows + i;
-	for (i = 0; i < row->ncells; i++) {
-	}
-    }
-#endif
-    return me->ncols;
+    /* need to recheck curpos: though it is checked each time a cell
+       is added, sometimes the result is ignored, as in split_line(). */
+    return (curpos > MAX_STBL_POS ? -1 : me->ncols);
 }
 
 PUBLIC short Stbl_getAlignment ARGS1(
     STable_info *,	me)
 {
-    return me ? me->alignment : HT_ALIGN_NONE;
+    return (short)(me ? me->alignment : HT_ALIGN_NONE);
 }
 
 PRIVATE int get_fixup_positions ARGS4(
@@ -1574,15 +1854,23 @@ PRIVATE int get_fixup_positions ARGS4(
     if (!me)
 	return -1;
     while (i < me->ncells) {
+	int offset;
+
 	next_i = i + HTMAX(1, me->cells[i].colspan);
-	if (me->cells[i].Line != me->Line) {
-	    if (me->cells[i].Line > me->Line)
+	if (me->cells[i].cLine != me->Line) {
+	    if (me->cells[i].cLine > me->Line)
 		break;
 	    i = next_i;
 	    continue;
 	}
 	oldpos[ip] = me->cells[i].pos;
-	newpos[ip] = sumcols[i].pos;
+	if ((me->content & OFFSET_IS_VALID)
+	    && (i == me->ncells - 1
+		|| !((me->content & OFFSET_IS_VALID_LAST_CELL))))
+	    offset = me->offset;
+	else
+	    offset = 0;
+	newpos[ip] = sumcols[i].pos + offset;
 	if ((me->cells[i].alignment == HT_CENTER ||
 	     me->cells[i].alignment == HT_RIGHT) &&
 	    me->cells[i].len > 0) {
@@ -1638,3 +1926,74 @@ PUBLIC int Stbl_getStartLine ARGS1(
     else
 	return me->startline;
 }
+
+#ifdef EXP_NESTED_TABLES
+
+PUBLIC int Stbl_getStartLineDeep ARGS1(
+    STable_info *,	me)
+{
+    if (!me)
+	return -1;
+    while (me->enclosing)
+	me = me->enclosing;
+    return me->startline;
+}
+
+PUBLIC void Stbl_update_enclosing ARGS3(
+    STable_info *,	me,
+    int,		max_width,
+    int,		last_lineno)
+{
+    int l;
+
+    if (!me || !me->enclosing || !max_width)
+	return;
+    CTRACE2(TRACE_TRST, (tfp, "TRST:Stbl_update_enclosing, width=%d, lines=%d...%d.\n",
+	    max_width, me->startline, last_lineno));
+    for (l = me->startline; l <= last_lineno; l++) {
+	/* Fake <BR> in appropriate positions */
+	if (Stbl_finishCellInTable(me->enclosing, TRST_ENDCELL_LINEBREAK, l, 0, max_width) < 0) {
+	    /* It is not handy to let the caller delete me->enclosing,
+	       and it does not buy us anything.	 Do it directly. */
+	    STable_info *stbl = me->enclosing;
+
+	    CTRACE2(TRACE_TRST, (tfp, "TRST:Stbl_update_enclosing: width too large, aborting enclosing\n"));
+	    me->enclosing = 0;
+	    while (stbl) {
+		STable_info *enclosing = stbl->enclosing;
+		Stbl_free(stbl);
+		stbl = enclosing;
+	    }
+	    break;
+	}
+    }
+    return;
+}
+
+PUBLIC void Stbl_set_enclosing ARGS3(
+    STable_info *,	me,
+    STable_info *,	enclosing,
+    struct _TextAnchor*,enclosing_last_anchor_before_stbl)
+{
+    if (!me)
+	return;
+    me->enclosing = enclosing;
+    me->enclosing_last_anchor_before_stbl = enclosing_last_anchor_before_stbl;
+}
+
+PUBLIC STable_info * Stbl_get_enclosing ARGS1(
+    STable_info *,	me)
+{
+    if (!me)
+	return 0;
+    return me->enclosing;
+}
+
+PUBLIC struct _TextAnchor * Stbl_get_last_anchor_before ARGS1(
+    STable_info *,	me)
+{
+    if (!me)
+	return 0;
+    return me->enclosing_last_anchor_before_stbl;
+}
+#endif

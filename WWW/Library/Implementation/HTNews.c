@@ -34,9 +34,21 @@ PUBLIC int HTNewsMaxChunk = 40; /* Largest number of articles in one window */
 #define SERVER_FILE "/usr/local/lib/rn/server"
 #endif /* SERVER_FILE */
 
+#ifdef USE_SSL
+extern SSL_CTX * ssl_ctx;
+PRIVATE SSL * Handle = NULL;
+PRIVATE int channel_s = 1;
+#define NEWS_NETWRITE(sock, buff, size) \
+	(Handle ? SSL_write(Handle, buff, size) : NETWRITE(sock, buff, size))
+#define NEWS_NETCLOSE(sock) \
+	{ (void)NETCLOSE(sock); if (Handle) SSL_free(Handle); Handle = NULL; }
+PRIVATE char HTNewsGetCharacter NOPARAMS;
+#define NEXT_CHAR HTNewsGetCharacter()
+#else
 #define NEWS_NETWRITE  NETWRITE
 #define NEWS_NETCLOSE  NETCLOSE
 #define NEXT_CHAR HTGetCharacter()
+#endif /* USE_SSL */
 
 #include <HTML.h>
 #include <HTParse.h>
@@ -197,7 +209,7 @@ PRIVATE BOOL initialize NOARGS
 		    HTNewsHost));
     } else {
 	char server_name[256];
-	FILE* fp = fopen(SERVER_FILE, "r");
+	FILE* fp = fopen(SERVER_FILE, TXT_R);
 	if (fp) {
 	    if (fscanf(fp, "%s", server_name)==1) {
 		StrAllocCopy(HTNewsHost, server_name);
@@ -395,8 +407,7 @@ PRIVATE NNTPAuthResult HTHandleAuthInfo ARGS1(
 		/*
 		**  Store the accepted username and no password. - FM
 		*/
-		if ((auth =
-		    (NNTPAuth *)calloc(1, sizeof(NNTPAuth))) != NULL) {
+		if ((auth = typecalloc(NNTPAuth)) != NULL) {
 		    StrAllocCopy(auth->host, host);
 		    auth->user = UserName;
 		    HTList_appendObject(NNTP_AuthInfo, auth);
@@ -503,8 +514,7 @@ PRIVATE NNTPAuthResult HTHandleAuthInfo ARGS1(
 			auth->pass = PassWord;
 		    }
 		} else {
-		    if ((auth =
-			(NNTPAuth *)calloc(1, sizeof(NNTPAuth))) != NULL) {
+		    if ((auth = typecalloc(NNTPAuth)) != NULL) {
 			StrAllocCopy(auth->host, host);
 			auth->user = UserName;
 			auth->pass = PassWord;
@@ -616,9 +626,9 @@ PRIVATE char * author_address ARGS1(char *,email)
     if ((at = strrchr(address, '@')) && at > address) {
 	p = (at - 1);
 	e = (at + 1);
-	while (p > address && !isspace((unsigned char)*p))
+	while (p > address && !isspace(UCH(*p)))
 	    p--;
-	while (*e && !isspace((unsigned char)*e))
+	while (*e && !isspace(UCH(*e)))
 	    e++;
 	*e = 0;
 	return HTStrip(p);
@@ -628,10 +638,10 @@ PRIVATE char * author_address ARGS1(char *,email)
     **	Default to the first word.
     */
     p = address;
-    while (isspace((unsigned char)*p))
+    while (isspace(UCH(*p)))
 	p++; /* find first non-space */
     e = p;
-    while (!isspace((unsigned char)*e) && *e != '\0')
+    while (!isspace(UCH(*e)) && *e != '\0')
 	e++; /* find next space or end */
     *e = '\0'; /* terminate space */
 
@@ -799,7 +809,7 @@ PRIVATE BOOLEAN valid_header ARGS1(
     */
     colon = strchr(line, ':');
     space = strchr(line, ' ');
-    if (isalpha(line[0]) && colon && space == colon + 1)
+    if (isalpha(UCH(line[0])) && colon && space == colon + 1)
 	return(TRUE);
 
     /*
@@ -835,12 +845,7 @@ PRIVATE void post_article ARGS1(
     **	Open the temporary file with the
     **	nntp headers and message body. - FM
     */
-#ifdef DOSPATH
-    if ((fd = fopen((postfile ? postfile : ""), "rt")) == NULL)
-#else
-    if ((fd = fopen((postfile ? postfile : ""), "r")) == NULL)
-#endif
-    {
+    if ((fd = fopen((postfile ? postfile : ""), TXT_R)) == NULL) {
 	HTAlert(FAILED_CANNOT_OPEN_POST);
 	return;
     }
@@ -958,12 +963,6 @@ void debug_print(unsigned char *p)
 }
 #endif
 
-#ifdef NOTUSED_CHARTRANS
-static char *decode_mime(char *str)
-{
-    return HTmmdecode(str, str);
-}
-#else
 static char *decode_mime(char *str)
 {
     char temp[LINE_LENGTH];	/* FIXME: what determines the actual size? */
@@ -994,17 +993,12 @@ static char *decode_mime(char *str)
 
     return str;
 }
-#endif /* NOTUSED_CHARTRANS */
 #else /* !SH_EX */
 static char *decode_mime ARGS1(char *, str)
 {
-#ifdef NOTUSED_CHARTRANS
-    return HTmmdecode(str, str);
-#else
     HTmmdecode(str, str);
     HTrjis(str, str);
     return str;
-#endif
 }
 #endif
 
@@ -1085,11 +1079,11 @@ PRIVATE int read_article ARGS1(
 		    /*
 		    **	End of article?
 		    */
-		    if ((unsigned char)full_line[1] < ' ') {
+		    if (UCH(full_line[1]) < ' ') {
 			done = YES;
 			break;
 		    }
-		} else if ((unsigned char)full_line[0] < ' ') {
+		} else if (UCH(full_line[0]) < ' ') {
 		    break;		/* End of Header? */
 
 		} else if (match(full_line, "SUBJECT:")) {
@@ -1401,7 +1395,7 @@ PRIVATE int read_article ARGS1(
 		/*
 		**  End of article?
 		*/
-		if ((unsigned char)line[1] < ' ') {
+		if (UCH(line[1]) < ' ') {
 		    done = YES;
 		    break;
 		} else {			/* Line starts with dot */
@@ -1638,7 +1632,7 @@ PRIVATE int read_list ARGS1(char *, arg)
 		/*
 		**  End of article?
 		*/
-		if ((unsigned char)line[1] < ' ') {
+		if (UCH(line[1]) < ' ') {
 		    done = YES;
 		    break;
 		} else {			/* Line starts with dot */
@@ -1838,7 +1832,7 @@ PRIVATE int read_group ARGS3(
 			/*
 			**  End of article?
 			*/
-			if ((unsigned char)line[1] < ' ') {
+			if (UCH(line[1]) < ' ') {
 			    done = YES;
 			    break;
 			} else {		/* Line starts with dot */
@@ -1947,7 +1941,7 @@ PRIVATE int read_group ARGS3(
 			    /*
 			    **	End of article?
 			    */
-			    done = (BOOL) ((unsigned char)line[1] < ' ');
+			    done = (BOOL) (UCH(line[1]) < ' ');
 			    break;
 
 			case 'S':
@@ -2147,6 +2141,9 @@ PRIVATE int HTLoadNews ARGS4(
     char *ProxyHost = NULL;
     char *ProxyHREF = NULL;
     char *postfile = NULL;
+#ifdef USE_SSL
+    char SSLprogress[256];
+#endif /* USE_SSL */
 
     diagnostic = (format_out == WWW_SOURCE ||	/* set global flag */
 		  format_out == HTAtom_for("www/download") ||
@@ -2178,7 +2175,7 @@ PRIVATE int HTLoadNews ARGS4(
 	**	xxxxx			News group (no "@")
 	**	group/n1-n2		Articles n1 to n2 in group
 	*/
-	normal_url = (!strncmp(arg, "news:", 5) || !strncmp(arg, "nntp:", 5));
+	normal_url = (BOOL) (!strncmp(arg, "news:", 5) || !strncmp(arg, "nntp:", 5));
 	spost_wanted = (BOOL) (!normal_url && strstr(arg, "snewspost:") != NULL);
 	sreply_wanted = (BOOL) (!(normal_url || spost_wanted) &&
 			 strstr(arg, "snewsreply:") != NULL);
@@ -2195,11 +2192,13 @@ PRIVATE int HTLoadNews ARGS4(
 			  group_wanted) &&
 			strchr(arg, '@') == NULL) && (strchr(arg, '*') != NULL));
 
+#ifndef USE_SSL
 	if (!strncasecomp(arg, "snewspost:", 10) ||
 	    !strncasecomp(arg, "snewsreply:", 11)) {
 	    HTAlert(FAILED_CANNOT_POST_SSL);
 	    return HT_NOT_LOADED;
 	}
+#endif /* !USE_SSL */
 	if (post_wanted || reply_wanted || spost_wanted || sreply_wanted) {
 	    /*
 	    **	Make sure we have a non-zero path for the newsgroup(s). - FM
@@ -2287,8 +2286,43 @@ PRIVATE int HTLoadNews ARGS4(
 	    StrAllocCopy(NewsHREF, command);
 	}
 	else if (!strncasecomp(arg, "snews:", 6)) {
+#ifdef USE_SSL
+	    if (((*(arg + 6) == '\0') ||
+		 (!strcmp((arg + 6), "/") ||
+		  !strcmp((arg + 6), "//") ||
+		  !strcmp((arg + 6), "///"))) ||
+		((!strncmp((arg + 6), "//", 2)) &&
+		 (!(cp = strchr((arg + 8), '/')) || *(cp + 1) == '\0'))) {
+		p1 = "*";
+		group_wanted = FALSE;
+		list_wanted = TRUE;
+	    } else if (*(arg + 6) != '/') {
+		p1 = (arg + 6);
+	    } else if (*(arg + 6) == '/' && *(arg + 7) != '/') {
+		p1 = (arg + 7);
+	    } else {
+		p1 = (cp + 1);
+	    }
+	    if (!(cp = HTParse(arg, "", PARSE_HOST)) || *cp == '\0') {
+		if (s >= 0 && NewsHost && strcasecomp(NewsHost, HTNewsHost)) {
+		    NEWS_NETCLOSE(s);
+		    s = -1;
+		}
+		StrAllocCopy(NewsHost, HTNewsHost);
+	    } else {
+		if (s >= 0 && NewsHost && strcasecomp(NewsHost, cp)) {
+		    NEWS_NETCLOSE(s);
+		    s = -1;
+		}
+	    StrAllocCopy(NewsHost, cp);
+	    }
+	    FREE(cp);
+	    sprintf(command, "snews://%.250s/", NewsHost);
+	    StrAllocCopy(NewsHREF, command);
+#else
 	    HTAlert(gettext("This client does not contain support for SNEWS URLs."));
 	    return HT_NOT_LOADED;
+#endif /* USE_SSL */
 	}
 	else if (!strncasecomp (arg, "news:/", 6)) {
 	    if (((*(arg + 6) == '\0') ||
@@ -2413,7 +2447,7 @@ PRIVATE int HTLoadNews ARGS4(
 		LYstrncpy(groupName, p1, sizeof(groupName) - 1);
 		*slash = '/';
 		(void)sscanf(slash+1, "%d-%d", &first, &last);
-		if ((first > 0) && (isdigit(*(slash+1))) &&
+		if ((first > 0) && (isdigit(UCH(*(slash+1)))) &&
 		    (strchr(slash+1, '-') == NULL || first == last)) {
 		    /*
 		    **	We got a number greater than 0, which will be
@@ -2526,7 +2560,18 @@ PRIVATE int HTLoadNews ARGS4(
 
 	    _HTProgress(gettext("Connecting to NewsHost ..."));
 
+#ifdef USE_SSL
+	    if (!using_proxy &&
+		(!strncmp(arg, "snews:", 6) ||
+		 !strncmp(arg, "snewspost:", 10) ||
+		 !strncmp(arg, "snewsreply:", 11)))
+		status = HTDoConnect (url, "NNTPS", SNEWS_PORT, &s);
+	    else
+		status = HTDoConnect (url, "NNTP", NEWS_PORT, &s);
+#else
 	    status = HTDoConnect (url, "NNTP", NEWS_PORT, &s);
+#endif /* USE_SSL */
+
 	    if (status == HT_INTERRUPTED) {
 		/*
 		**  Interrupt cleanly.
@@ -2542,6 +2587,12 @@ PRIVATE int HTLoadNews ARGS4(
 		FREE(ProxyHost);
 		FREE(ProxyHREF);
 		FREE(ListArg);
+#ifdef USE_SSL
+		if (Handle) {
+		    SSL_free(Handle);
+		    Handle = NULL;
+		}
+#endif /* USE_SSL */
 		if (postfile) {
 		    HTSYS_remove(postfile);
 		    FREE(postfile);
@@ -2572,6 +2623,54 @@ PRIVATE int HTLoadNews ARGS4(
 	    } else {
 		CTRACE((tfp, "HTNews: Connected to news host %s.\n",
 			    NewsHost));
+#ifdef USE_SSL
+		/*
+		**  If this is an snews url,
+		**  then do the SSL stuff here
+		*/
+		if (!using_proxy &&
+		    (!strncmp(url, "snews", 5) ||
+		     !strncmp(url, "snewspost:", 10) ||
+		     !strncmp(url, "snewsreply:", 11))) {
+		    Handle = HTGetSSLHandle();
+		    SSL_set_fd(Handle, s);
+		    HTSSLInitPRNG();
+		    status = SSL_connect(Handle);
+
+		    if (status <= 0) {
+			unsigned long SSLerror;
+			CTRACE((tfp,"HTNews: Unable to complete SSL handshake for '%s', SSL_connect=%d, SSL error stack dump follows\n",url, status));
+			SSL_load_error_strings();
+			while((SSLerror = ERR_get_error()) != 0) {
+			    CTRACE((tfp,"HTNews: SSL: %s\n",ERR_error_string(SSLerror,NULL)));
+			}
+			HTAlert(
+			    "Unable to make secure connection to remote host.");
+			NEWS_NETCLOSE(s);
+			s = -1;
+			if (!(post_wanted || reply_wanted ||
+			      spost_wanted || sreply_wanted))
+			    (*targetClass._abort)(target, NULL);
+			FREE(NewsHost);
+			FREE(NewsHREF);
+			FREE(ProxyHost);
+			FREE(ProxyHREF);
+			FREE(ListArg);
+			if (postfile) {
+#ifdef VMS
+			    while (remove(postfile) == 0)
+			    ; /* loop through all versions */
+#else
+			    remove(postfile);
+#endif /* VMS */
+			    FREE(postfile);
+			}
+			return HT_NOT_LOADED;
+		    }
+		    sprintf(SSLprogress,"Secure %d-bit %s (%s) NNTP connection",SSL_get_cipher_bits(Handle,NULL),SSL_get_cipher_version(Handle),SSL_get_cipher(Handle));
+		    _HTProgress(SSLprogress);
+		}
+#endif /* USE_SSL */
 		HTInitInput(s);		/* set up buffering */
 		if (proxycmd[0]) {
 		    status = NEWS_NETWRITE(s, proxycmd, strlen(proxycmd));
@@ -2921,6 +3020,56 @@ PUBLIC void HTClearNNTPAuthInfo NOARGS
     */
     free_NNTP_AuthInfo();
 }
+
+#ifdef USE_SSL
+PRIVATE char HTNewsGetCharacter NOARGS
+{
+    if (!Handle)
+	return HTGetCharacter();
+    else
+	return HTGetSSLCharacter((void *)Handle);
+}
+
+PUBLIC int HTNewsProxyConnect ARGS5 (
+    int,		sock,
+    CONST char *,	url,
+    HTParentAnchor *,	anAnchor,
+    HTFormat,		format_out,
+    HTStream *,		sink)
+{
+    int status;
+    CONST char * arg = url;
+    char SSLprogress[256];
+
+    s = channel_s = sock;
+    Handle = HTGetSSLHandle();
+    SSL_set_fd(Handle, s);
+    HTSSLInitPRNG();
+    status = SSL_connect(Handle);
+
+    if (status <= 0) {
+	unsigned long SSLerror;
+	channel_s = -1;
+	CTRACE((tfp,"HTNews: Unable to complete SSL handshake for '%s', SSL_connect=%d, SSL error stack dump follows\n",url, status));
+	SSL_load_error_strings();
+	while((SSLerror = ERR_get_error()) != 0) {
+	    CTRACE((tfp,"HTNews: SSL: %s\n",ERR_error_string(SSLerror,NULL)));
+	}
+	HTAlert("Unable to make secure connection to remote host.");
+	NEWS_NETCLOSE(s);
+	s = -1;
+	return HT_NOT_LOADED;
+    }
+    sprintf(SSLprogress,"Secure %d-bit %s (%s) NNTP connection",
+	    SSL_get_cipher_bits(Handle,NULL),
+	    SSL_get_cipher_version(Handle),
+	    SSL_get_cipher(Handle));
+    _HTProgress(SSLprogress);
+    status = HTLoadNews(arg, anAnchor, format_out, sink);
+    channel_s = -1;
+    return status;
+}
+#endif /* USE_SSL */
 
 #ifdef GLOBALDEF_IS_MACRO
 #define _HTNEWS_C_1_INIT { "news", HTLoadNews, NULL }

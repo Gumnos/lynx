@@ -8,9 +8,10 @@
 #include <LYGlobalDefs.h>
 #include <LYUtils.h>
 #include <LYSignal.h>
-#include <LYClean.h>
 #include <LYMainLoop.h>
 #endif /* !VMS */
+#include <LYStrings.h>
+#include <LYClean.h>
 
 /*
  *  Flag for outofmem macro. - FM
@@ -115,11 +116,11 @@ PUBLIC void LYexit ARGS1(
 	(void) signal(SIGSEGV, SIG_IGN);
 	(void) signal(SIGILL, SIG_IGN);
 
-	 /*
-	  *  Flush all messages. - FM
-	  */
-	 fflush(stderr);
-	 fflush(stdout);
+	/*
+	 *  Flush all messages. - FM
+	 */
+	fflush(stderr);
+	fflush(stdout);
 
 	/*
 	 *  Deal with curses, if on, and clean up. - FM
@@ -146,6 +147,8 @@ PUBLIC void LYexit ARGS1(
 #if !defined(VMS) && defined(SYSLOG_REQUESTED_URLS)
     LYCloselog();
 #endif /* !VMS && SYSLOG_REQUESTED_URLS */
+
+    LYCloseCmdLogfile();
 
 #ifdef exit
 /*  Make sure we use stdlib exit and not LYexit. - GAB

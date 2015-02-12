@@ -213,11 +213,11 @@ PUBLIC char *LYJump ARGS1(int, key)
 
     ShortcutTotal = (jtp->history ? HTList_count(jtp->history) : 0);
     if (jump_buffer && *buf) {
-	recall = ((ShortcutTotal > 1) ? RECALL : NORECALL);
+	recall = ((ShortcutTotal > 1) ? RECALL_URL : NORECALL);
 	ShortcutNum = 0;
 	FirstShortcutRecall = FALSE;
     } else {
-	recall = ((ShortcutTotal >= 1) ? RECALL : NORECALL);
+	recall = ((ShortcutTotal >= 1) ? RECALL_URL : NORECALL);
 	ShortcutNum = ShortcutTotal;
 	FirstShortcutRecall = TRUE;
     }
@@ -378,7 +378,7 @@ PRIVATE unsigned LYRead_Jumpfile ARGS1(struct JumpTable *,jtp)
     }
 
     /* allocate storage to read entire file */
-    if ((mp=(char *)calloc(1, st.st_size + 1)) == NULL) {
+    if ((mp= typecallocn(char, st.st_size + 1)) == NULL) {
 	HTAlert(OUTOF_MEM_FOR_JUMP_FILE);
 	return 0;
     }
@@ -422,8 +422,9 @@ PRIVATE unsigned LYRead_Jumpfile ARGS1(struct JumpTable *,jtp)
 	FREE(mp);
 	return 0;
     } else
-	while(fgets(mp+strlen(mp), 1024, fp) != NULL) ;
-    fclose(fp);
+	while(fgets(mp+strlen(mp), 1024, fp) != NULL)
+	    ;
+	LYCloseInput(fp);
     }
 #endif /* VMS */
 

@@ -1,7 +1,7 @@
 
                              Lynx README file
 
-Lynx Version 2.8.3 is the latest release (April 2000).
+Lynx Version 2.8.4 is the latest release (July 2001).
 See the CHANGES file for a complete record of all changes and bug fixes.
 New releases are announced on the lynx-dev mailing list (see below).
 
@@ -50,8 +50,12 @@ LICENSE
 
    Certain portions of the Lynx source distribution were originally
    created by CERN and have been modified during the development of
-   Lynx.  See WWW/FreeOfCharge.html for copyright info regarding CERN
+   Lynx.  See WWW/FreeofCharge.html for copyright info regarding CERN
    products used in Lynx.
+
+   Note that Lynx is not self-contained; typically it is built with a
+   variety of add-on libraries, including those for compression, IPv6,
+   SOCKS and SSL support.
 
 YEAR 2000 COMPLIANCE
 

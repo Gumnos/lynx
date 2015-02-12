@@ -1,4 +1,4 @@
-/* $Id: Xsystem.c 1.7 Fri, 31 Mar 2000 16:33:40 -0800 dickey $
+/* $Id: Xsystem.c 1.10 Sun, 01 Apr 2001 17:51:46 -0700 dickey $
  *	like system("cmd") but return with exit code of "cmd"
  *	for Turbo-C/MS-C/LSI-C
  *  This code is in the public domain.
@@ -51,8 +51,7 @@
 
 extern char *mktemp(char *);
 
-#define UCH(c)   ((unsigned char)(c))
-#define isk1(c)  ((0x81<=UCH(c)&&UCH(c)<=0x9F)||(0xE0<=UCH(c)&&UCH(c)<=0xFC))
+#define isk1(c)  ((0x81 <= UCH(c) && UCH(c) <= 0x9F) || (0xE0 <= UCH(c) && UCH(c) <= 0xFC))
 #define isq(c)   ((c) == '"')
 #define isspc(c) ((c) == ' ' || (c) == '\t')
 #define issep(c) (isspc(c) || (c) == '"' || (c) == '\'' || (c) == '<' || (c) == '>' || (c) == 0)
@@ -87,7 +86,7 @@ xmalloc(size_t n)
 {
     char *bp;
 
-    if ((bp = calloc(1, n)) == (char *) 0) {
+    if ((bp = typecallocn(char, n)) == 0) {
 	write(2, "xsystem: Out of memory.!\n", 25);
 	exit(1);
     }
@@ -132,7 +131,7 @@ is_builtin_command(char *s)
         count++;
 #endif
     for (i = 0; i < count; i++) {
-	if (stricmp(s, cmdtab[i]) == 0)
+	if (strcasecomp(s, cmdtab[i]) == 0)
 	    return 1;
 	lc = strlen(cmdtab[i]);
 	if (lc < l && strnicmp(s, cmdtab[i], lc) == 0 && issep2(s[lc]))
@@ -345,7 +344,7 @@ prog_go(PRO * p, int flag)
 	s--;
     }
 
-    if (is_builtin_command(p->cmd) || (extp && stricmp(extp, ".bat") == 0))
+    if (is_builtin_command(p->cmd) || (extp && strcasecomp(extp, ".bat") == 0))
 	return csystem(p, flag);
 
     if (s < p->cmd) {		/* cmd has no PATH nor Drive */

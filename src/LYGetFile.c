@@ -176,7 +176,7 @@ Try_Redirected_URL:
 			FREE(temp);
 			return(NULLFILE);
 		    }
-		} else if (isdigit((unsigned char)*cp)) {
+		} else if (isdigit(UCH(*cp))) {
 		    HTAlert(URL_PORT_BAD);
 		    FREE(temp);
 		    return(NULLFILE);
@@ -505,7 +505,7 @@ Try_Redirected_URL:
 #endif /* !VMS */
 			    printf("\n%s", RETURN_TO_LYNX);
 			    fflush(stdout);
-			    LYgetch();
+			    (void) LYgetch();
 #ifdef VMS
 			    HadVMSInterrupt = FALSE;
 #endif /* VMS */
@@ -758,6 +758,31 @@ Try_Redirected_URL:
 #ifdef DIRED_SUPPORT
 		    lynx_edit_mode = FALSE;
 #endif /* DIRED_SUPPORT */
+#ifndef DISABLE_BIBP
+		    if (url_type == BIBP_URL_TYPE) {
+			char *bibpTmp = NULL;
+			if (!BibP_bibhost_checked)
+			    LYCheckBibHost();
+			if (BibP_bibhost_available) {
+			    StrAllocCopy(bibpTmp, BibP_bibhost);
+			} else if (HTMainAnchor && HTAnchor_citehost(HTMainAnchor)) {
+			    StrAllocCopy(bibpTmp, HTAnchor_citehost(HTMainAnchor));
+			} else {
+			    StrAllocCopy(bibpTmp, BibP_globalserver);
+			}
+			if (HTMainAnchor && HTAnchor_citehost(HTMainAnchor)) {
+			    StrAllocCat(bibpTmp, "bibp1.0/resolve?citehost=");
+			    StrAllocCat(bibpTmp, HTAnchor_citehost(HTMainAnchor));
+			    StrAllocCat(bibpTmp, "&usin=");
+			} else {
+			    StrAllocCat(bibpTmp, "bibp1.0/resolve?usin=");
+			}
+			StrAllocCat(bibpTmp, doc->address+5); /* USIN after bibp: */
+			StrAllocCopy(doc->address, bibpTmp);
+			WWWDoc.address = doc->address;
+			FREE(bibpTmp);
+		    }
+#endif /* !DISABLE_BIBP */
 
 		    if (url_type == FILE_URL_TYPE) {
 			/*
@@ -802,11 +827,11 @@ Try_Redirected_URL:
 		    if (TRACE) {
 #ifdef USE_SLANG
 			if (LYCursesON) {
-			    addstr("*\n");
-			    refresh();
+			    LYaddstr("*\n");
+			    LYrefresh();
 			}
 #endif /* USE_SLANG */
-			fprintf(tfp,"\n");
+			CTRACE((tfp, "\n"));
 		    }
 		    if (!HTLoadAbsolute(&WWWDoc)) {
 			/*
@@ -865,6 +890,10 @@ Try_Redirected_URL:
 				 url_type == FILE_URL_TYPE) ||
 				(no_goto_lynxcgi &&
 				 url_type == LYNXCGI_URL_TYPE) ||
+#ifndef DISABLE_BIBP
+				(no_goto_bibp &&
+				 url_type == BIBP_URL_TYPE) ||
+#endif
 				(no_goto_cso &&
 				 url_type == CSO_URL_TYPE) ||
 				(no_goto_finger &&
@@ -1055,11 +1084,14 @@ Try_Redirected_URL:
 			    return(NULLFILE);
 
 			} else {
-			/*
-			 *  May set www_search_result.
-			 */
-			    if (pound != NULL)
+			    if (pound != NULL) {
+				if (!HTMainText) /* this should not happen... */
+				    return(NULLFILE); /* but it can. - kw */
+				/*
+				 *  May set www_search_result.
+				 */
 				HTFindPoundSelector(pound+1);
+			    }
 			    return(NORMAL);
 			}
 		    }
@@ -1150,7 +1182,7 @@ PUBLIC int follow_link_number ARGS4(
 	return(DO_NOTHING);
     }
     *num = atoi(p);
-    while ( isdigit(*p) )
+    while ( isdigit(UCH(*p)) )
 	++p;
     c = *p; /* reuse c; 0 or g or p or + or - */
     switch ( c ) {
@@ -1434,7 +1466,7 @@ PUBLIC BOOLEAN exec_ok ARGS3(
     else
 	allowed_extra_chars = " _-:./@~$+=\t";
     for (cp = linktext; *cp != '\0'; cp++) {
-	if (!isalnum(*cp) && !strchr(allowed_extra_chars, *cp)) {
+	if (!isalnum(UCH(*cp)) && !strchr(allowed_extra_chars, *cp)) {
 	    char *buf = 0;
 
 	    HTSprintf0(&buf,

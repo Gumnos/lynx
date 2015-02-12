@@ -192,7 +192,6 @@
 #define NO_ADDRESS_IN_MAILTO_URL gettext("No email address is present in mailto URL!")
 #define MAILTO_URL_TEMPOPEN_FAILED \
  gettext("Unable to open temporary file for mailto URL!")
-#define COMMENT_REQUEST_CANCELLED gettext("Comment request cancelled!!!")
 #define INC_ORIG_MSG_PROMPT \
  gettext("Do you wish to include the original message?")
 #define INC_PREPARSED_MSG_PROMPT \
@@ -356,25 +355,7 @@
 #define POPUP_FAILED gettext("Unable to create popup window!")
 #define GOTO_DISALLOWED gettext("Goto a random URL is disallowed!")
 #define GOTO_NON_HTTP_DISALLOWED gettext("Goto a non-http URL is disallowed!")
-#define GOTO_CSO_DISALLOWED gettext("You are not allowed to goto \"cso:\" URLs")
-#define GOTO_FILE_DISALLOWED gettext("You are not allowed to goto \"file:\" URLs")
-#define GOTO_FINGER_DISALLOWED gettext("You are not allowed to goto \"finger:\" URLs")
-#define GOTO_FTP_DISALLOWED gettext("You are not allowed to goto \"ftp:\" URLs")
-#define GOTO_GOPHER_DISALLOWED gettext("You are not allowed to goto \"gopher:\" URLs")
-#define GOTO_HTTP_DISALLOWED gettext("You are not allowed to goto \"http:\" URLs")
-#define GOTO_HTTPS_DISALLOWED gettext("You are not allowed to goto \"https:\" URLs")
-#define GOTO_CGI_DISALLOWED gettext("You are not allowed to goto \"lynxcgi:\" URLs")
-#define GOTO_EXEC_DISALLOWED gettext("You are not allowed to goto \"lynxexec:\" URLs")
-#define GOTO_PROG_DISALLOWED gettext("You are not allowed to goto \"lynxprog:\" URLs")
-#define GOTO_MAILTO_DISALLOWED gettext("You are not allowed to goto \"mailto:\" URLs")
-#define GOTO_NEWS_DISALLOWED gettext("You are not allowed to goto \"news:\" URLs")
-#define GOTO_NNTP_DISALLOWED gettext("You are not allowed to goto \"nntp:\" URLs")
-#define GOTO_RLOGIN_DISALLOWED gettext("You are not allowed to goto \"rlogin:\" URLs")
-#define GOTO_SNEWS_DISALLOWED gettext("You are not allowed to goto \"snews:\" URLs")
-#define GOTO_TELNET_DISALLOWED gettext("You are not allowed to goto \"telnet:\" URLs")
-#define GOTO_TN3270_DISALLOWED gettext("You are not allowed to goto \"tn3270:\" URLs")
-#define GOTO_WAIS_DISALLOWED gettext("You are not allowed to goto \"wais:\" URLs")
-#define GOTO_SPECIAL_DISALLOWED gettext("This special URL is not allowed as a goto!")
+#define GOTO_XXXX_DISALLOWED gettext("You are not allowed to goto \"%s\" URLs")
 #define URL_TO_OPEN gettext("URL to open: ")
 #define EDIT_CURRENT_GOTO gettext("Edit the current Goto URL: ")
 #define EDIT_THE_PREV_GOTO gettext("Edit the previous Goto URL: ")
@@ -423,23 +404,14 @@
 #define TRAV_WAS_INTERRUPTED gettext("TRAVERSAL WAS INTERRUPTED")
 #define FOLLOW_LINK_NUMBER gettext("Follow link (or goto link or page) number: ")
 #define SELECT_OPTION_NUMBER gettext("Select option (or page) number: ")
-#define OPTION_CHOICE_NUMBER gettext("Option choice (or page) number: ")
 #define OPTION_ALREADY_CURRENT gettext("Option number %d already is current.")
-#define CHOICE_ALREADY_CURRENT gettext("Choice number %d already is current.")
 #define ALREADY_AT_OPTION_END \
  gettext("You are already at the end of this option list.")
-#define ALREADY_AT_CHOICE_END \
- gettext("You are already at the end of this choice list.")
 #define ALREADY_AT_OPTION_BEGIN \
  gettext("You are already at the beginning of this option list.")
-#define ALREADY_AT_CHOICE_BEGIN \
- gettext("You are already at the beginning of this choice list.")
 #define ALREADY_AT_OPTION_PAGE \
  gettext("You are already at page %d of this option list.")
-#define ALREADY_AT_CHOICE_PAGE \
- gettext("You are already at page %d of this choice list.")
 #define BAD_OPTION_NUM_ENTERED gettext("You have entered an invalid option number.")
-#define BAD_CHOICE_NUM_ENTERED gettext("You have entered an invalid choice number.")
 #define BAD_HTML_USE_TRACE gettext("** Bad HTML!!  Use -trace to diagnose. **")
 #define GIVE_FILENAME gettext("Give name of file to save in")
 #define CANNOT_SAVE_REMOTE gettext("Can't save data to file -- please run WWW locally")
@@ -579,6 +551,7 @@
 #define NEED_ADVANCED_USER_MODE gettext("That key requires Advanced User mode.")
 #define CONTENT_TYPE_MSG gettext("Content-type: %s")
 #define COMMAND_PROMPT gettext("Command: ")
+#define COMMAND_UNKNOWN gettext("Unknown or ambiguous command")
 #define VERSION_SEGMENT gettext(" Version ")
 #define FIRST_SEGMENT gettext(" first")
 #define GUESSING_SEGMENT gettext(", guessing...")
@@ -881,5 +854,14 @@ definitions when this copy of Lynx was built.")
 #ifdef USE_EXTERNALS
 #define EXTERNALS_DISABLED gettext("External support is currently disabled.")
 #endif /* USE_EXTERNALS */
+
+/* new with 2.8.4dev.21 */
+#define CHDIR_DISABLED gettext("Changing working-directory is currently disabled.")
+#define LINEWRAP_OFF gettext("Linewrap OFF!")
+#define LINEWRAP_ON gettext("Linewrap ON!")
+#define NESTED_TABLES_OFF gettext("Parsing nested-tables toggled OFF!  Reloading...")
+#define NESTED_TABLES_ON gettext("Parsing nested-tables toggled ON!  Reloading...")
+#define SHIFT_VS_LINEWRAP gettext("Shifting is disabled while line-wrap is in effect")
+#define TRACE_DISABLED gettext("Trace not supported")
 
 #endif /* LYMESSAGES_EN_H */

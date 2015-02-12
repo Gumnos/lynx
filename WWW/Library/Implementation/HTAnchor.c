@@ -67,12 +67,11 @@ PRIVATE HTList **adult_table = 0;  /* Point to table of lists of all parents */
 */
 PRIVATE HTParentAnchor * HTParentAnchor_new NOARGS
 {
-    HTParentAnchor *newAnchor =
-       (HTParentAnchor *)calloc(1, sizeof(HTParentAnchor));  /* zero-filled */
+    HTParentAnchor *newAnchor = typecalloc(HTParentAnchor);
     if (newAnchor == NULL)
 	outofmem(__FILE__, "HTParentAnchor_new");
     newAnchor->parent = newAnchor;
-    newAnchor->bookmark = NULL; 	/* Bookmark filename. - FM */
+    newAnchor->bookmark = NULL;		/* Bookmark filename. - FM */
     newAnchor->isISMAPScript = FALSE;	/* Lynx appends ?0,0 if TRUE. - FM */
     newAnchor->isHEAD = FALSE;		/* HEAD request if TRUE. - FM */
     newAnchor->safe = FALSE;		/* Safe. - FM */
@@ -81,8 +80,9 @@ PRIVATE HTParentAnchor * HTParentAnchor_new NOARGS
     newAnchor->source_cache_chunk = NULL;
 #endif
     newAnchor->FileCache = NULL;	/* Path to a disk-cached copy. - FM */
-    newAnchor->SugFname = NULL; 	/* Suggested filename. - FM */
-    newAnchor->RevTitle = NULL; 	/* TITLE for a LINK with REV. - FM */
+    newAnchor->SugFname = NULL;		/* Suggested filename. - FM */
+    newAnchor->RevTitle = NULL;		/* TITLE for a LINK with REV. - FM */
+    newAnchor->citehost = NULL;		/* LINK REL=citehost - RDC */
     newAnchor->cache_control = NULL;	/* Cache-Control. - FM */
     newAnchor->no_cache = FALSE;	/* no-cache? - FM */
     newAnchor->content_type = NULL;	/* Content-Type. - FM */
@@ -105,7 +105,7 @@ PRIVATE HTChildAnchor * HTChildAnchor_new NOARGS
 {
     HTChildAnchor *p;
 
-    p = (HTChildAnchor *)calloc(1, sizeof(HTChildAnchor)); /* zero-filled */
+    p = typecalloc(HTChildAnchor);
     if (p == NULL)
 	outofmem(__FILE__, "HTChildAnchor_new");
     return p;
@@ -134,7 +134,7 @@ PRIVATE BOOL HTEquivalent ARGS2(
 	}
 	return( TOUPPER(*s) == TOUPPER(*t));
     } else {
-	return(s == t); 	/* Two NULLs are equivalent, aren't they ? */
+	return(s == t);		/* Two NULLs are equivalent, aren't they ? */
     }
 }
 
@@ -388,7 +388,7 @@ PUBLIC HTAnchor * HTAnchor_findAddress ARGS1(
 	*/
 	hash = HASH_FUNCTION(newdoc->address);
 	if (!adult_table) {
-	    adult_table = (HTList **)calloc(HASH_SIZE, sizeof(HTList *));
+	    adult_table = typecallocn(HTList *, HASH_SIZE);
 	    if (!adult_table)
 		outofmem(__FILE__, "HTAnchor_findAddress");
 #ifdef LY_FIND_LEAKS
@@ -743,6 +743,7 @@ PUBLIC BOOL HTAnchor_delete ARGS1(
     FREE(me->bookmark);
     FREE(me->owner);
     FREE(me->RevTitle);
+    FREE(me->citehost);
 #ifdef SOURCE_CACHE
     HTAnchor_clearSourceCache(me);
 #endif
@@ -770,7 +771,7 @@ PUBLIC BOOL HTAnchor_delete ARGS1(
     FREE(me->last_modified);
     FREE(me->ETag);
     FREE(me->server);
-#ifdef USE_HASH
+#ifdef USE_COLOR_STYLE
     FREE(me->style);
 #endif
 
@@ -778,7 +779,7 @@ PUBLIC BOOL HTAnchor_delete ARGS1(
      *	Remove ourselves from the hash table's list.
      */
     if (adult_table) {
-	unsigned short int usi_hash = HASH_FUNCTION(me->address);
+	unsigned short usi_hash = (unsigned short) HASH_FUNCTION(me->address);
 
 	if (adult_table[usi_hash])  {
 	    HTList_removeObject(adult_table[usi_hash], (void *)me);
@@ -883,7 +884,7 @@ PUBLIC HTFormat HTAnchor_format ARGS1(
 
 PUBLIC void HTAnchor_setIndex ARGS2(
 	HTParentAnchor *,	me,
-	char *, 		address)
+	char *,			address)
 {
     if (me) {
 	me->isIndex = YES;
@@ -893,7 +894,7 @@ PUBLIC void HTAnchor_setIndex ARGS2(
 
 PUBLIC void HTAnchor_setPrompt ARGS2(
 	HTParentAnchor *,	me,
-	char *, 		prompt)
+	char *,			prompt)
 {
     if (me) {
 	StrAllocCopy(me->isIndexPrompt, prompt);
@@ -921,7 +922,7 @@ PUBLIC BOOL HTAnchor_hasChildren ARGS1(
     return (BOOL) ( me ? ! HTList_isEmpty(me->children) : NO);
 }
 
-#if defined(USE_HASH)
+#if defined(USE_COLOR_STYLE)
 /*	Style handling.
 */
 PUBLIC CONST char * HTAnchor_style ARGS1(
@@ -959,8 +960,8 @@ PUBLIC void HTAnchor_setTitle ARGS2(
 	if (title) {
 	    StrAllocCopy(me->title, title);
 	    for (i = 0; me->title[i]; i++) {
-		if ((unsigned char)me->title[i] == 1 ||
-		    (unsigned char)me->title[i] == 2) {
+		if (UCH(me->title[i]) == 1 ||
+		    UCH(me->title[i]) == 2) {
 		    me->title[i] = ' ';
 		}
 	    }
@@ -985,8 +986,8 @@ PUBLIC void HTAnchor_appendTitle ARGS2(
     if (me) {
 	StrAllocCat(me->title, title);
 	for (i = 0; me->title[i]; i++) {
-	    if ((unsigned char)me->title[i] == 1 ||
-		(unsigned char)me->title[i] == 2) {
+	    if (UCH(me->title[i]) == 1 ||
+		UCH(me->title[i]) == 2) {
 		me->title[i] = ' ';
 	    }
 	}
@@ -1043,13 +1044,32 @@ PUBLIC void HTAnchor_setRevTitle ARGS2(
     if (me) {
 	StrAllocCopy(me->RevTitle, title);
 	for (i = 0; me->RevTitle[i]; i++) {
-	    if ((unsigned char)me->RevTitle[i] == 1 ||
-		(unsigned char)me->RevTitle[i] == 2) {
+	    if (UCH(me->RevTitle[i]) == 1 ||
+		UCH(me->RevTitle[i]) == 2) {
 		me->RevTitle[i] = ' ';
 	    }
 	}
     }
 }
+
+#ifndef DISABLE_BIBP
+/*	Citehost for bibp links from LINKs with REL="citehost". - RDC
+*/
+PUBLIC CONST char * HTAnchor_citehost ARGS1(
+	HTParentAnchor *,	me)
+{
+    return( me ? me->citehost : NULL);
+}
+
+PUBLIC void HTAnchor_setCitehost ARGS2(
+	HTParentAnchor *,	me,
+	CONST char *,		citehost)
+{
+    if (me) {
+	StrAllocCopy(me->citehost, citehost);
+    }
+}
+#endif /* !DISABLE_BIBP */
 
 /*	Suggested filename handling. - FM
 **	(will be loaded if we had a Content-Disposition
@@ -1180,7 +1200,7 @@ PUBLIC BOOL HTAnchor_link ARGS3(
 	source->mainLink.dest = destination;
 	source->mainLink.type = type;
     } else {
-	HTLink * newLink = (HTLink *)calloc (1, sizeof (HTLink));
+	HTLink * newLink = typecalloc(HTLink);
 	if (newLink == NULL)
 	    outofmem(__FILE__, "HTAnchor_link");
 	newLink->dest = destination;
@@ -1235,7 +1255,7 @@ PUBLIC BOOL HTAnchor_makeMainLink ARGS2(
 	return(NO);  /* link not found or NULL anchor */
     } else {
 	/* First push current main link onto top of links list */
-	HTLink *newLink = (HTLink *)calloc (1, sizeof (HTLink));
+	HTLink *newLink = typecalloc(HTLink);
 	if (newLink == NULL)
 	    outofmem(__FILE__, "HTAnchor_makeMainLink");
 	memcpy((void *)newLink,
@@ -1290,7 +1310,7 @@ PUBLIC char * HTAnchor_physical ARGS1(
 
 PUBLIC void HTAnchor_setPhysical ARGS2(
 	HTParentAnchor *,	me,
-	char *, 		physical)
+	char *,			physical)
 {
     if (me) {
 	StrAllocCopy(me->physical, physical);
@@ -1328,8 +1348,7 @@ PUBLIC LYUCcharset * HTAnchor_getUCInfoStage ARGS2(
     if (me && !me->UCStages) {
 	int i;
 	int chndl = UCLYhndl_for_unspec;  /* always >= 0 */
-	UCAnchorInfo * stages = (UCAnchorInfo*)calloc(1,
-						      sizeof(UCAnchorInfo));
+	UCAnchorInfo * stages = typecalloc(UCAnchorInfo);
 	if (stages == NULL)
 	    outofmem(__FILE__, "HTAnchor_getUCInfoStage");
 	for (i = 0; i < UCT_STAGEMAX; i++) {
@@ -1377,6 +1396,20 @@ PUBLIC int HTAnchor_getUCLYhndl ARGS2(
     return( -1);
 }
 
+#ifdef CAN_SWITCH_DISPLAY_CHARSET
+PRIVATE void setup_switch_display_charset ARGS2(HTParentAnchor *, me, int, h)
+{
+    if (!Switch_Display_Charset(h,SWITCH_DISPLAY_CHARSET_MAYBE))
+	return;
+    HTAnchor_setUCInfoStage(me, current_char_set,
+			    UCT_STAGE_HTEXT, UCT_SETBY_MIME); /* highest priorty! */
+    HTAnchor_setUCInfoStage(me, current_char_set,
+			    UCT_STAGE_STRUCTURED, UCT_SETBY_MIME); /* highest priorty! */
+    CTRACE((tfp, "changing UCInfoStage: HTEXT/STRUCTURED stages charset='%s'.\n",
+	    LYCharSet_UC[current_char_set].MIMEname));
+}
+#endif
+
 PUBLIC LYUCcharset * HTAnchor_setUCInfoStage ARGS4(
 	HTParentAnchor *,	me,
 	int,			LYhndl,
@@ -1392,10 +1425,18 @@ PUBLIC LYUCcharset * HTAnchor_setUCInfoStage ARGS4(
 	 *  Can we override?
 	 */
 	if (set_by >= me->UCStages->s[which_stage].lock) {
+#ifdef CAN_SWITCH_DISPLAY_CHARSET
+	    int ohandle = me->UCStages->s[which_stage].LYhndl;
+#endif
 	    me->UCStages->s[which_stage].lock = set_by;
 	    me->UCStages->s[which_stage].LYhndl = LYhndl;
 	    if (LYhndl >= 0) {
 		memcpy(p, &LYCharSet_UC[LYhndl], sizeof(LYUCcharset));
+#ifdef CAN_SWITCH_DISPLAY_CHARSET
+		/* Allow a switch to a more suitable display charset */
+		if ( LYhndl != ohandle && which_stage == UCT_STAGE_PARSER )
+		    setup_switch_display_charset(me, LYhndl);
+#endif
 	    }
 	    else {
 		p->UChndl = -1;
@@ -1412,10 +1453,18 @@ PUBLIC LYUCcharset * HTAnchor_resetUCInfoStage ARGS4(
 	int,			which_stage,
 	int,			set_by)
 {
+    int ohandle;
+
     if (!me || !me->UCStages)
 	return(NULL);
     me->UCStages->s[which_stage].lock = set_by;
+    ohandle = me->UCStages->s[which_stage].LYhndl;
     me->UCStages->s[which_stage].LYhndl = LYhndl;
+#ifdef CAN_SWITCH_DISPLAY_CHARSET
+    /* Allow a switch to a more suitable display charset */
+    if (LYhndl >= 0 && LYhndl != ohandle && which_stage == UCT_STAGE_PARSER)
+	setup_switch_display_charset(me, LYhndl);
+#endif
     return( &me->UCStages->s[which_stage].C);
 }
 
@@ -1442,9 +1491,20 @@ PUBLIC LYUCcharset * HTAnchor_copyUCInfoStage ARGS4(
 	if (set_by == UCT_SETBY_NONE)
 	    set_by = UCT_SETBY_DEFAULT;
 	if (set_by >= me->UCStages->s[to_stage].lock) {
+#ifdef CAN_SWITCH_DISPLAY_CHARSET
+	    int ohandle = me->UCStages->s[to_stage].LYhndl;
+#endif
 	    me->UCStages->s[to_stage].lock = set_by;
 	    me->UCStages->s[to_stage].LYhndl =
 		me->UCStages->s[from_stage].LYhndl;
+#ifdef CAN_SWITCH_DISPLAY_CHARSET
+	    /* Allow a switch to a more suitable display charset */
+	    if ( me->UCStages->s[to_stage].LYhndl >= 0
+		 && me->UCStages->s[to_stage].LYhndl != ohandle
+		 && to_stage == UCT_STAGE_PARSER )
+		setup_switch_display_charset(me,
+					     me->UCStages->s[to_stage].LYhndl);
+#endif
 	    if (p_to != p_from)
 		memcpy(p_to, p_from, sizeof(LYUCcharset));
 	    return(p_to);

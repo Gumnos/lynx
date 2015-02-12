@@ -33,6 +33,7 @@
 #include <LYPrint.h>
 #include <LYPrettySrc.h>
 #include <TRSTable.h>
+#include <LYHistory.h>
 #ifdef EXP_CHARTRANS_AUTOSWITCH
 #include <UCAuto.h>
 #endif /* EXP_CHARTRANS_AUTOSWITCH */
@@ -60,26 +61,28 @@ unsigned int cached_styles[CACHEH][CACHEW];
 
 #include <LYJustify.h>
 
-
-#ifdef USE_COLOR_STYLE_UNUSED
-void LynxClearScreenCache NOARGS
-{
-    int i,j;
-
-    CTRACE((tfp, "GridText: flushing cached screen styles\n"));
-    for (i=0;i<CACHEH;i++)
-	for (j=0;j<CACHEW;j++)
-	    cached_styles[i][j]=s_a;
-}
+#ifdef USE_CURSES_PADS
+#  define DISPLAY_COLS (LYwideLines ? MAX_COLS : LYcols)
+#  define WRAP_COLS(text) ((text)->stbl ?				\
+			   (LYtableCols <= 0				\
+			    ? DISPLAY_COLS : (LYtableCols * LYcols)/12)	\
+			   : LYcols)
+#else
+#  define DISPLAY_COLS LYcols
+#  define WRAP_COLS(text) LYcols
 #endif
+
+#define FirstHTLine(text) ((text)->last_line->next)
+#define LastHTLine(text)  ((text)->last_line)
+
 #ifdef USE_COLOR_STYLE
 PRIVATE void LynxResetScreenCache NOARGS
 {
-    int i,j;
+    int i, j;
 
-    for (i=1; (i<CACHEH && i <= display_lines); i++) {
-	for (j=0;j<CACHEW;j++)
-	    cached_styles[i][j]=0;
+    for (i = 1; (i < CACHEH && i <= display_lines); i++) {
+	for (j = 0; j < CACHEW; j++)
+	    cached_styles[i][j] = 0;
     }
 }
 #endif /* USE_COLOR_STYLE */
@@ -91,7 +94,7 @@ struct _HTStream {			/* only know it as object */
 
 #define TITLE_LINES  1
 #define IS_UTF_EXTRA(ch) (text->T.output_utf8 && \
-			  ((unsigned char)(ch)&0xc0) == 0x80)
+			  (UCH((ch))&0xc0) == 0x80)
 /* a test in compact form: how many extra UTF-8 chars after initial? - kw */
 #define UTF8_XNEGLEN(c) (c&0xC0? 0 :c&32? 1 :c&16? 2 :c&8? 3 :c&4? 4 :c&2? 5:0)
 #define UTF_XLEN(c) UTF8_XNEGLEN(((char)~(c)))
@@ -128,16 +131,17 @@ PUBLIC char * unchecked_box = "[ ]";
 PUBLIC char * checked_radio = "(*)";
 PUBLIC char * unchecked_radio = "( )";
 
-PUBLIC BOOLEAN underline_on = OFF;
-PUBLIC BOOLEAN bold_on      = OFF;
+PRIVATE BOOLEAN underline_on = OFF;
+PRIVATE BOOLEAN bold_on      = OFF;
 
 #ifdef SOURCE_CACHE
 PUBLIC int LYCacheSource = SOURCE_CACHE_NONE;
+PUBLIC int LYCacheSourceForAborted = SOURCE_CACHE_FOR_ABORTED_DROP;
 #endif
 
 #ifdef USE_SCROLLBAR
-PUBLIC int LYsb = FALSE;
-PUBLIC int LYsb_arrow = TRUE;
+PUBLIC BOOLEAN LYsb = FALSE;
+PUBLIC BOOLEAN LYsb_arrow = TRUE;
 PUBLIC int LYsb_begin = -1;
 PUBLIC int LYsb_end = -1;
 #endif
@@ -145,14 +149,6 @@ PUBLIC int LYsb_end = -1;
 #if defined(USE_COLOR_STYLE)
 #define MAX_STYLES_ON_LINE 64
 
-#ifdef OLD_HTSTYLECHANGE
-typedef struct _stylechange {
-	int	horizpos;	/* horizontal position of this change */
-	int	style;		/* which style to change to */
-	int	direction;	/* on or off */
-	int	previous;	/* previous style */
-} HTStyleChange;
-#else
     /*try to fit in 2 shorts*/
 typedef struct _stylechange {
 	unsigned int	direction:2;	/* on or off */
@@ -161,28 +157,20 @@ typedef struct _stylechange {
 	unsigned short	style;		/* which style to change to */
 } HTStyleChange;
 #endif
-#endif
 
 typedef struct _line {
 	struct _line	*next;
 	struct _line	*prev;
 	unsigned	offset;		/* Implicit initial spaces */
 	unsigned	size;		/* Number of characters */
-	BOOL	split_after;		/* Can we split after? */
-	BOOL	bullet;			/* Do we bullet? */
-	BOOL	expansion_line;		/* TEXTAREA edit new line flag */
 #if defined(USE_COLOR_STYLE)
-#ifdef OLD_HTSTYLECHANGE
-	HTStyleChange	styles[MAX_STYLES_ON_LINE];
-#else
 	HTStyleChange* styles;
-#endif
 	int	numstyles;
 #endif
 	char	data[1];		/* Space for terminator at least! */
 } HTLine;
 
-#if defined(USE_COLOR_STYLE) && !defined(OLD_HTSTYLECHANGE)
+#if defined(USE_COLOR_STYLE)
 typedef struct _HTStyleChangePool {
 	HTStyleChange	data[4092];
 	struct _HTStyleChangePool* next;
@@ -305,10 +293,10 @@ void POOL_FREE( pool_type , P* ptr)
 
 typedef struct _TextAnchor {
 	struct _TextAnchor *	next;
+	struct _TextAnchor *	prev;		/* www_user_search only! */
 	int			number;		/* For user interface */
-	int			start;		/* Characters */
-	int			line_pos;	/* Position in text */
-	int			extent;		/* Characters */
+	int			line_pos;	/* Bytes/chars - extent too */
+	int			extent;		/* (see HText_trimHightext) */
 	int			line_num;	/* Place in document */
 	char *			hightext;	/* The link text */
 	char *			hightext2;	/* A second line*/
@@ -345,14 +333,13 @@ struct _HText {
 	BOOLEAN			historical_comments;
 	BOOLEAN			minimal_comments;
 	BOOLEAN			soft_dquotes;
-	BOOLEAN			old_dtd;
+	int			old_dtd;
 	int			keypad_mode;
-	int			disp_lines;		/* Screen size */
-	int			disp_cols;
+	int			disp_lines;	/* Screen size */
+	int			disp_cols;	/* Used for reports only */
 #endif
 	HTLine *		last_line;
 	int			Lines;		/* Number of them */
-	int			chars;		/* Number of them */
 	TextAnchor *		first_anchor;	/* Singly linked list */
 	TextAnchor *		last_anchor;
 	TextAnchor *		last_anchor_before_stbl;
@@ -411,13 +398,12 @@ struct _HText {
 
 	HTStream *		target;			/* Output stream */
 	HTStreamClass		targetClass;		/* Output routines */
-#if defined(USE_COLOR_STYLE) && !defined(OLD_HTSTYLECHANGE)
+#if defined(USE_COLOR_STYLE)
 	HTStyleChangePool*	styles_pool;
 #endif
 };
 
 PRIVATE void HText_AddHiddenLink PARAMS((HText *text, TextAnchor *textanchor));
-
 
 #ifdef EXP_JUSTIFY_ELTS
 PUBLIC BOOL can_justify_here;
@@ -448,10 +434,6 @@ static int ht_num_runs;/*the number of runs filled*/
 static ht_run_info ht_runs[MAX_LINE];
 static BOOL this_line_was_split;
 static TextAnchor* last_anchor_of_previous_line;
-static int justified_text_map[MAX_LINE]; /* this is a map - for each index i
-    it tells to which position j=justified_text_map[i] in justified text
-    i-th character is mapped - it's used for anchor positions fixup and for
-    color style's positions adjustment. */
 static BOOL have_raw_nbsps = FALSE;
 
 PUBLIC void ht_justify_cleanup NOARGS
@@ -484,6 +466,8 @@ PUBLIC void mark_justify_start_position ARGS1(void*,text)
 	HTCJK == NOCJK && !in_DT && \
 	can_justify_here && can_justify_this_line && !form_in_htext )
 
+#else
+#define last_anchor_of_previous_line (TextAnchor*)0
 #endif /* EXP_JUSTIFY_ELTS */
 
 
@@ -600,7 +584,7 @@ PRIVATE void * LY_check_calloc ARGS2(
 	if (t == HTMainText)
 	    t = NULL;		/* shouldn't happen */
 	{
-	CTRACE((tfp, "\r *** Emergency freeing document %d/%d for '%s'%s!\n",
+	CTRACE((tfp, "\nBUG *** Emergency freeing document %d/%d for '%s'%s!\n",
 		    i + 1, n,
 		    ((t && t->node_anchor &&
 		      t->node_anchor->address) ?
@@ -760,15 +744,13 @@ PUBLIC HText *	HText_new ARGS1(
     line->offset = line->size = 0;
 #ifdef USE_COLOR_STYLE
     line->numstyles = 0;
-#ifndef  OLD_HTSTYLECHANGE
     POOL_NEW(HTStyleChangePool,self->styles_pool);
     if (!self->styles_pool)
 	outofmem(__FILE__, "HText_New");
     stylechanges_buffers_free = 0;
     line->styles = stylechanges_buffers[0];
 #endif
-#endif
-    self->Lines = self->chars = 0;
+    self->Lines = 0;
     self->first_anchor = self->last_anchor = NULL;
     self->style = &default_style;
     self->top_of_screen = 0;
@@ -791,7 +773,7 @@ PUBLIC HText *	HText_new ARGS1(
     self->old_dtd = Old_DTD;
     self->keypad_mode = keypad_mode;
     self->disp_lines = LYlines;
-    self->disp_cols = LYcols;
+    self->disp_cols = DISPLAY_COLS;
 #endif
     /*
      *  If we are going to render the List Page, always merge in hidden
@@ -935,7 +917,7 @@ PUBLIC void HText_free ARGS1(
 	return;
 
     HTAnchor_setDocument(self->node_anchor, (HyperDoc *)0);
-#if defined(USE_COLOR_STYLE) && !defined(OLD_HTSTYLECHANGE)
+#if defined(USE_COLOR_STYLE)
     POOL_FREE(HTStyleChangePool,self->styles_pool);
 #endif
     while (YES) {	/* Free off line array */
@@ -1084,7 +1066,7 @@ PRIVATE int display_line ARGS4(
 	HTLine *,	line,
 	HText *,	text,
 	int,		scrline GCC_UNUSED,
-	CONST char*,	target)
+	CONST char*,	target GCC_UNUSED)
 {
     register int i, j;
     char buffer[7];
@@ -1117,15 +1099,15 @@ PRIVATE int display_line ARGS4(
      *  writing.
      */
     buffer[0] = buffer[1] = buffer[2] = '\0';
-    clrtoeol();
+    LYclrtoeol();
 
     /*
      *  Add offset, making sure that we do not
      *  go over the COLS limit on the display.
      */
     j = (int)line->offset;
-    if (j > (int)LYcols - 1)
-	j = (int)LYcols - 1;
+    if (j > (int)DISPLAY_COLS - 1)
+	j = (int)DISPLAY_COLS - 1;
 #ifdef USE_SLANG
     SLsmg_forward (j);
     i = j;
@@ -1136,7 +1118,7 @@ PRIVATE int display_line ARGS4(
     else
 #endif
     for (i = 0; i < j; i++)
-	addch (' ');
+	LYaddch (' ');
 #endif /* USE_SLANG */
 
     /*
@@ -1153,20 +1135,13 @@ PRIVATE int display_line ARGS4(
      */
     i_after_tgt = i;
     if (target) {
-	if (case_sensitive)
-	    cp_tgt = LYno_attr_mbcs_strstr(data,
-					   target,
-					   text->T.output_utf8, YES,
-					   &HitOffset,
-					   &LenNeeded);
-	else
-	    cp_tgt = LYno_attr_mbcs_case_strstr(data,
-						target,
-						text->T.output_utf8, YES,
-						&HitOffset,
-						&LenNeeded);
+	cp_tgt = LYno_attr_mb_strstr(data,
+				       target,
+				       text->T.output_utf8, YES,
+				       &HitOffset,
+				       &LenNeeded);
 	if (cp_tgt) {
-	    if (((int)line->offset + LenNeeded) >= LYcols) {
+	    if (((int)line->offset + LenNeeded) >= DISPLAY_COLS) {
 		cp_tgt = NULL;
 	    } else {
 		text->page_has_target = YES;
@@ -1180,25 +1155,17 @@ PRIVATE int display_line ARGS4(
 #endif /* SHOW_WHEREIS_TARGETS */
 #endif /* USE_COLOR_STYLE */
 
-    while ((i < LYcols) && ((buffer[0] = *data) != '\0')) {
+    while ((i < DISPLAY_COLS) && ((buffer[0] = *data) != '\0')) {
 
 #ifndef USE_COLOR_STYLE
 #if defined(SHOW_WHEREIS_TARGETS)
 	if (cp_tgt && i >= i_after_tgt) {
 	    if (intarget) {
-
-		if (case_sensitive)
-		    cp_tgt = LYno_attr_mbcs_strstr(data,
-						target,
-						text->T.output_utf8, YES,
-						&HitOffset,
-						&LenNeeded);
-		else
-		    cp_tgt = LYno_attr_mbcs_case_strstr(data,
-						     target,
-						text->T.output_utf8, YES,
-						&HitOffset,
-						&LenNeeded);
+		cp_tgt = LYno_attr_mb_strstr(data,
+					    target,
+					    text->T.output_utf8, YES,
+					    &HitOffset,
+					    &LenNeeded);
 		if (cp_tgt) {
 		    i_start_tgt = i + HitOffset;
 		    i_after_tgt = i + LenNeeded;
@@ -1222,8 +1189,8 @@ PRIVATE int display_line ARGS4(
 	while (current_style < line->numstyles &&
 	       i >= (int) (CStyle.horizpos + line->offset + 1))
 	{
-		LynxChangeStyle (CStyle.style,CStyle.direction,CStyle.previous);
-		current_style++;
+	    LynxChangeStyle (CStyle.style,CStyle.direction);
+	    current_style++;
 	}
 #endif
 	switch (buffer[0]) {
@@ -1231,7 +1198,7 @@ PRIVATE int display_line ARGS4(
 #ifndef USE_COLOR_STYLE
 	    case LY_UNDERLINE_START_CHAR:
 		if (dump_output_immediately && use_underscore) {
-		    addch('_');
+		    LYaddch('_');
 		    i++;
 		} else {
 		    inunderline = YES;
@@ -1250,7 +1217,7 @@ PRIVATE int display_line ARGS4(
 
 	    case LY_UNDERLINE_END_CHAR:
 		if (dump_output_immediately && use_underscore) {
-		    addch('_');
+		    LYaddch('_');
 		    i++;
 		} else {
 		    inunderline = NO;
@@ -1282,14 +1249,14 @@ PRIVATE int display_line ARGS4(
 #endif
 	    case LY_SOFT_NEWLINE:
 		if (!dump_output_immediately) {
-		    addch('+');
+		    LYaddch('+');
 		    i++;
 		}
 		break;
 
 	    case LY_SOFT_HYPHEN:
 		if (*data != '\0' ||
-		    isspace((unsigned char)LastDisplayChar) ||
+		    isspace(UCH(LastDisplayChar)) ||
 		    LastDisplayChar == '-') {
 		    /*
 		     *  Ignore the soft hyphen if it is not the last
@@ -1325,7 +1292,7 @@ PRIVATE int display_line ARGS4(
 #endif /* SHOW_WHEREIS_TARGETS */
 #endif /* USE_COLOR_STYLE */
 		i++;
-		if (text->T.output_utf8 && !isascii((unsigned char)buffer[0])) {
+		if (text->T.output_utf8 && !isascii(UCH(buffer[0]))) {
 		    text->has_utf8 = YES;
 		    if ((*buffer & 0xe0) == 0xc0) {
 			utf_extra = 1;
@@ -1354,11 +1321,11 @@ PRIVATE int display_line ARGS4(
 		if (utf_extra) {
 		    strncpy(&buffer[1], data, utf_extra);
 		    buffer[utf_extra+1] = '\0';
-		    addstr(buffer);
+		    LYaddstr(buffer);
 		    buffer[1] = '\0';
 		    data += utf_extra;
 		    utf_extra = 0;
-		} else if (HTCJK != NOCJK && !isascii((unsigned char)buffer[0])
+		} else if (HTCJK != NOCJK && !isascii(UCH(buffer[0]))
 #ifndef CONV_JISX0201KANA_JISX0208KANA
 		    && kanji_code != SJIS
 #endif
@@ -1366,13 +1333,13 @@ PRIVATE int display_line ARGS4(
 		    /*
 		     *  For CJK strings, by Masanobu Kimura.
 		     */
-		    if (i >= LYcols) goto after_while;
+		    if (i >= DISPLAY_COLS) goto after_while;
 
 		    buffer[1] = *data;
 		    buffer[2] = '\0';
 		    data++;
 		    i++;
-		    addstr(buffer);
+		    LYaddstr(buffer);
 		    buffer[1] = '\0';
 		    /*
 		     *  For now, load 'M' into LastDisplayChar,
@@ -1387,16 +1354,7 @@ PRIVATE int display_line ARGS4(
 		     */
 		    LastDisplayChar = 'M';
 		} else {
-#if 0	/* last-ditch attempt to prevent 0x9B to screen - disabled  */
-#if defined(UNIX) || defined(VMS)
-		    if (!dump_output_immediately &&
-			(unsigned char)buffer[0] == 128+27) {
-			addstr("~^");
-			buffer[0] ^= 0xc0;
-		    }
-#endif
-#endif
-		    addstr(buffer);
+		    LYaddstr(buffer);
 		    LastDisplayChar = buffer[0];
 		}
 	} /* end of switch */
@@ -1412,7 +1370,7 @@ after_while:
     /*
      *  Add the return.
      */
-    addch('\n');
+    LYaddch('\n');
 
 #if defined(SHOW_WHEREIS_TARGETS) && !defined(USE_COLOR_STYLE)
     if (intarget)
@@ -1426,7 +1384,7 @@ after_while:
 #else
     while (current_style < line->numstyles)
     {
-	LynxChangeStyle (CStyle.style, CStyle.direction, CStyle.previous);
+	LynxChangeStyle (CStyle.style, CStyle.direction);
 	current_style++;
     }
 #undef CStyle
@@ -1444,7 +1402,8 @@ PRIVATE void display_title ARGS1(
     char percent[20];
     char *cp = NULL;
     unsigned char *tmp = NULL;
-    int i = 0, j = 0;
+    int i = 0, j = 0, toolbar = 0;
+    int limit;
 
     /*
      *  Make sure we have a text structure. - FM
@@ -1456,9 +1415,9 @@ PRIVATE void display_title ARGS1(
 #ifdef USE_COLOR_STYLE
 /* turn the TITLE style on */
     if (last_colorattr_ptr > 0) {
-	LynxChangeStyle(s_title, STACK_ON, 0);
+	LynxChangeStyle(s_title, STACK_ON);
     } else {
-	LynxChangeStyle(s_title, ABS_ON, 0);
+	LynxChangeStyle(s_title, ABS_ON);
     }
 #endif /* USE_COLOR_STYLE */
 
@@ -1483,7 +1442,8 @@ PRIVATE void display_title ARGS1(
     /*
      *  Generate the page indicator (percent) string.
      */
-    if (LYcols < 10) {
+    limit = LYscreenWidth();
+    if (limit < 10) {
 	percent[0] = '\0';	/* Null string */
     } else if ((display_lines) <= 0 && LYlines > 0 &&
 	text->top_of_screen <= 99999 && text->Lines <= 999999) {
@@ -1537,17 +1497,34 @@ PRIVATE void display_title ARGS1(
 	    FREE(tmp);
 	}
     }
-    move(0, 0);
-    clrtoeol();
+    LYmove(0, 0);
+    LYclrtoeol();
 #if defined(SH_EX) && defined(KANJI_CODE_OVERRIDE)
-    addstr(str_kcode(last_kcode));
+    LYaddstr(str_kcode(last_kcode));
 #endif
-    if (text->top_of_screen > 0 && HText_hasToolbar(text)) {
-	addch('#');
+    if (HText_hasToolbar(text)) {
+	LYaddch('#');
+	toolbar = 1;
     }
-    i = (LYcols - 1) - strlen(percent) - strlen(title);
+#ifdef USE_COLOR_STYLE
+    if (s_forw_backw != NOSTYLE && (nhist || nhist_extra > 1)) {
+	int c = nhist ? ACS_LARROW : ' ';
+
+	/* turn the FORWBACKW.ARROW style on */
+	LynxChangeStyle(s_forw_backw, STACK_ON);
+	if (nhist) {
+	    LYaddch(c); LYaddch(c); LYaddch(c);
+	} else
+	    LYmove(0, 3 + toolbar);
+	if (nhist_extra > 1) {
+	    LYaddch(ACS_RARROW); LYaddch(ACS_RARROW); LYaddch(ACS_RARROW);
+	}
+	LynxChangeStyle(s_forw_backw, STACK_OFF);
+    }
+#endif /* USE_COLOR_STYLE */
+    i = (limit - 1) - strlen(percent) - strlen(title);
     if (i >= CHAR_WIDTH) {
-	move(0, i);
+	LYmove(0, i);
     } else {
 	/*
 	 *  Note that this truncation is not taking into
@@ -1557,28 +1534,28 @@ PRIVATE void display_title ARGS1(
 #ifdef SH_EX	/* 1999/06/15 (Tue) 10:17:28 */
 	int last;
 	last = (int)strlen(percent) + CHAR_WIDTH;
-	if (LYcols - 3 >= last) {
-	    title[(LYcols - 3) - last] = '.';
-	    title[(LYcols - 2) - last] = '.';
-	    title[(LYcols - 1) - last] = '\0';
+	if (limit - 3 >= last) {
+	    title[(limit - 3) - last] = '.';
+	    title[(limit - 2) - last] = '.';
+	    title[(limit - 1) - last] = '\0';
 	} else {
-	    title[(LYcols - 1) - last] = '\0';
+	    title[(limit - 1) - last] = '\0';
 	}
 #else
-	if ((i = ((LYcols - 2) - strlen(percent)) - CHAR_WIDTH) >= 0)
+	if ((i = ((limit - 2) - strlen(percent)) - CHAR_WIDTH) >= 0)
 	    title[i] = '\0';
 #endif
-	move(0, CHAR_WIDTH);
+	LYmove(0, CHAR_WIDTH);
     }
-    addstr(title);
+    LYaddstr(title);
     if (percent[0] != '\0')
-	addstr(percent);
-    addch('\n');
+	LYaddstr(percent);
+    LYaddch('\n');
     FREE(title);
 
 #ifdef USE_COLOR_STYLE
 /* turn the TITLE style off */
-    LynxChangeStyle(s_title, STACK_OFF, 0);
+    LynxChangeStyle(s_title, STACK_OFF);
 #endif /* USE_COLOR_STYLE */
     lynx_stop_title_color ();
 
@@ -1628,9 +1605,9 @@ PRIVATE void display_scrollbar ARGS1(
 	/* Use rounding to get as many positions into top_skip==h - sh - 1
 	   as into top_skip == 1:
 	   1--->1, text->Lines - display_lines + 1--->h - sh. */
-	top_skip = 1 +
+	top_skip = (int) (1 +
 	    1. * (h - sh - 1) * text->top_of_screen
-		/(text->Lines - display_lines + 1);
+		/ (text->Lines - display_lines + 1));
     }
     bot_skip = h - sh - top_skip;
 
@@ -1642,40 +1619,40 @@ PRIVATE void display_scrollbar ARGS1(
 	int s = top_skip ? s_sb_aa : s_sb_naa;
 
 	if (last_colorattr_ptr > 0) {
-	    LynxChangeStyle(s, STACK_ON, 0);
+	    LynxChangeStyle(s, STACK_ON);
 	} else {
-	    LynxChangeStyle(s, ABS_ON, 0);
+	    LynxChangeStyle(s, ABS_ON);
 	}
 #endif /* USE_COLOR_STYLE */
-	move(1, LYcols - 1);
-	addch(ACS_UARROW);
+	LYmove(1, LYcols + LYshiftWin - 1);
+	addch_raw(ACS_UARROW);
 #ifdef USE_COLOR_STYLE
-	LynxChangeStyle(s, STACK_OFF, 0);
+	LynxChangeStyle(s, STACK_OFF);
 #endif /* USE_COLOR_STYLE */
     }
 #ifdef USE_COLOR_STYLE
     if (last_colorattr_ptr > 0) {
-	LynxChangeStyle(s_sb_bg, STACK_ON, 0);
+	LynxChangeStyle(s_sb_bg, STACK_ON);
     } else {
-	LynxChangeStyle(s_sb_bg, ABS_ON, 0);
+	LynxChangeStyle(s_sb_bg, ABS_ON);
     }
 #endif /* USE_COLOR_STYLE */
 
     for (i=1; i <= h; i++) {
 #ifdef USE_COLOR_STYLE
 	if (i-1 <= top_skip && i > top_skip)
-	    LynxChangeStyle(s_sb_bar, STACK_ON, 0);
+	    LynxChangeStyle(s_sb_bar, STACK_ON);
 	if (i-1 <= h - bot_skip && i > h - bot_skip)
-	    LynxChangeStyle(s_sb_bar, STACK_OFF, 0);
+	    LynxChangeStyle(s_sb_bar, STACK_OFF);
 #endif /* USE_COLOR_STYLE */
-	move(i + off, LYcols - 1);
+	LYmove(i + off, LYcols + LYshiftWin - 1);
 	if (i > top_skip && i <= h - bot_skip)
-	    addch(ACS_BLOCK);
+	    LYaddch(ACS_BLOCK);
 	else
-	    addch(ACS_CKBOARD);
+	    LYaddch(ACS_CKBOARD);
     }
 #ifdef USE_COLOR_STYLE
-    LynxChangeStyle(s_sb_bg, STACK_OFF, 0);
+    LynxChangeStyle(s_sb_bg, STACK_OFF);
 #endif /* USE_COLOR_STYLE */
 
     if (LYsb_arrow) {
@@ -1683,15 +1660,15 @@ PRIVATE void display_scrollbar ARGS1(
 	int s = bot_skip ? s_sb_aa : s_sb_naa;
 
 	if (last_colorattr_ptr > 0) {
-	    LynxChangeStyle(s, STACK_ON, 0);
+	    LynxChangeStyle(s, STACK_ON);
 	} else {
-	    LynxChangeStyle(s, ABS_ON, 0);
+	    LynxChangeStyle(s, ABS_ON);
 	}
 #endif /* USE_COLOR_STYLE */
-	move(h + 2, LYcols - 1);
-	addch(ACS_DARROW);
+	LYmove(h + 2, LYcols + LYshiftWin - 1);
+	addch_raw(ACS_DARROW);
 #ifdef USE_COLOR_STYLE
-	LynxChangeStyle(s, STACK_OFF, 0);
+	LynxChangeStyle(s, STACK_OFF);
 #endif /* USE_COLOR_STYLE */
     }
     return;
@@ -1736,12 +1713,12 @@ PRIVATE void display_page ARGS3(
 	 *  curses packages. - shf@access.digex.net & seldon@eskimo.com
 	 */
 	if (enable_scrollback) {
-	    addch('*');
-	    refresh();
-	    clear();
+	    LYaddch('*');
+	    LYrefresh();
+	    LYclear();
 	}
-	addstr("\n\nError accessing document!\nNo data available!\n");
-	refresh();
+	LYaddstr("\n\nError accessing document!\nNo data available!\n");
+	LYrefresh();
 	nlinks = 0;  /* set number of links to 0 */
 	return;
     }
@@ -1776,7 +1753,7 @@ PRIVATE void display_page ARGS3(
     else if (line_number < 0)
 	line_number = 0;
 
-    for (i = 0, line = text->last_line->next;		/* Find line */
+    for (i = 0, line = FirstHTLine(text);		/* Find line */
 	 i < line_number && (line != text->last_line);
 	 i++, line = line->next) {			/* Loop */
 #ifndef VMS
@@ -1784,12 +1761,12 @@ PRIVATE void display_page ARGS3(
 	    assert(line->next != NULL);
 	} else if (line->next == NULL) {
 	    if (enable_scrollback) {
-		addch('*');
-		refresh();
-		clear();
+		LYaddch('*');
+		LYrefresh();
+		LYclear();
 	    }
-	    addstr("\n\nError drawing page!\nBad HText structure!\n");
-	    refresh();
+	    LYaddstr("\n\nError drawing page!\nBad HText structure!\n");
+	    LYrefresh();
 	    nlinks = 0;  /* set number of links to 0 */
 	    return;
 	}
@@ -1806,16 +1783,14 @@ PRIVATE void display_page ARGS3(
 	 *  Also we don't want to do this for -dump and -source etc.
 	 */
 	LYCursesON) {
-	charset_last_displayed = current_char_set;
 #ifdef EXP_CHARTRANS_AUTOSWITCH
-#ifdef LINUX
 	/*
 	 *  Currently implemented only for LINUX
 	 */
 	UCChangeTerminalCodepage(current_char_set,
 				 &LYCharSet_UC[current_char_set]);
-#endif /* LINUX */
 #endif /* EXP_CHARTRANS_AUTOSWITCH */
+	charset_last_displayed = current_char_set;
     }
 
     /*
@@ -1824,9 +1799,9 @@ PRIVATE void display_page ARGS3(
      *  curses packages. - shf@access.digex.net & seldon@eskimo.com
      */
     if (enable_scrollback) {
-	addch('*');
-	refresh();
-	clear();
+	LYaddch('*');
+	LYrefresh();
+	LYclear();
     }
 
 #ifdef USE_COLOR_STYLE
@@ -1858,7 +1833,7 @@ PRIVATE void display_page ARGS3(
 
 #ifdef DISP_PARTIAL
     if (display_partial && text->stbl) {
-	stop_before_for_anchors = Stbl_getStartLine(text->stbl);
+	stop_before_for_anchors = Stbl_getStartLineDeep(text->stbl);
 	if (stop_before_for_anchors > line_number+(display_lines))
 	    stop_before_for_anchors = line_number+(display_lines);
     } else
@@ -1889,12 +1864,12 @@ PRIVATE void display_page ARGS3(
 		assert(line != NULL);
 	    } else if (line == NULL) {
 		if (enable_scrollback) {
-		    addch('*');
-		    refresh();
-		    clear();
+		    LYaddch('*');
+		    LYrefresh();
+		    LYclear();
 		}
-		addstr("\n\nError drawing page!\nBad HText structure!\n");
-		refresh();
+		LYaddstr("\n\nError drawing page!\nBad HText structure!\n");
+		LYrefresh();
 		nlinks = 0;  /* set number of links to 0 */
 		return;
 	    }
@@ -1906,7 +1881,7 @@ PRIVATE void display_page ARGS3(
 	    if (!display_partial &&
 		line_number == text->first_lineno_last_disp_partial &&
 		i + line_number <= text->last_lineno_last_disp_partial)
-		move((i + 2), 0);
+		LYmove((i + 2), 0);
 	    else
 #endif
 	    display_line(line, text, i+1, target);
@@ -1920,18 +1895,12 @@ PRIVATE void display_page ARGS3(
 	    data = (char *)line->data;
 	    offset = (int)line->offset;
 	    while ((target && *target) &&
-		   (case_sensitive ?
-		    (cp = LYno_attr_mbcs_strstr(data,
-						target,
-						text->T.output_utf8, YES,
-						NULL,
-						&LenNeeded)) != NULL :
-		    (cp = LYno_attr_mbcs_case_strstr(data,
-						     target,
-						text->T.output_utf8, YES,
-						NULL,
-						&LenNeeded)) != NULL) &&
-		   ((int)line->offset + LenNeeded) < LYcols) {
+		    (cp = LYno_attr_mb_strstr(data,
+					      target,
+					      text->T.output_utf8, YES,
+					      NULL,
+					      &LenNeeded)) != NULL &&
+		   ((int)line->offset + LenNeeded) < DISPLAY_COLS) {
 		int itmp = 0;
 		int written = 0;
 		int x_pos = offset + (int)(cp - data);
@@ -1963,12 +1932,12 @@ PRIVATE void display_page ARGS3(
 			    /*
 			     *  First printable character of target.
 			     */
-			    move((i + 1), x_pos);
+			    LYmove((i + 1), x_pos);
 			}
 			/*
 			 *  Output all the printable target chars.
 			 */
-			if (text->T.output_utf8 && !isascii((unsigned char)tmp[0])) {
+			if (text->T.output_utf8 && !isascii(UCH(tmp[0]))) {
 			    if ((*tmp & 0xe0) == 0xc0) {
 				utf_extra = 1;
 			    } else if ((*tmp & 0xf0) == 0xe0) {
@@ -1996,29 +1965,20 @@ PRIVATE void display_page ARGS3(
 			    strncpy(&tmp[1], &line->data[itmp+1], utf_extra);
 			    tmp[utf_extra+1] = '\0';
 			    itmp += utf_extra;
-			    addstr(tmp);
+			    LYaddstr(tmp);
 			    tmp[1] = '\0';
 			    written += (utf_extra + 1);
 			    utf_extra = 0;
-			} else if (HTCJK != NOCJK && !isascii((unsigned char)tmp[0])) {
+			} else if (HTCJK != NOCJK && !isascii(UCH(tmp[0]))) {
 			    /*
 			     *  For CJK strings, by Masanobu Kimura.
 			     */
 			    tmp[1] = data[++itmp];
-			    addstr(tmp);
+			    LYaddstr(tmp);
 			    tmp[1] = '\0';
 			    written += 2;
 			} else {
-#if 0	/* last-ditch attempt to prevent 0x9B to screen - disabled  */
-#if defined(UNIX) || defined(VMS)
-			    if (!dump_output_immediately &&
-				(unsigned char)tmp[0] == 128+27) {
-				addstr("~^");
-				tmp[0] ^= 0xc0;
-			    }
-#endif
-#endif
-			    addstr(tmp);
+			    LYaddstr(tmp);
 			    written++;
 			}
 		    }
@@ -2038,7 +1998,7 @@ PRIVATE void display_page ARGS3(
 		 *  the end of the line, or not have another hit
 		 *  in it. - FM
 		 */
-		move((i + 2), 0);
+		LYmove((i + 2), 0);
 	    } /* end while */
 #endif /* USE_COLOR_STYLE */
 #endif /* SHOW_WHEREIS_TARGETS */
@@ -2052,8 +2012,8 @@ PRIVATE void display_page ARGS3(
 		 *  Clear remaining lines of display.
 		 */
 		for (i++; i < (display_lines); i++) {
-		    move((i + 1), 0);
-		    clrtoeol();
+		    LYmove((i + 1), 0);
+		    LYclrtoeol();
 		}
 		break;
 	    }
@@ -2256,7 +2216,7 @@ PRIVATE void display_page ARGS3(
 	/*
 	 *  Nothing on the page.
 	 */
-	addstr("\n     Document is empty");
+	LYaddstr("\n     Document is empty");
     }
     display_scrollbar(text);
 
@@ -2284,11 +2244,13 @@ PRIVATE void display_page ARGS3(
 	/*
 	 *  For non-multibyte curses.
 	 *
-	 *  Is this repainting necessary??  Let's try without.
+	 *  Full repainting is necessary, otherwise only part of a multibyte
+	 *  character sequence might be written because of curses output
+	 *  optimizations.
 	 */
-	/*clearok(curscr, TRUE);*/
+	clearok(curscr, TRUE);
     }
-    refresh();
+    LYrefresh();
 }
 
 
@@ -2313,13 +2275,13 @@ PUBLIC void HText_beginAppend ARGS1(
    is used to try to prevent that lines with UTF-8 chars get wrapped
    by the library when they shouldn't.
    If there is no display library involved, i.e. dump_output_immediately,
-   no such limit should be imposed.  LYcols*6 should be just as good
+   no such limit should be imposed.  MAX_COLS should be just as good
    as any other large value.  (But don't use INT_MAX or something close
    to it to, avoid over/underflow.) - kw */
 #ifdef USE_SLANG
-#define LYcols_cu (dump_output_immediately ? LYcols*6 : SLtt_Screen_Cols)
+#define LYcols_cu (dump_output_immediately ? MAX_COLS : SLtt_Screen_Cols)
 #else
-#define LYcols_cu (dump_output_immediately ? LYcols*6 : LYcols)
+#define LYcols_cu (dump_output_immediately ? MAX_COLS : DISPLAY_COLS)
 #endif
 
 /*	Add a new line of text
@@ -2349,6 +2311,235 @@ PUBLIC void HText_beginAppend ARGS1(
 #define CTRACE_SPLITLINE(p)	/*nothing*/
 #endif
 
+PRIVATE int set_style_by_embedded_chars ARGS4(
+	char *,		s,
+	char *,		e,
+	unsigned char,	start_c,
+	unsigned char,	end_c)
+{
+    int ret = NO;
+
+    while (--e >= s) {
+	if (*e == end_c)
+	    break;
+	if (*e == start_c) {
+	    ret = YES;
+	    break;
+	}
+    }
+    return ret;
+}
+
+PRIVATE void move_anchors_in_region ARGS7(
+    HTLine *,		line,
+    int,		line_number,
+    TextAnchor **,	prev_anchor,
+    int *,		prev_head_processed,
+    int,		sbyte,
+    int,		ebyte,
+    int,		shift)		/* Likewise */
+{
+    /*
+     *  Update anchor positions for anchors that start on this line.
+     *  Note: we rely on a->line_pos counting bytes, not
+     *  characters.  That's one reason why HText_trimHightext
+     *  has to be prevented from acting on these anchors in
+     *  partial display mode before we get a chance to
+     *  deal with them here.
+     */
+    TextAnchor *a;
+    int head_processed = *prev_head_processed;
+
+    /* We need to know whether (*prev_anchor)->line_pos is "in new
+       coordinates" or in old ones.  If prev_anchor' head was touched
+       on the previous iteraction, we set head_processed.  The tail
+       may need to be treated now. */
+    for (a = *prev_anchor;
+	 a && a->line_num <= line_number;
+	 a = a->next, head_processed = 0) {
+	/* extent==0 needs to be special-cased; happens if no text for
+	   the anchor was processed yet.  */
+	/* Subtract one so that the space is not inserted at the end
+	   of the anchor... */
+	int last = a->line_pos + (a->extent ? a->extent - 1 : 0);
+
+	/* Include the anchors started on the previous line */
+	if (a->line_num < line_number - 1)
+	    continue;
+	if (a->line_num == line_number - 1)
+	    last -= line->prev->size + 1; /* Fake "\n" "between" lines counted too */
+	if (last < sbyte)		/* Completely before the start */
+	    continue;
+
+	if ( !head_processed		/* a->line_pos is not edited yet */
+	     && a->line_num == line_number
+	     && a->line_pos >= ebyte)	/* Completely after the end */
+	    break;
+	/* Now we know that the anchor context intersects the chunk */
+
+	/* Fix the start */
+	if ( !head_processed && a->line_num == line_number
+	     && a->line_pos >= sbyte ) {
+	    a->line_pos += shift;
+	    a->extent -= shift;
+	    head_processed = 1;
+	}
+	/* Fix the end */
+	if ( last < ebyte )
+	    a->extent += shift;
+	else
+	    break;			/* Keep this `a' for the next step */
+    }
+    *prev_anchor = a;
+    *prev_head_processed = head_processed;
+}
+
+/*
+ *  Given a line and two int arrays of old/now position, this function
+ *  creates a new line where spaces have been inserted/removed
+ *  in appropriate places - so that characters at/after the old
+ *  position end up at/after the new position, for each pair, if possible.
+ *  Some necessary changes for anchors starting on this line are also done
+ *  here if needed.
+ *  Returns a newly allocated HTLine* if changes were made
+ *    (caller has to free the old one).
+ *  Returns NULL if no changes needed.  (Remove-spaces code may be buggy...)
+ * - kw
+ */
+PRIVATE HTLine * insert_blanks_in_line ARGS7(
+    HTLine *,		line,
+    int,		line_number,
+    HText *,		text,
+    TextAnchor *,	prev_anchor,
+    int,		ninserts,
+    int *,		oldpos,		/* Measured in cells */
+    int *,		newpos)		/* Likewise */
+{
+    int ioldc = 0;			/* count visible characters */
+    int ip;				/* count insertion pairs */
+#if defined(USE_COLOR_STYLE)
+    int istyle = 0;
+#endif
+    int added_chars = 0;
+    int shift = 0;
+    int head_processed;
+    HTLine * mod_line;
+    char *newdata;
+    char *s = line->data;
+    char *pre = s;
+    char *copied = line->data, *t;
+
+    if (!(line && line->size && ninserts))
+	return NULL;
+    for (ip = 0; ip < ninserts; ip++)
+	if (newpos[ip] > oldpos[ip] &&
+	    (newpos[ip] - oldpos[ip]) > added_chars)
+	    added_chars = newpos[ip] - oldpos[ip];
+    if (line->size + added_chars > MAX_LINE - 2)
+	return NULL;
+    if (line == text->last_line)
+	mod_line = allocHTLine(MAX_LINE);
+    else
+	mod_line = allocHTLine(line->size + added_chars);
+    if (!mod_line)
+	return NULL;
+    if (!prev_anchor)
+	prev_anchor = text->first_anchor;
+    head_processed = (prev_anchor && prev_anchor->line_num < line_number);
+    memcpy(mod_line, line, LINE_SIZE(1));
+    t = newdata = mod_line->data;
+    ip = 0;
+    while (ip <= ninserts) {
+	/* line->size is in bytes, so it may be larger than needed... */
+	int curlim = (ip < ninserts
+		      ? oldpos[ip]
+		      /* Include'em all! */
+		      : (line->size <= MAX_LINE ? MAX_LINE+1 : line->size+1));
+	pre = s;
+
+	/* Fast forward to char==curlim or EOL.  Stop *before* the
+	   style-change chars. */
+	while (*s) {
+	    if ( text && text->T.output_utf8
+		 && UCH(*s) >= 0x80 && UCH(*s) <  0xC0 ) {
+		pre = s + 1;
+	    } else if (!IsSpecialAttrChar(*s)) { /* At a "displayed" char */
+		if (ioldc >= curlim)
+		    break;
+		ioldc++;
+		pre = s + 1;
+	    }
+	    s++;
+	}
+
+	/* Now s is at the "displayed" char, pre is before the style change */
+	if (ip)				/* Fix anchor positions */
+	    move_anchors_in_region(line, line_number, &prev_anchor,
+				   &head_processed,
+				   copied - line->data, pre - line->data,
+				   shift);
+#if defined(USE_COLOR_STYLE)	/* Move styles too */
+#define NStyle mod_line->styles[istyle]
+	for (; istyle < line->numstyles && (int) NStyle.horizpos < curlim ; istyle++)
+	    /* Should not we include OFF-styles at curlim? */
+	    NStyle.horizpos += shift;
+#endif
+	while (copied < pre)	/* Copy verbatim to byte == pre */
+	    *t++ = *copied++;
+	if (ip < ninserts) {	/* Insert spaces */
+	    int delta = newpos[ip] - oldpos[ip] - shift;
+
+	    if (delta < 0) {	/* Not used yet? */
+		while (delta++ < 0 && t > newdata && t[-1] == ' ')
+		    t--, shift--;
+	    } else
+		shift = newpos[ip] - oldpos[ip];
+	    while (delta-- > 0)
+		*t++ = ' ';
+	}
+	ip++;
+    }
+    while (pre < s)	/* Copy remaining style-codes */
+	*t++ = *pre++;
+    /* Check whether the last anchor continues on the next line */
+    if (head_processed && prev_anchor && prev_anchor->line_num == line_number)
+	prev_anchor->extent += shift;
+    *t = '\0';
+    mod_line->size = t - newdata;
+    return mod_line;
+}
+
+#if defined(USE_COLOR_STYLE)
+PRIVATE HTStyleChange * skip_matched_and_correct_offsets ARGS3(
+	HTStyleChange *,	end,
+	HTStyleChange *,	start,
+	unsigned,		split_pos)
+{ /* Found an OFF change not part of an adjacent matched pair.
+   * Walk backward looking for the corresponding ON change.
+   * Move everything after split_pos to be at split_pos.
+   * This can only work correctly if all changes are correctly
+   * nested!  If this fails, assume it is safer to leave whatever
+   * comes before the OFF on the previous line alone. */
+    int level = 0;
+    HTStyleChange *tmp = end;
+
+    for (; tmp >= start; tmp--) {
+	if (tmp->style == end->style) {
+	    if (tmp->direction == STACK_OFF)
+		level--;
+	    else if (tmp->direction == STACK_ON) {
+		if (++level == 0)
+		    return tmp;
+	    } else
+		return 0;
+	}
+	if (tmp->horizpos > split_pos)
+	    tmp->horizpos = split_pos;
+    }
+    return 0;
+}
+#endif /* USE_COLOR_STYLE */
+
 PRIVATE void split_line ARGS2(
 	HText *,	text,
 	unsigned,	split)
@@ -2356,9 +2547,6 @@ PRIVATE void split_line ARGS2(
     HTStyle * style = text->style;
     HTLine * temp;
     int spare;
-#if defined(USE_COLOR_STYLE)
-    int inew;
-#endif
     int indent = text->in_line_1 ?
 	  text->style->indent1st : text->style->leftIndent;
     short alignment;
@@ -2367,22 +2555,20 @@ PRIVATE void split_line ARGS2(
     int HeadTrim = 0;
     int SpecialAttrChars = 0;
     int TailTrim = 0;
-    int s;
-
-    /*
-     *  Make new line.
-     */
+    int s, s_post, s_pre, t_underline = underline_on, t_bold = bold_on;
+    char *p;
     HTLine * previous = text->last_line;
     int ctrl_chars_on_previous_line = 0;
     int utfxtra_on_previous_line = utfxtra_on_this_line;
     char * cp;
     /* can't wrap in middle of multibyte sequences, so allocate 2 extra */
     HTLine * line = (HTLine *)LY_CALLOC(1, LINE_SIZE(MAX_LINE)+2);
+
+    /*
+     *  Make new line.
+     */
     if (line == NULL)
 	outofmem(__FILE__, "split_line_1");
-#if defined(USE_COLOR_STYLE) && !defined(OLD_HTSTYLECHANGE)
-    line->styles = stylechanges_buffers[stylechanges_buffers_free = (stylechanges_buffers_free + 1) &1];
-#endif
     ctrl_chars_on_this_line = 0; /*reset since we are going to a new line*/
     utfxtra_on_this_line = 0;	/*reset too, we'll count them*/
     text->LastChar = ' ';
@@ -2393,6 +2579,7 @@ PRIVATE void split_line ARGS2(
 #endif
 
     cp = previous->data;
+    /* Float LY_SOFT_NEWLINE to the start */
     if (cp[0] == LY_BOLD_START_CHAR
      || cp[0] == LY_UNDERLINE_START_CHAR) {
 	switch (cp[1]) {
@@ -2435,36 +2622,42 @@ PRIVATE void split_line ARGS2(
     text->permissible_split = 0;  /* 12/13/93 */
     line->data[0] = '\0';
 
-    /*
-     *  If we are not splitting and need an underline char, add it now. - FM
-     */
-    if ((split < 1) &&
-	!(dump_output_immediately && use_underscore) && underline_on) {
+    alignment = style->alignment;
+
+    if (split > 0) { /* Restore flags to the value at the splitting point */
+	if (!(dump_output_immediately && use_underscore))
+	    t_underline = set_style_by_embedded_chars(
+		previous->data, previous->data + split,
+		LY_UNDERLINE_START_CHAR, LY_UNDERLINE_END_CHAR);
+
+	t_bold = set_style_by_embedded_chars(
+	    previous->data, previous->data + split,
+	    LY_BOLD_START_CHAR, LY_BOLD_END_CHAR);
+
+    }
+
+    if (!(dump_output_immediately && use_underscore) && t_underline) {
 	line->data[line->size++] = LY_UNDERLINE_START_CHAR;
 	line->data[line->size] = '\0';
 	ctrl_chars_on_this_line++;
+	SpecialAttrChars++;
     }
-    /*
-     *  If we are not splitting and need a bold char, add it now. - FM
-     */
-    if ((split < 1) && bold_on) {
+    if (t_bold) {
 	line->data[line->size++] = LY_BOLD_START_CHAR;
 	line->data[line->size] = '\0';
 	ctrl_chars_on_this_line++;
+	SpecialAttrChars++;
     }
 
-    alignment = style->alignment;
     /*
      *  Split at required point
      */
     if (split > 0) {	/* Delete space at "split" splitting line */
-	char *p, *prevdata = previous->data, *linedata = line->data;
+	char *prevdata = previous->data, *linedata = line->data;
 	unsigned plen;
 	int i;
 
-	/*
-	 *  Split the line. - FM
-	 */
+	/* Split the line. - FM */
 	prevdata[previous->size] = '\0';
 	previous->size = split;
 
@@ -2474,160 +2667,77 @@ PRIVATE void split_line ARGS2(
 	 */
 	p = prevdata + split;
 	while ((
+		(*p == ' '
 #ifdef EXP_JUSTIFY_ELTS
 		/* if justification is allowed for prev line, then raw
 		 * HT_NON_BREAK_SPACE are still present in data[] (they'll be
 		 * substituted at the end of this function with ' ') - VH
 		 */
-		(*p == ' ' || *p == HT_NON_BREAK_SPACE ) &&
-#else
-		(*p == ' ') &&
+		 || *p == HT_NON_BREAK_SPACE
 #endif
-
-		(HeadTrim || text->first_anchor ||
-		 underline_on || bold_on ||
-		 alignment != HT_LEFT ||
-		 style->wordWrap || style->freeFormat ||
-		 style->spaceBefore || style->spaceAfter)) ||
+		)
+		&& (HeadTrim || text->first_anchor ||
+		    underline_on || bold_on ||
+		    alignment != HT_LEFT ||
+		    style->wordWrap || style->freeFormat ||
+		    style->spaceBefore || style->spaceAfter)) ||
 		*p == LY_SOFT_HYPHEN) {
 	    p++;
 	    HeadTrim++;
 	}
+
 	plen = strlen(p);
-
-	/*
-	 *  Add underline char if needed. - FM
-	 */
-	if (!(dump_output_immediately && use_underscore)) {
-	    /*
-	     * Make sure our global flag is correct. - FM
-	     */
-	    underline_on = NO;
-	    for (i = (split-1); i >= 0; i--) {
-		if (prevdata[i] == LY_UNDERLINE_END_CHAR) {
-		    break;
-		}
-		if (prevdata[i] == LY_UNDERLINE_START_CHAR) {
-		    underline_on = YES;
-		    break;
-		}
-	    }
-	    /*
-	     *  Act on the global flag if set above. - FM
-	     */
-	    if (underline_on && *p != LY_UNDERLINE_END_CHAR) {
-		linedata[line->size++] = LY_UNDERLINE_START_CHAR;
-		linedata[line->size] = '\0';
-		ctrl_chars_on_this_line++;
-		SpecialAttrChars++;
-	    }
-	    if (plen) {
-		for (i = (plen - 1); i >= 0; i--) {
-		    if (p[i] == LY_UNDERLINE_START_CHAR) {
-			underline_on = YES;
-			break;
-		    }
-		    if (p[i] == LY_UNDERLINE_END_CHAR) {
-			underline_on = NO;
-			break;
-		    }
-		}
-		for (i = (plen - 1); i >= 0; i--) {
-		    if (p[i] == LY_UNDERLINE_START_CHAR ||
-			p[i] == LY_UNDERLINE_END_CHAR) {
-			ctrl_chars_on_this_line++;
-		    }
-		}
-	    }
-	}
-
-	/*
-	 *  Add bold char if needed, first making
-	 *  sure that our global flag is correct. - FM
-	 */
-	bold_on = NO;
-	for (i = (split - 1); i >= 0; i--) {
-	    if (prevdata[i] == LY_BOLD_END_CHAR) {
-		break;
-	    }
-	    if (prevdata[i] == LY_BOLD_START_CHAR) {
-		bold_on = YES;
-		break;
-	    }
-	}
-	/*
-	 *  Act on the global flag if set above. - FM
-	 */
-	if (bold_on && *p != LY_BOLD_END_CHAR) {
-	    linedata[line->size++] = LY_BOLD_START_CHAR;
-	    linedata[line->size] = '\0';
-	    ctrl_chars_on_this_line++;
-	    SpecialAttrChars++;
-	}
-	if (plen) {
+	if (plen) {			/* Count funny characters */
 	    for (i = (plen - 1); i >= 0; i--) {
-		if (p[i] == LY_BOLD_START_CHAR) {
-		    bold_on = YES;
-		    break;
-		}
-		if (p[i] == LY_BOLD_END_CHAR) {
-		    bold_on = NO;
-		    break;
-		}
-	    }
-	    for (i = (plen - 1); i >= 0; i--) {
-		if (p[i] == LY_BOLD_START_CHAR ||
+		if (p[i] == LY_UNDERLINE_START_CHAR ||
+		    p[i] == LY_UNDERLINE_END_CHAR ||
+		    p[i] == LY_BOLD_START_CHAR ||
 		    p[i] == LY_BOLD_END_CHAR ||
-		    p[i] == LY_SOFT_HYPHEN) {
+		    p[i] == LY_SOFT_HYPHEN)
 		    ctrl_chars_on_this_line++;
-		} else if (IS_UTF_EXTRA(p[i])) {
+		else if (IS_UTF_EXTRA(p[i]))
 		    utfxtra_on_this_line++;
-		}
-		if (p[i] == LY_SOFT_HYPHEN && (int)text->permissible_split < i) {
+		if (p[i] == LY_SOFT_HYPHEN && (int)text->permissible_split < i)
 		    text->permissible_split = i + 1;
-		}
 	    }
 	    ctrl_chars_on_this_line += utfxtra_on_this_line;
-	}
 
-	/*
-	 *  Add the data to the new line. - FM
-	 */
-	strcat(linedata, p);
-	line->size += plen;
+	    /* Add the data to the new line. - FM */
+	    strcat(linedata, p);
+	    line->size += plen;
+	}
     }
 
     /*
      *  Economize on space.
      */
-    while ((previous->size > 0) &&
+    p = previous->data + previous->size - 1;
+    while (p >= previous->data
+	   && (*p == ' '
 #ifdef EXP_JUSTIFY_ELTS
 	    /* if justification is allowed for prev line, then raw
 	     * HT_NON_BREAK_SPACE are still present in data[] (they'll be
 	     * substituted at the end of this function with ' ') - VH
 	     */
-	   ((previous->data[previous->size-1] == ' ') ||
-	    (previous->data[previous->size-1] == HT_NON_BREAK_SPACE)) &&
-#else
-	   (previous->data[previous->size-1] == ' ') &&
+	       || *p == HT_NON_BREAK_SPACE
 #endif
+	      )
 #ifdef USE_PRETTYSRC
-	    !psrc_view && /*don't strip trailing whites - since next line can
+	   && !psrc_view /*don't strip trailing whites - since next line can
 		start with LY_SOFT_NEWLINE - so we don't lose spaces when
 		'p'rinting this text to file -VH */
 #endif
-	   (ctrl_chars_on_this_line || HeadTrim || text->first_anchor ||
-	    underline_on || bold_on ||
-	    alignment != HT_LEFT ||
-	    style->wordWrap || style->freeFormat ||
-	    style->spaceBefore || style->spaceAfter)) {
-	/*
-	 *  Strip trailers.
-	 */
-	previous->data[previous->size-1] = '\0';
-	previous->size--;
-	TailTrim++;
+	   && (ctrl_chars_on_this_line || HeadTrim || text->first_anchor ||
+	       underline_on || bold_on ||
+	       alignment != HT_LEFT ||
+	       style->wordWrap || style->freeFormat ||
+	       style->spaceBefore || style->spaceAfter)) {
+	p--;	/*  Strip trailers. */
     }
+    TailTrim = previous->data + previous->size - 1 - p;	/*  Strip trailers. */
+    previous->size -= TailTrim;
+    p[1] = '\0';
+
     /*
      *  s is the effective split position, given by either a non-zero
      *  value of split or by the size of the previous line before
@@ -2638,6 +2748,9 @@ PRIVATE void split_line ARGS2(
     } else {
 	s = split;
     }
+    s_post = s + HeadTrim;
+    s_pre  = s - TailTrim;
+
 #ifdef DEBUG_SPLITLINE
 #ifdef DEBUG_APPCH
     if (s != (int)split)
@@ -2646,158 +2759,105 @@ PRIVATE void split_line ARGS2(
 #endif
 
 #if defined(USE_COLOR_STYLE)
-#define LastStyle (previous->numstyles-1)
+    line->styles = stylechanges_buffers[stylechanges_buffers_free = (stylechanges_buffers_free + 1) &1];
     line->numstyles = 0;
-    inew = MAX_STYLES_ON_LINE - 1;
-    /*
-     *  Color style changes after the split position + possible trimmed
-     *  head characters are transferred to the new line.  Ditto for changes
-     *  within the trimming region, but be stop when we reach an OFF change.
-     *  The second while loop below may then handle remaining changes. - kw
-     */
-    while (previous->numstyles && inew >= 0) {
-	if (previous->styles[LastStyle].horizpos > s + HeadTrim) {
-	    line->styles[inew].horizpos =
-		previous->styles[LastStyle].horizpos
-		- (s + HeadTrim) + SpecialAttrChars;
-	    line->styles[inew].direction = previous->styles[LastStyle].direction;
-	    line->styles[inew].style = previous->styles[LastStyle].style;
-	    inew --;
-	    line->numstyles ++;
-	    previous->numstyles --;
-	} else if (previous->styles[LastStyle].horizpos > s - TailTrim &&
-		   (previous->styles[LastStyle].direction == STACK_ON ||
-		    previous->styles[LastStyle].direction == ABS_ON)) {
-	    line->styles[inew].horizpos =
-		(previous->styles[LastStyle].horizpos < s) ?
-		0 : SpecialAttrChars;
-	    line->styles[inew].direction = previous->styles[LastStyle].direction;
-	    line->styles[inew].style = previous->styles[LastStyle].style;
-	    inew --;
-	    line->numstyles ++;
-	    previous->numstyles --;
-	} else
-	    break;
-    }
-    spare = previous->numstyles;
-    while (previous->numstyles && inew >= 0) {
-	if (previous->numstyles >= 2 &&
-	    previous->styles[LastStyle].style
-	    == previous->styles[previous->numstyles-2].style &&
-	    previous->styles[LastStyle].horizpos
-	    == previous->styles[previous->numstyles-2].horizpos &&
-	    ((previous->styles[LastStyle].direction == STACK_OFF &&
-	      previous->styles[previous->numstyles-2].direction == STACK_ON) ||
-	     (previous->styles[LastStyle].direction == ABS_OFF &&
-	      previous->styles[previous->numstyles-2].direction == ABS_ON) ||
-	     (previous->styles[LastStyle].direction == ABS_ON &&
-	      previous->styles[previous->numstyles-2].direction == ABS_OFF)
-		)) {
-	    /*
-	     *  Discard pairs of ON/OFF for the same color style, but only
-	     *  if they appear at the same position. - kw
-	     */
-	    previous->numstyles -= 2;
-	    if (spare > previous->numstyles)
-		spare = previous->numstyles;
-	} else if (spare > 0 && previous->styles[spare - 1].direction &&
-		   previous->numstyles < MAX_STYLES_ON_LINE) {
-	    /*
-	     *  The index variable spare walks backwards through the
-	     *  list of color style changes on the previous line, trying
-	     *  to find an ON change which isn't followed by a
-	     *  corresponding OFF.  When it finds one, the missing OFF
-	     *  change is appended to the end, and an ON change is added
-	     *  at the beginning of the current line.  The OFF change
-	     *  appended to the previous line may get removed again in
-	     *  the next iteration. - kw
-	     */
-	    line->styles[inew].horizpos = 0;
-	    line->styles[inew].direction = ON;
-	    line->styles[inew].style = previous->styles[spare - 1].style;
-	    inew --;
-	    line->numstyles ++;
-	    previous->styles[previous->numstyles].style = line->styles[inew + 1].style;
+    {
+	HTStyleChange *from = previous->styles + previous->numstyles - 1;
+	HTStyleChange *to = line->styles + MAX_STYLES_ON_LINE - 1;
+	HTStyleChange *scan, *at_end;
 
-	    previous->styles[previous->numstyles].direction = ABS_OFF;
-	    previous->styles[previous->numstyles].horizpos = previous->size;
-	    previous->numstyles++;
-	    spare --;
-	} else if (spare >= 2 &&
-		   previous->styles[spare - 1].style == previous->styles[spare - 2].style &&
-		   ((previous->styles[spare - 1].direction == STACK_OFF &&
-		     previous->styles[spare - 2].direction == STACK_ON) ||
-		    (previous->styles[spare - 1].direction == ABS_OFF &&
-		     previous->styles[spare - 2].direction == ABS_ON) ||
-		    (previous->styles[spare - 1].direction == STACK_ON &&
-		     previous->styles[spare - 2].direction == STACK_OFF) ||
-		    (previous->styles[spare - 1].direction == ABS_ON &&
-		     previous->styles[spare - 2].direction == ABS_OFF)
-		       )) {
-		/*
-		 *  Skip pairs of adjacent ON/OFF or OFF/ON changes.
-		 */
-	    spare -= 2;
-	} else if (spare && !previous->styles[spare - 1].direction) {
-	    /*
-	     *  Found an OFF change not part of an adjacent matched pair.
-	     *  Walk backward looking for the corresponding ON change.
-	     *  If we find it, skip the ON/OFF and everything in between.
-	     *  This can only work correctly if all changes are correctly
-	     *  nested!  If this fails, assume it is safer to leave whatever
-	     *  comes before the OFF on the previous line alone.  Setting
-	     *  spare to 0 ensures that it won't be used in a following
-	     *  iteration. - kw
+	/*  Color style changes after the split position
+	 *  are transferred to the new line.  Ditto for changes
+	 *  in the trimming region, but we stop when we reach an OFF change.
+	 *  The second loop below may then handle remaining changes. - kw */
+	while (from >= previous->styles && to >= line->styles) {
+	    *to = *from;
+	    if ((int) to->horizpos > s_post)
+		to->horizpos += - s_post + SpecialAttrChars;
+	    else if ((int) to->horizpos > s_pre &&
+		     (to->direction == STACK_ON ||
+		      to->direction == ABS_ON))
+		to->horizpos = ((int) to->horizpos < s) ? 0 : SpecialAttrChars;
+	    else
+		break;
+	    to--;
+	    from--;
+	}
+	/* FROM may be invalid, otherwise it is either an ON change at or
+	   before s_pre, or is an OFF change at or before s_post.  */
+
+	scan = from;
+	at_end = from;
+	/* Now on the previous line we have a correctly nested but
+	   possibly non-terminated sequence of style changes.
+	   Terminate it, and duplicate unterminated changes at the
+	   beginning of the new line. */
+	while (scan >= previous->styles && at_end >= previous->styles) {
+	    /* The algorithm: scan back though the styles on the previous line.
+	       a) If OFF, skip the matched group.
+		  Report a bug on failure.
+	       b) If ON, (try to) cancel the corresponding ON at at_end,
+		  and the corresponding OFF at to;
+		  If not, put the corresponding OFF at at_end, and copy to to;
 	     */
-	    int level=-1;
-	    int itmp;
-	    for (itmp = spare-1; itmp > 0; itmp--) {
-		if (previous->styles[itmp - 1].style
-		    == previous->styles[spare - 1].style) {
-		    if (previous->styles[itmp - 1].direction == STACK_OFF) {
-			level--;
-		    } else if (previous->styles[itmp - 1].direction == STACK_ON) {
-			if (++level == 0)
-			    break;
-		    } else
-			break;
+	    if (scan->direction == STACK_OFF) {
+		scan = skip_matched_and_correct_offsets(scan, previous->styles,
+							s_pre);
+		if (!scan) {
+		    CTRACE((tfp, "BUG: styles improperly nested.\n"));
+		    break;
+		}
+	    } else if (scan->direction == STACK_ON) {
+		if ( at_end->direction == STACK_ON
+		     && at_end->style == scan->style
+		     && (int) at_end->horizpos >= s_pre )
+		    at_end--;
+		else if (at_end >= previous->styles + MAX_STYLES_ON_LINE - 1) {
+		    CTRACE((tfp, "BUG: style overflow before split_line.\n"));
+		    break;
+		} else {
+		    at_end++;
+		    at_end->direction = STACK_OFF;
+		    at_end->style = scan->style;
+		    at_end->horizpos = s_pre;
+		}
+		if ( to < line->styles + MAX_STYLES_ON_LINE - 1
+		     && to[1].direction == STACK_OFF
+		     && to[1].horizpos <= SpecialAttrChars
+		     && to[1].style == scan->style )
+		    to++;
+		else if (to >= line->styles) {
+		    *to = *scan;
+		    to->horizpos = SpecialAttrChars;
+		    to--;
+		} else {
+		    CTRACE((tfp, "BUG: style overflow after split_line.\n"));
+		    break;
 		}
 	    }
-	    if (level == 0)
-		spare = itmp - 1;
-	    else
-		spare = 0;
-	} else {
-	    /*
-	     *  Nothing applied, so we are done with the loop. - kw
-	     */
-	    break;
+	    if ((int) scan->horizpos > s_pre)
+		scan->horizpos = s_pre;
+	    scan--;
 	}
-    }
-    if (previous->numstyles > 0 && previous->styles[LastStyle].direction) {
+	line->numstyles = line->styles + MAX_STYLES_ON_LINE - 1 - to;
+	if (line->numstyles > 0 && line->numstyles < MAX_STYLES_ON_LINE) {
+	    int n;
 
-	CTRACE((tfp, "%s\n%s%s\n",
-		    "........... Too many character styles on line:",
-		    "........... ", previous->data));
+	    for (n = 0; n < line->numstyles; n++)
+		line->styles[n] = to[n + 1];
+	} else if (line->numstyles == 0)
+	    line->styles[0].horizpos = ~0; /* ?!!! */
+	previous->numstyles = at_end - previous->styles + 1;
+	if (previous->numstyles == 0)
+	    previous->styles[0].horizpos = ~0;	/* ?!!! */
     }
-    if (line->numstyles > 0 && line->numstyles < MAX_STYLES_ON_LINE) {
-	int n;
-	inew ++;
-	for (n = 0; n < line->numstyles; n++)
-		line->styles[n] = line->styles[n + inew];
-    } else
-	if (line->numstyles == 0)
-	/* FIXME: RJP - shouldn't use 0xffffffff for largest integer */
-	line->styles[0].horizpos = 0xffffffff;
-    if (previous->numstyles == 0)
-	previous->styles[0].horizpos = 0xffffffff;
 #endif /*USE_COLOR_STYLE*/
 
     temp = (HTLine *)LY_CALLOC(1, LINE_SIZE(previous->size));
     if (temp == NULL)
 	outofmem(__FILE__, "split_line_2");
     memcpy(temp, previous, LINE_SIZE(previous->size));
-#if defined(USE_COLOR_STYLE) && !defined(OLD_HTSTYLECHANGE)
+#if defined(USE_COLOR_STYLE)
     ALLOC_IN_POOL((text->styles_pool),HTStyleChangePool,previous->numstyles,temp->styles);
     memcpy(temp->styles, previous->styles, sizeof(HTStyleChange)*previous->numstyles);
     if (!temp->styles)
@@ -2839,9 +2899,11 @@ PRIVATE void split_line ARGS2(
 	    ctrl_chars_on_previous_line--;
 
 	/* @@ first line indent */
-	spare =  (LYcols-1) -
+	spare =  (WRAP_COLS(text)-1) -
 	    (int)style->rightIndent - indent +
 	    ctrl_chars_on_previous_line - previous->size;
+	if (spare < 0 && LYwideLines)	/* Can be wider than screen */
+	    spare = 0;
 
 	if (spare > 0 && !dump_output_immediately &&
 	    text->T.output_utf8 && ctrl_chars_on_previous_line) {
@@ -2890,22 +2952,6 @@ PRIVATE void split_line ARGS2(
 	}
     }
 
-    if (text->stbl)
-	/*
-	 *  Notify simple table stuff of line split, so that it can
-	 *  set the last cell's length.  The last cell should and
-	 *  its row should really end here, or on one of the following
-	 *  lines with no more characters added after the break.
-	 *  We don't know whether a cell has been started, so ignore
-	 *  errors here.
-	 *  This call is down here because we need the
-	 *  ctrl_chars_on_previous_line, which have just been re-
-	 *  counted above. - kw
-	 */
-	Stbl_lineBreak(text->stbl,
-		       text->Lines - 1,
-		       previous->size - ctrl_chars_on_previous_line);
-
     switch (style->alignment) {
 	case HT_CENTER :
 	    previous->offset = previous->offset + indent + spare/2;
@@ -2920,7 +2966,23 @@ PRIVATE void split_line ARGS2(
 	    break;
     } /* switch */
 
-    text->chars = text->chars + previous->size + 1;	/* 1 for the line */
+    if (text->stbl)
+	/*
+	 *  Notify simple table stuff of line split, so that it can
+	 *  set the last cell's length.  The last cell should and
+	 *  its row should really end here, or on one of the following
+	 *  lines with no more characters added after the break.
+	 *  We don't know whether a cell has been started, so ignore
+	 *  errors here.
+	 *  This call is down here because we need the
+	 *  ctrl_chars_on_previous_line, which have just been re-
+	 *  counted above. - kw
+	 */
+	Stbl_lineBreak(text->stbl,
+		       text->Lines - 1,
+		       previous->offset,
+		       previous->size - ctrl_chars_on_previous_line);
+
     text->in_line_1 = NO;		/* unless caller sets it otherwise */
 
     /*
@@ -2928,126 +2990,73 @@ PRIVATE void split_line ARGS2(
      *  structure values for the new line. - FM
      */
 
-    if (split > 0 || s > 0) {		/* if not completely empty */
+    if (s > 0) {			/* if not completely empty */
 	TextAnchor * prev_a = NULL;
+	int moved = 0;
+
+	/* In the algorithm below we move or not move anchors between
+	   lines using some heuristic criteria.  However, it is
+	   desirable not to have two consequent anchors on different
+	   lines *in a wrong order*!  (How can this happen?)
+	   So when the "reasonable choice" is not unique, we use the
+	   MOVED flag to choose one.
+	 */
+	/* Our operations can make a non-empty all-whitespace link
+	   empty.  So what? */
 	for (a = text->first_anchor; a; prev_a = a, a = a->next) {
 	    if (a->line_num == CurLine) {
-		int old_e = a->extent;
-		int a0 = a->line_pos, a1 = a->line_pos + a->extent;
-		int S, d, new_pos, new_ext;
-		if (a->link_type == INPUT_ANCHOR) {
-		    if (a->line_pos >= s) {
-			a->start += (1 + SpecialAttrChars - HeadTrim - TailTrim);
-			a->line_pos -= (s - SpecialAttrChars + HeadTrim);
-			a->line_num = text->Lines;
+		int len = a->extent, n = a->number, start = a->line_pos;
+		int end = start + len;
+
+		/* Which anchors do we leave on the previous line?
+		   a) empty finished (We need a cut-off value.
+		      "Just because": those before s;
+		      this is the only case when we use s, not s_pre/s_post);
+		   b) Those which start before s_pre;
+		 */
+		if (start < s_pre) {
+		    if (end <= s_pre)
+			continue;	/* No problem */
+
+		    CTRACE_SPLITLINE((tfp, "anchor %d: no relocation", n));
+		    if (end > s_post) {
+			CTRACE_SPLITLINE((tfp, " of the start.\n"));
+			a->extent += -(TailTrim + HeadTrim) - SpecialAttrChars;
+		    } else {
+			CTRACE_SPLITLINE((tfp, ", cut the end.\n"));
+			a->extent = s_pre - start;
 		    }
 		    continue;
-		}
-		if (a0 < s - TailTrim && a1 <= s - TailTrim) {
-		    continue;	/* unaffected, leave it where it is. */
-		}
-		S = s + a->start - a->line_pos;
-		d = S - s;	/* == a->start - a->line_pos */
-		new_ext = old_e = a->extent;
-
-		if (!old_e &&
-		    (!a->number || a->show_anchor) &&
-		    a0 <= s + HeadTrim) {
-		    CTRACE_SPLITLINE((tfp, "anchor %d case %d: ", a->number,1));
-		    /*
-		     *  It is meant to be empty, and/or endAnchor
-		     *  has seen it and recognized it as empty.
-		     */
-		    new_pos = (a0 <= s) ? s - TailTrim :
-			s - TailTrim + 1;
-		    if (prev_a && new_pos + d < prev_a->start) {
-			if (prev_a->start <= S - TailTrim + 1 + SpecialAttrChars)
-			    new_pos = prev_a->start - d;
-			else
-			    new_pos = s - TailTrim + 1 + SpecialAttrChars;
-		    }
-		} else if (old_e &&
-		     a0 >= s - TailTrim && a0 <= s + HeadTrim &&
-		     a1 <= s + HeadTrim) {
-		    CTRACE_SPLITLINE((tfp, "anchor %d case %d: ", a->number,2));
-		    /*
-		     *  endAnchor has seen it, it is effectively empty
-		     *  after our trimming, but endAnchor has for some
-		     *  reason not recognized this.  In other words,
-		     *  this should not happen.
-		     *  Should we not adjust the extent and let it "leak"
-		     *  into the new line?
-		     */
-		    new_pos = (a0 < s) ? s - TailTrim :
-			s - TailTrim + 1;
-		    if (prev_a && new_pos + d < prev_a->start) {
-			if (prev_a->start <= S - TailTrim + 1 + SpecialAttrChars)
-			    new_pos = prev_a->start - d;
-			else
-			    new_pos = s - TailTrim + 1 + SpecialAttrChars;
-		    }
-		    new_ext = 0;
-		} else if (a0 >= s + HeadTrim) {
-		    CTRACE_SPLITLINE((tfp, "anchor %d case %d: ", a->number,3));
-		    /*
-		     *  Completely after split, just shift.
-		     */
-		    new_pos = a0 - TailTrim + 1 - HeadTrim + SpecialAttrChars;
-		} else if (!old_e) {
-		    CTRACE_SPLITLINE((tfp, "anchor %d case %d: ", a->number,4));
-		    /*
-		     *  No extent set, we may still be growing it.
-		     */
-		    new_pos = s - TailTrim + 1 + SpecialAttrChars;
-
-		    /*
-		     *  Ok, it's neither empty, nor is it completely
-		     *  before or after the split region (including trimmed
-		     *  stuff).  So the anchor is either being split in
-		     *  the middle, with stuff remaining on both lines,
-		     *  or something is being nibbled off, either at
-		     *  the end (anchor stays on previous line) or at
-		     *  the beginning (anchor is on new line).  Let's
-		     *  try in that order.
-		     */
-		} else if (a0 < s - TailTrim &&
-			   a1 > s + HeadTrim) {
-		    CTRACE_SPLITLINE((tfp, "anchor %d case %d: ", a->number,5));
-		    new_pos = a0;
-		    new_ext = old_e - TailTrim - HeadTrim + SpecialAttrChars;
-		} else if (a0 < s - TailTrim) {
-		    CTRACE_SPLITLINE((tfp, "anchor %d case %d: ", a->number,6));
-		    new_pos = a0;
-		    new_ext = s - TailTrim - a0;
-		} else if (a1 > s + HeadTrim) {
-		    CTRACE_SPLITLINE((tfp, "anchor %d case %d: ", a->number,7));
-		    new_pos = s - TailTrim + 1 + SpecialAttrChars;
-		    new_ext = old_e - (s + HeadTrim - a0);
-		} else {
-		    CTRACE((tfp, "split_line anchor %d line %d: This should not happen!\n",
-			   a->number, a->line_num));
-		    CTRACE((tfp,
-			   "anchor %d: (T,H,S)=(%d,%d,%d); (line,start,pos,ext):(%d,%d,%d,%d)!\n",
-			   a->number,
-			   TailTrim,HeadTrim,SpecialAttrChars,
-			   a->line_num,a->start,a->line_pos,a->extent));
+		} else if (start < s && !len
+			   && (!n || (a->show_anchor && !moved))) {
+		    CTRACE_SPLITLINE((tfp, "anchor %d: no relocation, empty-finished",
+				      n));
+		    a->line_pos = s_pre; /* Leave at the end of line */
 		    continue;
 		}
-		CTRACE_SPLITLINE((tfp, "(T,H,S)=(%d,%d,%d); (line,start,pos,ext):(%d,%d,%d,%d",
-		       TailTrim,HeadTrim,SpecialAttrChars,
-		       a->line_num,a->start,a->line_pos,a->extent));
-		if (new_pos != a->line_pos)
-		    a->start = new_pos + d;
-		if (new_pos > s - TailTrim) {
-		    new_pos -= s - TailTrim + 1;
-		    a->line_num = text->Lines;
-		}
-		a->line_pos = new_pos;
-		a->extent = new_ext;
 
-		CTRACE_SPLITLINE((tfp, "))->(%d,%d,%d,%d)\n",
-		       a->line_num,a->start,a->line_pos,a->extent));
-	    }
+		/* The rest we relocate */
+		moved = 1;
+		a->line_num++;
+		CTRACE_SPLITLINE((tfp, "anchor %d: (T,H,S)=(%d,%d,%d); (line,pos,ext):(%d,%d,%d), ",
+		       n, TailTrim,HeadTrim,SpecialAttrChars,
+		       a->line_num,a->line_pos,a->extent));
+		if (end < s_post) {	/* Move the end to s_post */
+		    CTRACE_SPLITLINE((tfp, "Move end +%d, ", s_post - end));
+		    len += s_post - end;
+		}
+		if (start < s_post) {	/* Move the start to s_post */
+		    CTRACE_SPLITLINE((tfp, "Move start +%d, ", s_post - start));
+		    len -= s_post - start;
+		    start = s_post;
+		}
+		a->line_pos = start - s_post + SpecialAttrChars;
+		a->extent = len;
+
+		CTRACE_SPLITLINE((tfp, "->(%d,%d,%d)\n",
+		       a->line_num,a->line_pos,a->extent));
+	    } else if (a->line_num > CurLine)
+		break;
 	}
     }
 
@@ -3056,10 +3065,11 @@ PRIVATE void split_line ARGS2(
 
     if (this_line_was_split
      && spare
+     && !text->stbl	/* We don't inform TRST on the cell width change yet */
      && justify_max_void_percent > 0
      && justify_max_void_percent <= 100
      && justify_max_void_percent >= ((100*spare)
-				  / ((LYcols - 1)
+				  / ((WRAP_COLS(text) - 1)
 				   - (int)style->rightIndent
 				   - indent
 				   + ctrl_chars_on_previous_line))) {
@@ -3068,10 +3078,8 @@ PRIVATE void split_line ARGS2(
 	ht_run_info* r = ht_runs;
 	char c;
 	int total_byte_len = 0, total_cell_len = 0;
-	int d_, r_, i, j, cur_byte_num, *m;
+	int d_, r_;
 	HTLine * jline;
-	char *jdata;
-	char *prevdata = previous->data;
 
 	ht_num_runs = 0;
 	r->byte_len = r->cell_len = 0;
@@ -3094,7 +3102,7 @@ PRIVATE void split_line ARGS2(
 		*jp = ' ';	/* substitute it */
 		continue;
 	    }
-	    if (text->T.output_utf8 && !isascii((unsigned char)c)) {
+	    if (text->T.output_utf8 && !isascii(UCH(c))) {
 		int utf_extra = 0;
 		if ((c & 0xe0) == 0xc0) {
 		    utf_extra = 1;
@@ -3119,186 +3127,46 @@ PRIVATE void split_line ARGS2(
 	++ht_num_runs;
 
 	if (ht_num_runs != 1) {
+	    int *oldpos = (int*)malloc(sizeof(int)*2*(ht_num_runs - 1));
+	    int *newpos = oldpos + ht_num_runs - 1;
+	    int i = 1;
 
-	    jline = allocHTLine(previous->size+spare);
-	    if (jline == NULL)
-		outofmem(__FILE__, "split_line_1");
-#if defined(USE_COLOR_STYLE) && !defined(OLD_HTSTYLECHANGE)
-	    jline->styles = previous->styles;
-#endif
-	    jdata = jline->data;
+	    if (oldpos == NULL)
+		outofmem(__FILE__, "split_line_3");
 
-	    /*
-	     * we have to spread num_spaces among (ht_num_runs-1) runs - we
-	     * fill justified_text_map in order to apply changes caused by
-	     * justification to anchor data and color styles, and justify
-	     * original string on the fly
-	     */
 	    d_ = spare/(ht_num_runs-1);
 	    r_ = spare % (ht_num_runs-1);
 
-	    m = justified_text_map;
-	    for(jp = previous->data, i = 0; i < justify_start_position; ++i) {
-		*m++ = i;
-		*jdata++ = ( *prevdata == HT_NON_BREAK_SPACE ? ' ' : *prevdata);
-		++prevdata;
+	    /* The first run is not moved, proceed to the second one */
+	    oldpos[0] = justify_start_position + ht_runs[0].cell_len + 1;
+	    newpos[0] = oldpos[0] + ( d_ + ( r_--  > 0 ) );
+	    while (i < ht_num_runs - 1) {
+		int delta = ht_runs[i].cell_len + 1;
+
+		oldpos[i] = oldpos[i-1] + delta;
+		newpos[i] = newpos[i-1] + delta + ( d_ + ( r_--  > 0 ) );
+		i++;
 	    }
-
-	    cur_byte_num = i;
-
-	    for (r = ht_runs; r < ht_runs + ht_num_runs; ++r ) {
-
-		/* copy the reference to run content */
-		for(i=0; i < r->byte_len;  ++i) {
-		    *m++ = cur_byte_num++;
-		    *jdata++ = *prevdata++;
-		}
-		if ( r - ht_runs  == ht_num_runs - 1 ) { /* nop on last run */
-		    *jdata++ = '\0';
-		    break;
-		}
-
-		/* the space that was in original string */
-		*m++ = cur_byte_num++;
-		*jdata++ = ' ';
-		prevdata++;/* skip that space */
-
-		cur_byte_num += j=( d_ + ( r_--  > 0 ) );
-		for (i=0; i<j; ++i)
-		    *jdata++ = ' ';
-	    }
-	    *m++ = previous->size + spare; /*map the end */
-
-	    text->chars += spare;
-
-	    jline->offset = previous->offset;
-	    jline->size = previous->size + spare;
-	    jline->split_after = previous->split_after;
-	    jline->bullet = previous->bullet;
-	    jline->expansion_line = previous->expansion_line;
-
-	    jline->prev = previous->prev;
-	    jline->next = previous->next;
+	    jline = insert_blanks_in_line(previous, CurLine, text,
+					  last_anchor_of_previous_line,
+					  ht_num_runs - 1, oldpos, newpos);
+	    free((char*)oldpos);
+	    if (jline == NULL)
+		outofmem(__FILE__, "split_line_4");
 	    previous->next->prev = jline;
 	    previous->prev->next = jline;
 
-#if defined(USE_COLOR_STYLE)
-	    jline->numstyles = previous->numstyles;
-
-	    /* now copy and fix colorstyles */
-	    for(i = 0; i < jline->numstyles; ++i) {
-		int hpos = previous->styles[i].horizpos;
-
-		jline->styles[i].style = previous->styles[i].style;
-		jline->styles[i].direction = previous->styles[i].direction;
-#ifdef OLD_HTSTYLECHANGE
-		jline->styles[i].previous = previous->styles[i].previous;
-#endif
-		/*there are stylechanges with hpos > line length */
-		jline->styles[i].horizpos = (hpos > previous->size)
-			? previous->size + spare
-			: justified_text_map[hpos];
-	    }
-#endif
-	    /* we have to fix anchors*/
-	    {
-		/*a2 is the last anchor on the line preceding 'previous'*/
-		TextAnchor* a2 = last_anchor_of_previous_line;
-
-		if (!a2)
-		    a2 = text->first_anchor;
-		else if (a2 == text->last_anchor)
-		    a2 = NULL;
-		else
-		    a2 = a2->next; /*1st anchor on line we justify */
-
-		if (a2) {
-		    for (; a2 /*&& a2->line_num == text->Lines-1*/;
-			    last_anchor_of_previous_line = a2, a2 = a2->next) {
-			int oldpos = a2->line_pos,
-			    newpos = justified_text_map[a2->line_pos],
-			    shift = newpos - oldpos;
-
-			if (a2->line_num == text->Lines)
-			    break;/*new line not yet completed*/
-
-			if (a2->line_num == text->Lines-1) {
-			    a2->line_pos = newpos;
-			    a2->start += shift;
-
-			    if (!a2->extent && a2->number &&
-				(a2->link_type & HYPERTEXT_ANCHOR) &&
-				!a2->show_anchor &&
-				a2->number == text->last_anchor_number)
-				/* seems endAnchor wasn't called for it */ {
-				a2 = a2->next; /*don't allow .start to be incremented
-				    by 'spare' once more */
-				break;
-			    }
-
-			    if ( a2->extent + oldpos > (int) previous->size)
-				/*anchor content wrapped to new line */
-				a2->extent += (jline->size - newpos) -
-				    (previous->size - oldpos);
-			    else
-				a2->extent = justified_text_map[oldpos+a2->extent]
-				    - newpos;
-
-			} else {
-			    /* This is the anchor that was started on previous
-			     * line.  Its .line_pos and .start were updated.
-			     * So we have to update only extent.  If anchor
-			     * text is longer than two lines, we don't bother
-			     * setting it to correct value.
-			     */
-			    if (a2->line_num != text->Lines-2)
-				continue; /* don't bother */
-			    if (!a2->extent && a2->number &&
-				(a2->link_type & HYPERTEXT_ANCHOR) &&
-				!a2->show_anchor &&
-				a2->number == text->last_anchor_number)
-				/* seems endAnchor wasn't called for it */
-				continue;
-			    /* anchor is started at text->Lines-2, and there
-			     * are two cases - either it was wrapped to newline
-			     * or it ended in previous text->Lines-1.
-			     */
-			    {
-				int p2sz = previous->prev->size,
-				    p1sz = previous->size,
-				    onp2sz = p2sz - a2->line_pos,
-				    onp1sz = a2->extent - 1 - onp2sz;
-
-				if (onp1sz >= p1sz)
-				    /* this anchor will be skipped at the next
-				     * split_line here, since its line_num will
-				     * be text->Lines-3
-				     */
-				    a2->extent += spare;
-				else if (onp2sz < a2->extent)
-				    a2->extent += justified_text_map[onp1sz-1]
-					 - onp1sz + 1;
-			    }
-
-			}
-
-		    }
-
-		    /* iterate on anchors in the last line */
-		    for (; a2; a2 = a2->next)
-			a2->start += spare;
-		}
-	    }
-
 	    FREE(previous);
 
-	} else { /* (ht_num_runs==1) */
+	    previous = jline;
+	}
+	{ /* (ht_num_runs==1) */
 	    /* keep maintaining 'last_anchor_of_previous_line' */
 	    TextAnchor* a2 = last_anchor_of_previous_line;
 	    if (justify_start_position) {
-		char* p = previous->data;
-		for( ; p < previous->data + justify_start_position; ++p)
-		    *p = (*p == HT_NON_BREAK_SPACE ? ' ' : *p);
+		char* p2 = previous->data;
+		for( ; p2 < previous->data + justify_start_position; ++p2)
+		    *p2 = (*p2 == HT_NON_BREAK_SPACE ? ' ' : *p2);
 	    }
 
 	    if (!a2)
@@ -3314,23 +3182,23 @@ PRIVATE void split_line ARGS2(
 	}
     } else {
 	if (REALLY_CAN_JUSTIFY(text) ) {
-	    char* p;
+	    char* p2;
 
 	    /* it was permitted to justify line, but this function was called
 	     * to end paragraph - we must substitute HT_NON_BREAK_SPACEs with
 	     * spaces in previous line
 	     */
-	    if (line->size) {
-		  CTRACE((tfp,"justification: shouldn't happen - new line is not empty!\n"));
+	    if (line->size && !text->stbl) {
+		  CTRACE((tfp,"BUG: justification: shouldn't happen - new line is not empty!\n"));
 	    }
 
-	    for (p=previous->data;*p;++p)
-		if (*p == HT_NON_BREAK_SPACE)
-		    *p = ' ';
+	    for (p2=previous->data;*p2;++p2)
+		if (*p2 == HT_NON_BREAK_SPACE)
+		    *p2 = ' ';
 	} else if (have_raw_nbsps) {
 	    /* this is very rare case, that can happen in forms placed in
 	       table cells*/
-	    int i;
+	    unsigned i;
 
 	    for (i = 0; i< previous->size; ++i)
 		if (previous->data[i] == HT_NON_BREAK_SPACE)
@@ -3351,6 +3219,7 @@ PRIVATE void split_line ARGS2(
     this_line_was_split = FALSE;
     have_raw_nbsps = FALSE;
 #endif /* EXP_JUSTIFY_ELTS */
+    return;
 } /* split_line */
 
 
@@ -3365,6 +3234,13 @@ PRIVATE void blank_lines ARGS2(
 
     if (!HText_LastLineSize(text, IgnoreSpaces)) { /* No text on current line */
 	HTLine * line = text->last_line->prev;
+
+#ifdef USE_COLOR_STYLE
+	/* Style-change petty requests at the start of the document: */
+	if (line == text->last_line && newlines == 1)
+	    return;			/* Do not add a blank line at start */
+#endif
+
 	while ((line != text->last_line) &&
 	       (HText_TrueLineSize(line, text, IgnoreSpaces) == 0)) {
 	    if (newlines == 0)
@@ -3424,7 +3300,7 @@ PUBLIC void HText_setStyle ARGS2(
 */
 PUBLIC void HText_appendCharacter ARGS2(
 	HText *,	text,
-	char,		ch)
+	int,		ch)
 {
     HTLine * line;
     HTStyle * style;
@@ -3528,7 +3404,7 @@ PUBLIC void HText_appendCharacter ARGS2(
 	unsigned char c;
 	enum _detected_kcode save_d_kcode;
 
-	c = ch;
+	c = UCH(ch);
 	save_d_kcode = text->detected_kcode;
 	switch (text->SJIS_status) {
 	case SJIS_state_has_bad_code:
@@ -3622,8 +3498,9 @@ PUBLIC void HText_appendCharacter ARGS2(
     /*
      *  Make sure we don't hang on escape sequences.
      */
-    if (ch == CH_ESC && HTCJK == NOCJK)			/* decimal 27  S/390 -- gil -- 1504 */
+    if (ch == CH_ESC && HTCJK == NOCJK) {		/* decimal 27  S/390 -- gil -- 1504 */
 	return;
+    }
 #ifndef USE_SLANG
     /*
      *  Block 8-bit chars not allowed by the current display character
@@ -3634,13 +3511,13 @@ PUBLIC void HText_appendCharacter ARGS2(
      *  processing stage anyway. - kw
      */
 #ifndef   EBCDIC  /* S/390 -- gil -- 1514 */
-    if ((unsigned char)ch >= 128 && HTCJK == NOCJK &&
+    if (UCH(ch) >= 128 && HTCJK == NOCJK &&
 	!text->T.transp && !text->T.output_utf8 &&
-	(unsigned char)ch < LYlowest_eightbit[current_char_set])
+	UCH(ch) < LYlowest_eightbit[current_char_set])
 	return;
 #endif /* EBCDIC */
 #endif /* !USE_SLANG */
-    if ((unsigned char)ch == 155 && HTCJK == NOCJK) {	/* octal 233 */
+    if (UCH(ch) == 155 && HTCJK == NOCJK) {	/* octal 233 */
 	if (!HTPassHighCtrlRaw &&
 	    !text->T.transp && !text->T.output_utf8 &&
 	    (155 < LYlowest_eightbit[current_char_set])) {
@@ -3747,7 +3624,7 @@ PUBLIC void HText_appendCharacter ARGS2(
 			text->kcode = NOKANJI;
 		    }
 		    return;
-		} else if ((0 <= ch) && (ch < 32)) {
+		} else if (UCH(ch) < 32) {
 		    text->state = S_text;
 		    text->kanji_buf = '\0';
 		    if (HTCJK == JAPANESE) {
@@ -3770,19 +3647,7 @@ PUBLIC void HText_appendCharacter ARGS2(
 		} else {
 		    text->kanji_buf = '\216';
 		    ch |= 0200;
-#if 0 /* This conversion is done after. --TH */
-#ifdef SH_EX
-		    /**** Add Next Line by patakuti ****/
-		    text->permissible_split = (int)text->last_line->size;
-		    {
-			unsigned char hi, low;
-			JISx0201TO0208_EUC(0x8e, ch, &hi, &low);
-			text->kanji_buf = hi;
-			ch = low;
 		}
-#endif
-#endif
-	}
 		break;
 	} /* end switch */
 
@@ -3808,11 +3673,11 @@ PUBLIC void HText_appendCharacter ARGS2(
 		     )
 #endif
 		    ) &&
-		    ((unsigned char)ch >= 0xA1) &&
-		    ((unsigned char)ch <= 0xDF)) {
+		    (UCH(ch) >= 0xA1) &&
+		    (UCH(ch) <= 0xDF)) {
 #ifdef CONV_JISX0201KANA_JISX0208KANA
-		    unsigned char c = (unsigned char)ch;
-		    unsigned char kb = (unsigned char)text->kanji_buf;
+		    unsigned char c = UCH(ch);
+		    unsigned char kb = UCH(text->kanji_buf);
 		    JISx0201TO0208_SJIS(c,
 					(unsigned char *)&kb,
 					(unsigned char *)&c);
@@ -3848,7 +3713,8 @@ PUBLIC void HText_appendCharacter ARGS2(
 
     if (IsSpecialAttrChar(ch) && ch != LY_SOFT_NEWLINE) {
 #if !defined(USE_COLOR_STYLE) || !defined(NO_DUMP_WITH_BACKSPACES)
-	if (line->size >= (MAX_LINE-1)) return;
+	if (line->size >= (MAX_LINE-1))
+	    return;
 #if defined(USE_COLOR_STYLE) && !defined(NO_DUMP_WITH_BACKSPACES)
 	if (with_backspaces && HTCJK==NOCJK && !text->T.output_utf8) {
 #endif
@@ -3890,11 +3756,11 @@ PUBLIC void HText_appendCharacter ARGS2(
 		return;
 
 	    for (i = (text->permissible_split + 1); line->data[i]; i++) {
-		if (!IsSpecialAttrChar((unsigned char)line->data[i]) &&
-		    !isspace((unsigned char)line->data[i]) &&
-		    (unsigned char)line->data[i] != '-' &&
-		    (unsigned char)line->data[i] != HT_NON_BREAK_SPACE &&
-		    (unsigned char)line->data[i] != HT_EN_SPACE) {
+		if (!IsSpecialAttrChar(UCH(line->data[i])) &&
+		    !isspace(UCH(line->data[i])) &&
+		    UCH(line->data[i]) != '-' &&
+		    UCH(line->data[i]) != HT_NON_BREAK_SPACE &&
+		    UCH(line->data[i]) != HT_EN_SPACE) {
 		    break;
 		}
 	    }
@@ -3949,22 +3815,13 @@ PUBLIC void HText_appendCharacter ARGS2(
 		    + utfxtra_on_this_line == 0)
 		    HText_appendCharacter (text, LY_SOFT_NEWLINE);
 	    }
-	    line->data[line->size++] = ch;
+	    line->data[line->size++] = (char) ch;
 	    line->data[line->size] = '\0';
 	    utfxtra_on_this_line++;
 	    ctrl_chars_on_this_line++;
 	    return;
 	} else if (ch & 0x80) {	/* a first char of UTF-8 sequence - kw */
-	    if ((line->size > (MAX_LINE-7))
-#if 0	/* the equivalent check should already happen below */
-		|| (indent + (int)(line->offset + line->size) +
-		    utfxtra_on_this_line - ctrl_chars_on_this_line +
-		    ((line->size > 0) &&
-		     (int)(line->data[line->size-1] ==
-				LY_SOFT_HYPHEN ?
-					     1 : 0)) >= (LYcols_cu))
-#endif /* 0 */
-		) {
+	    if ((line->size > (MAX_LINE-7))) {
 		if (!text->permissible_split || text->source) {
 		    text->permissible_split = line->size;
 		    while (text->permissible_split > 0 &&
@@ -4084,7 +3941,7 @@ PUBLIC void HText_appendCharacter ARGS2(
 	else
 	    target_cu = target + (here_cu - here);
 
-	if (target > (LYcols-1) - (int)style->rightIndent &&
+	if (target > (WRAP_COLS(text)-1) - (int)style->rightIndent &&
 	    HTOutputFormat != WWW_SOURCE) {
 	    new_line(text);
 	} else {
@@ -4092,8 +3949,8 @@ PUBLIC void HText_appendCharacter ARGS2(
 	     *  Can split here. - FM
 	     */
 	    text->permissible_split = line->size;
-	    if (target_cu > (LYcols-1))
-		target -= target_cu - (LYcols-1);
+	    if (target_cu > (WRAP_COLS(text)-1))
+		target -= target_cu - (WRAP_COLS(text)-1);
 	    if (line->size == 0) {
 		line->offset = line->offset + target - here;
 	    } else {
@@ -4115,7 +3972,7 @@ check_WrapSource:
 	 */
 	int target = (int)(line->offset + line->size) - ctrl_chars_on_this_line;
 	int target_cu = target + utfxtra_on_this_line;
-	if (target >= (LYcols-1) - style->rightIndent -
+	if (target >= (WRAP_COLS(text)-1) - style->rightIndent -
 	    (((HTCJK != NOCJK) && text->kanji_buf) ? 1 : 0) ||
 	    (text->T.output_utf8 &&
 	     target_cu + UTF_XLEN(ch) >= (LYcols_cu-1))
@@ -4154,7 +4011,7 @@ check_WrapSource:
      */
     if (text->IgnoreExcess &&
 	(((indent + (int)line->offset + (int)line->size) +
-	  (int)style->rightIndent - ctrl_chars_on_this_line) >= (LYcols-1) ||
+	  (int)style->rightIndent - ctrl_chars_on_this_line) >= (WRAP_COLS(text)-1) ||
 	 ((indent + (int)line->offset + (int)line->size) +
 	  utfxtra_on_this_line - ctrl_chars_on_this_line) >= (LYcols_cu-1)))
 	return;
@@ -4168,7 +4025,7 @@ check_WrapSource:
 	 ((line->size > 0) &&
 	  (int)(line->data[line->size-1] ==
 				LY_SOFT_HYPHEN ?
-					     1 : 0))) >= (LYcols - 1) ||
+					     1 : 0))) >= (WRAP_COLS(text) - 1) ||
 	(text->T.output_utf8 &&
 	 (((indent + (int)line->offset + (int)line->size) +
 	   utfxtra_on_this_line - ctrl_chars_on_this_line +
@@ -4194,8 +4051,9 @@ check_WrapSource:
 		  *  If we don't wrap here we might get a segmentation fault.
 		  *  but let's see what happens
 		  */
-		if ((int)line->size >= (int)(MAX_LINE-1))
+		if ((int)line->size >= (int)(MAX_LINE-1)) {
 		   new_line(text);  /* try not to linewrap */
+		}
 	} else {
 		/*
 		 *  For normal stuff like pre let's go ahead and
@@ -4206,13 +4064,14 @@ check_WrapSource:
 		     && dont_wrap_pre) {
 		    if ((int)line->size >= (int)(MAX_LINE-1))
 			new_line(text);
-		} else
+		} else {
 		    new_line(text);
+		}
 
 	}
     } else if ((int)line->size >= (int)(MAX_LINE-1)) {
 	/*
-	 *  Never overrun memory if LYcols is set to a large value - KW
+	 *  Never overrun memory if DISPLAY_COLS is set to a large value - KW
 	 */
 	new_line(text);
     }
@@ -4246,8 +4105,8 @@ check_WrapSource:
 	line = text->last_line; /* May have changed */
 
 	if (HTCJK != NOCJK && text->kanji_buf) {
-	    hi = (unsigned char)text->kanji_buf;
-	    lo = (unsigned char)ch;
+	    hi = UCH(text->kanji_buf);
+	    lo = UCH(ch);
 
 	    if (HTCJK == JAPANESE) {
 		if (text->kcode != JIS) {
@@ -4277,19 +4136,6 @@ check_WrapSource:
 		    else
 			text->kcode = NOKANJI;
 		}
-
-#if 0 /* This judgement routine is replaced by above one. -- TH */
-		if (text->kcode == NOKANJI)
-		{
-		    if (IS_SJIS(hi, lo, text->in_sjis) && IS_EUC(hi, lo)) {
-			text->kcode = NOKANJI;
-		    } else if (IS_SJIS(hi, lo, text->in_sjis)) {
-			text->kcode = SJIS;
-		    } else if (IS_EUC(hi, lo)) {
-			text->kcode = EUC;
-		    }
-		}
-#endif
 
 		switch (kanji_code) {
 		case EUC:
@@ -4342,46 +4188,10 @@ check_WrapSource:
 	    }
 	    text->kanji_buf = 0;
 	}
-#if 0
-	if (HTCJK != NOCJK && text->kanji_buf) {
-	    hi = (unsigned char)text->kanji_buf, lo = (unsigned char)ch;
-	    if (HTCJK == JAPANESE && text->kcode == NOKANJI) {
-		if (IS_SJIS(hi, lo, text->in_sjis) && IS_EUC(hi, lo)) {
-		    text->kcode = NOKANJI;
-		} else if (IS_SJIS(hi, lo, text->in_sjis)) {
-		    text->kcode = SJIS;
-		} else if (IS_EUC(hi, lo)) {
-		    text->kcode = EUC;
-		}
-	    }
-	    if (HTCJK == JAPANESE &&
-		(kanji_code == EUC) && (text->kcode == SJIS)) {
-		SJIS_TO_EUC1(hi, lo, tmp);
-		line->data[line->size++] = tmp[0];
-		line->data[line->size++] = tmp[1];
-	    } else if (HTCJK == JAPANESE &&
-		       (kanji_code == EUC) && (text->kcode == EUC)) {
-#ifdef CONV_JISX0201KANA_JISX0208KANA
-		JISx0201TO0208_EUC(hi, lo, &hi, &lo);
-#endif
-		line->data[line->size++] = hi;
-		line->data[line->size++] = lo;
-	    } else if (HTCJK == JAPANESE &&
-		       (kanji_code == SJIS) && (text->kcode == EUC)) {
-		EUC_TO_SJIS1(hi, lo, tmp);
-		line->data[line->size++] = tmp[0];
-		line->data[line->size++] = tmp[1];
-	    } else {
-		line->data[line->size++] = hi;
-		line->data[line->size++] = lo;
-	    }
-	    text->kanji_buf = 0;
-	}
-#endif
 #ifndef CONV_JISX0201KANA_JISX0208KANA
-	else if ((HTCJK == JAPANESE) && IS_SJIS_X0201KANA((unsigned char)(ch)) &&
+	else if ((HTCJK == JAPANESE) && IS_SJIS_X0201KANA(UCH((ch))) &&
 		 (kanji_code == EUC)) {
-	    line->data[line->size++] = (unsigned char) 0x8e;
+	    line->data[line->size++] = UCH(0x8e);
 	    line->data[line->size++] = ch;
 	}
 #endif
@@ -4411,6 +4221,7 @@ check_WrapSource:
 	    ctrl_chars_on_this_line++;
 	}
     }
+    return;
 }
 
 #ifdef USE_COLOR_STYLE
@@ -4427,9 +4238,9 @@ PUBLIC void _internal_HTC ARGS3(HText *,text, int,style, int,dir)
 	line = text->last_line;
 
 	if (line->numstyles > 0 && dir == 0 &&
-	    line->styles[line->numstyles].direction &&
-	    line->styles[line->numstyles].style == style &&
-	    line->styles[line->numstyles].horizpos
+	    line->styles[line->numstyles-1].direction &&
+	    line->styles[line->numstyles-1].style == style &&
+	    (int) line->styles[line->numstyles-1].horizpos
 	    == (int)line->size - ctrl_chars_on_this_line) {
 	    /*
 	     *  If this is an OFF change directly preceded by an
@@ -4444,7 +4255,7 @@ PUBLIC void _internal_HTC ARGS3(HText *,text, int,style, int,dir)
 	     *  And in UTF-8 display mode all non-initial bytes are
 	     *  counted as ctrl_chars. - kw
 	     */
-	    if (line->styles[line->numstyles].horizpos >= ctrl_chars_on_this_line)
+	    if ((int) line->styles[line->numstyles].horizpos >= ctrl_chars_on_this_line)
 		line->styles[line->numstyles].horizpos -= ctrl_chars_on_this_line;
 	    line->styles[line->numstyles].style     = style;
 	    line->styles[line->numstyles].direction = dir;
@@ -4499,138 +4310,6 @@ PUBLIC void HText_setIgnoreExcess ARGS2(
 */
 
 /*
- *  Given a line and two int arrays of old/now position, this function
- *  does the actual work of creating a new line where spaces have been
- *  inserted in appropriate places - so that characters at/after the old
- *  position end up at/after the new position, for each pair, if possible.
- *  Some necessary changes for anchors starting on this line are also done
- *  here if needed.
- *  Returns a newly allocated HTLine* if changes were made
- *    (caller has to free the old one).
- *  Returns NULL if no changes needed.
- * - kw
- */
-PRIVATE HTLine * insert_blanks_in_line ARGS6(
-    HTLine *,		line,
-    int,		line_number,
-    HText *,		text,
-    int,		ninserts,
-    int *,		oldpos,
-    int *,		newpos)
-{
-    int i;
-    int ioldb, inewb;		/* count bytes */
-    int ioldc = 0, inewc = 0;	/* count visible characters (positions) */
-    int ip = 0;			/* count oldpos,newpos insertion pairs */
-    int acurshift, ashift = 0;	/* for shifting of anchors in this line */
-#if defined(USE_COLOR_STYLE)
-    int stcurshift, stshift = 0; /* for shifting of styles in this line */
-    int istyle;
-#endif
-    int added_chars = 0;
-    HTLine * mod_line;
-    char * newdata;
-    TextAnchor * a;
-    if (!(line && line->size && ninserts))
-	return NULL;
-    for (i = 0; i < ninserts; i++)
-	if (newpos[i] > oldpos[i] &&
-	    (newpos[i] - oldpos[i]) > added_chars)
-	    added_chars = newpos[i] - oldpos[i];
-    if (line->size + added_chars > MAX_LINE - 2)
-	return NULL;
-    if (line == text->last_line)
-	mod_line = allocHTLine(MAX_LINE);
-    else
-	mod_line = allocHTLine(line->size + added_chars);
-    if (!mod_line)
-	return NULL;
-    memcpy(mod_line, line, LINE_SIZE(1));
-    newdata = mod_line->data;
-    for (ioldb = 0, inewb = 0; ioldb < (int)line->size; ioldb++) {
-	if ((line->data[ioldb] == LY_BOLD_START_CHAR ||
-	     line->data[ioldb] == LY_UNDERLINE_START_CHAR ||
-	     !IsSpecialAttrChar(line->data[ioldb])) &&
-	    (!(text && text->T.output_utf8) ||
-	     (unsigned char)line->data[ioldb] < 128 ||
-	     ((unsigned char)(line->data[ioldb] & 0xc0) == 0xc0))) {
-	    /*
-	     *  A new displayable character starts here.  Time to check
-	     *  whether this is a position to insert spaces.
-	     */
-	    while (ip < ninserts && oldpos[ip] <= ioldc) {
-		if (inewc < newpos[ip]) {
-		    /*
-		     *  Yup, spaces to insert.  We also have to update
-		     *  anchor positions for anchors that start on the
-		     *  same line, this is a pain.  Let's do it first.
-		     *  Note: we rely on a->line_pos counting bytes, not
-		     *  characters.  That's one reason why HText_trimHightext
-		     *  has to be prevented from acting on these anchors in
-		     *  partial display mode before we get a chance to
-		     *  deal with them here.
-		     */
-		    acurshift = 0;
-		    for (a = text->last_anchor_before_stbl ?
-			     text->last_anchor_before_stbl->next :
-			     text->first_anchor;
-			 a && a->line_num <= line_number; a = a->next) {
-			if (a->line_num == line_number)
-			    if (a->line_pos - ashift >= ioldb) {
-				acurshift = newpos[ip] - inewc;
-				a->line_pos += acurshift;
-				a->start += acurshift;
-			    }
-		    }
-		    ashift += acurshift;
-
-		    /*  doing something for color styles here.
-		     *  we rely on horizpos counting characters
-		     *  (display positions), not bytes. */
-#if defined(USE_COLOR_STYLE)
-#define NStyle mod_line->styles[istyle]
-		    stcurshift = 0;
-		    for (istyle = 0; istyle < line->numstyles;
-			 istyle++) {
-			if (NStyle.horizpos - stshift >= ioldc) {
-			    stcurshift = newpos[ip] - inewc;
-			    NStyle.horizpos += stcurshift;
-			}
-		    }
-		    stshift += stcurshift;
-#endif
-		    /*
-		     *  Now insert the spaces.
-		     */
-		    for (; inewc < newpos[ip]; inewc++) {
-			newdata[inewb++] = ' ';
-		    }
-		}
-		ip++;	/* done with this oldpos[ip],newpos[ip] pair. */
-	    }
-	    /*
-	     *  Copy character data over, advance position pointers.
-	     */
-	    newdata[inewb++] = line->data[ioldb];
-	    if (!(line->data[ioldb] == LY_BOLD_START_CHAR ||
-		  line->data[ioldb] == LY_UNDERLINE_START_CHAR)) {
-		ioldc++;
-		inewc++;
-	    }
-	} else {
-	    /*
-	     *  Just copy special attribute chars and utf-8 additional
-	     *  bytes over, don't advance position pointers.
-	     */
-	    newdata[inewb++] = line->data[ioldb];
-	}
-    }
-    newdata[inewb] = '\0';
-    mod_line->size = inewb;
-    return mod_line;
-}
-
-/*
  *  HText_insertBlanksInStblLines fixes up table lines when simple table
  *  processing is closed, by calling insert_blanks_in_line for lines
  *  that need fixup.  Also recalculates alignment for those lines,
@@ -4648,8 +4327,10 @@ PRIVATE int HText_insertBlanksInStblLines ARGS2(
     int *	newpos;
     int		ninserts, lineno;
     int		first_lineno, last_lineno, first_lineno_pass2;
+#ifdef EXP_NESTED_TABLES
+    int		last_nonempty = -1;
+#endif
     int		added_chars_before = 0;
-    TextAnchor * a;
     int lines_changed = 0;
     int max_width = 0, indent, spare, table_offset;
     HTStyle *style;
@@ -4667,7 +4348,7 @@ PRIVATE int HText_insertBlanksInStblLines ARGS2(
 	return -1;
     else
 	newpos = oldpos + ncols;
-    for (line = me->last_line->next; i < lineno; line = line->next, i++) {
+    for (line = FirstHTLine(me); i < lineno; line = line->next, i++) {
 	if (!line) {
 	    free(oldpos);
 	    return -1;
@@ -4675,14 +4356,6 @@ PRIVATE int HText_insertBlanksInStblLines ARGS2(
     }
     first_lineno_pass2 = last_lineno = me->Lines;
     for (; line && lineno <= last_lineno; line = line->next, lineno++) {
-	if (added_chars_before) {
-	    for (a = me->last_anchor_before_stbl ?
-		     me->last_anchor_before_stbl->next : me->first_anchor;
-		 a && a->line_num <= lineno; a = a->next) {
-		if (a->line_num == lineno)
-		    a->start += added_chars_before;
-	    }
-	}
 	ninserts = Stbl_getFixupPositions(me->stbl, lineno, oldpos, newpos);
 	if (ninserts < 0)
 	    continue;
@@ -4691,11 +4364,10 @@ PRIVATE int HText_insertBlanksInStblLines ARGS2(
 	    first_lineno_pass2 = lineno;
 	    if (TRACE) {
 		int ip;
-		CTRACE((tfp, "line %d first to adjust  --  newpos:",
-		       lineno));
+		CTRACE((tfp, "line %d first to adjust  --  newpos:", lineno));
 		for (ip = 0; ip < ncols; ip++)
-		    fprintf(tfp, " %d", newpos[ip]);
-		fprintf(tfp, "\r\n");
+		    CTRACE((tfp, " %d", newpos[ip]));
+		CTRACE((tfp, "\n"));
 	    }
 	}
 	if (line == me->last_line) {
@@ -4717,17 +4389,23 @@ PRIVATE int HText_insertBlanksInStblLines ARGS2(
 	    int width = HText_TrueLineSize(line, me, FALSE);
 	    if (width > max_width)
 		max_width = width;
-	    CTRACE((tfp, "line %d true/max width:%d/%d oldpos: NONE\r\n",
+#ifdef EXP_NESTED_TABLES
+	    if (nested_tables) {
+		if (width && last_nonempty < lineno)
+		    last_nonempty = lineno;
+	    }
+#endif
+	    CTRACE((tfp, "line %d true/max width:%d/%d oldpos: NONE\n",
 		   lineno, width, max_width));
 	    continue;
 	}
 	mod_line = insert_blanks_in_line(line, lineno, me,
+					 me->last_anchor_before_stbl,
 					 ninserts, oldpos, newpos);
 	if (mod_line) {
 	    if (line == me->last_line) {
 		me->last_line = mod_line;
 	    } else {
-		me->chars += (mod_line->size - line->size);
 		added_chars_before += (mod_line->size - line->size);
 	    }
 	    line->prev->next = mod_line;
@@ -4756,13 +4434,19 @@ PRIVATE int HText_insertBlanksInStblLines ARGS2(
 	    int width = HText_TrueLineSize(line, me, FALSE);
 	    if (width > max_width)
 		max_width = width;
+#ifdef EXP_NESTED_TABLES
+	    if (nested_tables) {
+		if (width && last_nonempty < lineno)
+		    last_nonempty = lineno;
+	    }
+#endif
 	    if (TRACE) {
 		int ip;
 		CTRACE((tfp, "line %d true/max width:%d/%d oldpos:",
 		       lineno, width, max_width));
 		for (ip = 0; ip < ninserts; ip++)
-		    fprintf(tfp, " %d", oldpos[ip]);
-		fprintf(tfp, "\r\n");
+		    CTRACE((tfp, " %d", oldpos[ip]));
+		CTRACE((tfp, "\n"));
 	    }
 	}
     }
@@ -4791,7 +4475,7 @@ PRIVATE int HText_insertBlanksInStblLines ARGS2(
 	alignment = style->alignment;
     indent = style->leftIndent;
     /* Calculate spare character positions */
-    spare = (LYcols-1) -
+    spare = (WRAP_COLS(me)-1) -
 	(int)style->rightIndent - indent - max_width;
     if (spare < 0 && (int)style->rightIndent + spare >= 0) {
 	/*
@@ -4813,7 +4497,7 @@ PRIVATE int HText_insertBlanksInStblLines ARGS2(
 	 *  Still not enough.  Something went wrong.  Try the best we
 	 *  can do.
 	 */
-	CTRACE((tfp, "insertBlanks: resulting table too wide by %d positions!",
+	CTRACE((tfp, "BUG: insertBlanks: resulting table too wide by %d positions!\n",
 	       -spare));
 	indent = spare = 0;
     }
@@ -4855,7 +4539,13 @@ PRIVATE int HText_insertBlanksInStblLines ARGS2(
 	    line->offset = table_offset;
 	}
     }
-    CTRACE((tfp, " %d:done\r\n", lineno));
+#ifdef EXP_NESTED_TABLES
+    if (nested_tables) {
+	if (max_width)
+	    Stbl_update_enclosing(me->stbl, max_width, last_nonempty);
+    }
+#endif
+    CTRACE((tfp, " %d:done\n", lineno));
     free(oldpos);
     return lines_changed;
 }
@@ -4874,6 +4564,16 @@ PUBLIC void HText_cancelStbl ARGS1(
 	return;
     }
     CTRACE((tfp, "cancelStbl: ok, will do.\n"));
+#ifdef EXP_NESTED_TABLES
+    if (nested_tables) {
+	STable_info *stbl = me->stbl;
+	while (stbl) {
+	    STable_info *enclosing = Stbl_get_enclosing(stbl);
+	    Stbl_free(stbl);
+	    stbl = enclosing;
+	}
+    } else
+#endif
     Stbl_free(me->stbl);
     me->stbl = NULL;
 }
@@ -4884,13 +4584,32 @@ PUBLIC void HText_startStblTABLE ARGS2(
 	HText *,	me,
 	short,		alignment)
 {
+#ifdef EXP_NESTED_TABLES
+    STable_info *current = me->stbl;
+#endif
+
     if (!me)
 	return;
-    if (me->stbl)
-	HText_cancelStbl(me);	/* auto cancel previously open table */
+
+#ifdef EXP_NESTED_TABLES
+    if (nested_tables) {
+	if (current)
+	    new_line(me);
+    } else
+#endif
+    {
+	if (me->stbl)
+	    HText_cancelStbl(me);	/* auto cancel previously open table */
+    }
+
     me->stbl = Stbl_startTABLE(alignment);
     if (me->stbl) {
 	CTRACE((tfp, "startStblTABLE: started.\n"));
+#ifdef EXP_NESTED_TABLES
+	if (nested_tables) {
+	    Stbl_set_enclosing(me->stbl, current, me->last_anchor_before_stbl);
+	}
+#endif
 	me->last_anchor_before_stbl = me->last_anchor;
     } else {
 	CTRACE((tfp, "startStblTABLE: failed.\n"));
@@ -4898,14 +4617,17 @@ PUBLIC void HText_startStblTABLE ARGS2(
 }
 
 /*	Finish simple table handling
-*/
-PUBLIC void HText_endStblTABLE ARGS1(
+ *	Return TRUE if the table is nested inside another table.
+ */
+PUBLIC int HText_endStblTABLE ARGS1(
 	HText *,	me)
 {
     int ncols, lines_changed = 0;
+    STable_info *enclosing = NULL;
+
     if (!me || !me->stbl) {
 	CTRACE((tfp, "endStblTABLE: ignored.\n"));
-	return;
+	return FALSE;
     }
     CTRACE((tfp, "endStblTABLE: ok, will try.\n"));
     ncols = Stbl_finishTABLE(me->stbl);
@@ -4920,8 +4642,20 @@ PUBLIC void HText_endStblTABLE ARGS1(
 	NumOfLines_partial -= lines_changed;  /* fake */
 #endif  /* DISP_PARTIAL */
     }
+#ifdef EXP_NESTED_TABLES
+    if (nested_tables) {
+	enclosing = Stbl_get_enclosing(me->stbl);
+	me->last_anchor_before_stbl = Stbl_get_last_anchor_before(me->stbl);
+    } else
+#endif
     Stbl_free(me->stbl);
+#ifdef EXP_NESTED_TABLES
+    if (nested_tables)
+	me->stbl = enclosing;
+    else
+#endif
     me->stbl = NULL;
+    return enclosing != 0;
 }
 
 /*	Start simple table row
@@ -4968,7 +4702,7 @@ PUBLIC void HText_startStblTD ARGS5(
 	rowspan = 1;
     }
     if (Stbl_addCellToTable(me->stbl, colspan, rowspan, alignment, isheader,
-			    me->Lines, HText_LastLineSize(me,FALSE)) < 0)
+			    me->Lines, HText_LastLineOffset(me), HText_LastLineSize(me,FALSE)) < 0)
 	HText_cancelStbl(me);	/* give up */
 }
 
@@ -4979,8 +4713,8 @@ PUBLIC void HText_endStblTD ARGS1(
 {
     if (!me || !me->stbl)
 	return;
-    if (Stbl_finishCellInTable(me->stbl, YES,
-			       me->Lines, HText_LastLineSize(me,FALSE)) < 0)
+    if (Stbl_finishCellInTable(me->stbl, TRST_ENDCELL_ENDTD,
+			       me->Lines, HText_LastLineOffset(me), HText_LastLineSize(me,FALSE)) < 0)
 	HText_cancelStbl(me);	/* give up */
 }
 
@@ -5046,7 +4780,6 @@ PUBLIC int HText_beginAnchor ARGS3(
 	outofmem(__FILE__, "HText_beginAnchor");
     a->hightext  = NULL;
     a->hightext2 = NULL;
-    a->start = text->chars + text->last_line->size;
     a->inUnderline = underline;
 
     a->line_num = text->Lines;
@@ -5089,7 +4822,6 @@ PUBLIC int HText_beginAnchor ARGS3(
 	HText_appendText(text, marker);
 	if (saved_linenum && text->Lines && saved_lastchar != ' ')
 	    text->LastChar = ']'; /* if marker not after space caused split */
-	a->start = text->chars + text->last_line->size;
 	a->line_num = text->Lines;
 	a->line_pos = text->last_line->size;
     }
@@ -5097,10 +4829,11 @@ PUBLIC int HText_beginAnchor ARGS3(
     return(a->number);
 }
 
-
-PUBLIC void HText_endAnchor ARGS2(
+/* If !really, report whether the anchor is empty. */
+PRIVATE BOOL HText_endAnchor0 ARGS3(
 	HText *,	text,
-	int,		number)
+	int,		number,
+	int,		really)
 {
     TextAnchor *a;
 
@@ -5132,7 +4865,7 @@ PUBLIC void HText_endAnchor ARGS2(
 	}
     }
 
-    CTRACE((tfp, "GridText:HText_endAnchor: number:%d link_type:%d\n",
+    CTRACE((tfp, "GridText:HText_endAnchor0: number:%d link_type:%d\n",
 			a->number, a->link_type));
     if (a->link_type == INPUT_ANCHOR) {
 	/*
@@ -5140,8 +4873,8 @@ PUBLIC void HText_endAnchor ARGS2(
 	 */
 
 	CTRACE((tfp,
-	   "HText_endAnchor: internal error: last anchor was input field!\n"));
-	return;
+	   "BUG: HText_endAnchor0: internal error: last anchor was input field!\n"));
+	return FALSE;
     }
     if (a->number) {
 	/*
@@ -5161,14 +4894,25 @@ PUBLIC void HText_endAnchor ARGS2(
 	HTLine *start = last;
 	int CurBlankExtent = 0;
 	int BlankExtent = 0;
+	int extent_adjust = 0;
+
+	/* Find the length taken by the anchor */
+	l = text->Lines;		/* lineno of last */
+	while (l > a->line_num) {
+	    extent_adjust += start->size;
+	    start = start->prev;
+	    l--;
+	}
+	/* Now start is the start line of the anchor */
+	extent_adjust += start->size - a->line_pos;
+	start = last;			/* Used later */
 
 	/*
 	 *  Check if the anchor content has only
 	 *  white and special characters, starting
 	 *  with the content on the last line. - FM
 	 */
-	a->extent += (text->chars + last->size) - a->start -
-		     (text->Lines - a->line_num);
+	a->extent += extent_adjust;
 	if (a->extent > (int)last->size) {
 	    /*
 	     *  The anchor extends over more than one line,
@@ -5185,7 +4929,7 @@ PUBLIC void HText_endAnchor ARGS2(
 	k = j = (last->size - i);
 	while (j < (int)last->size) {
 	    if (!IsSpecialAttrChar(last->data[j]) &&
-		!isspace((unsigned char)last->data[j]) &&
+		!isspace(UCH(last->data[j])) &&
 		last->data[j] != HT_NON_BREAK_SPACE &&
 		last->data[j] != HT_EN_SPACE)
 		break;
@@ -5242,7 +4986,7 @@ PUBLIC void HText_endAnchor ARGS2(
 	    }
 	    while (j < (int)prev->size) {
 		if (!IsSpecialAttrChar(prev->data[j]) &&
-		    !isspace((unsigned char)prev->data[j]) &&
+		    !isspace(UCH(prev->data[j])) &&
 		    prev->data[j] != HT_NON_BREAK_SPACE &&
 		    prev->data[j] != HT_EN_SPACE)
 		    break;
@@ -5276,6 +5020,10 @@ PUBLIC void HText_endAnchor ARGS2(
 		}
 	    }
 	}
+	if (!really) {			/* Just report whether it is empty */
+	    a->extent -= extent_adjust;
+	    return (BOOL)(i == 0);
+	}
 	if (i == 0) {
 	    /*
 	     *  It's an invisible anchor probably from an ALT=""
@@ -5285,8 +5033,8 @@ PUBLIC void HText_endAnchor ARGS2(
 	    a->show_anchor = NO;
 
 	    CTRACE((tfp,
-		   "HText_endAnchor: hidden (line,start,pos,ext,BlankExtent):(%d,%d,%d,%d,%d)",
-		   a->line_num,a->start,a->line_pos,a->extent,
+		   "HText_endAnchor0: hidden (line,pos,ext,BlankExtent):(%d,%d,%d,%d)",
+		   a->line_num, a->line_pos, a->extent,
 		   BlankExtent));
 
 	    /*
@@ -5338,7 +5086,7 @@ PUBLIC void HText_endAnchor ARGS2(
 		if (start->data[j] == ']') {
 		    j--;
 		    NumSize++;
-		    while (j >= 0 && isdigit((unsigned char)start->data[j])) {
+		    while (j >= 0 && isdigit(UCH(start->data[j]))) {
 			j--;
 			NumSize++;
 		    }
@@ -5361,10 +5109,7 @@ PUBLIC void HText_endAnchor ARGS2(
 			k = j + NumSize;
 			while (k < (int)start->size)
 			    start->data[j++] = start->data[k++];
-			if (start != last)
-			    text->chars -= NumSize;
 			for (anc = a; anc; anc = anc->next) {
-			    anc->start -= NumSize;
 			    if (anc->line_num == a->line_num &&
 				anc->line_pos >= NumSize) {
 			    anc->line_pos -= NumSize;
@@ -5381,7 +5126,7 @@ PUBLIC void HText_endAnchor ARGS2(
 			    j--;
 			i = (j + 1);
 			while (j >= 0 &&
-			       isdigit((unsigned char)prev->data[j])) {
+			       isdigit(UCH(prev->data[j]))) {
 			    j--;
 			    NumSize++;
 			}
@@ -5399,10 +5144,6 @@ PUBLIC void HText_endAnchor ARGS2(
 			    l = (i - j);
 			    while (i < (int)prev->size)
 				prev->data[j++] = prev->data[i++];
-			    text->chars -= l;
-			    for (anc = a; anc; anc = anc->next) {
-				anc->start -= l;
-			    }
 			    prev->size = j;
 			    prev->data[j] = '\0';
 			    while (j < i)
@@ -5417,10 +5158,7 @@ PUBLIC void HText_endAnchor ARGS2(
 			    i = k;
 			    while (k < (int)start->size)
 				start->data[j++] = start->data[k++];
-			    if (start != last)
-				text->chars -= i;
 			    for (anc = a; anc; anc = anc->next) {
-				anc->start -= i;
 				if (anc->line_num == a->line_num &&
 				    anc->line_pos >= i) {
 				    anc->line_pos -= i;
@@ -5453,12 +5191,12 @@ PUBLIC void HText_endAnchor ARGS2(
 		    i = (j + 1);
 		    if ((j >= 2) &&
 			(prev->data[j] == ']' &&
-			 isdigit((unsigned char)prev->data[j - 1]))) {
+			 isdigit(UCH(prev->data[j - 1])))) {
 			j--;
 			NumSize++;
 			k = (j + 1);
 			while (j >= 0 &&
-			       isdigit((unsigned char)prev->data[j])) {
+			       isdigit(UCH(prev->data[j]))) {
 			    j--;
 			    NumSize++;
 			}
@@ -5476,10 +5214,6 @@ PUBLIC void HText_endAnchor ARGS2(
 			    k = j + NumSize;
 			    while (k < (int)prev->size)
 				prev->data[j++] = prev->data[k++];
-			    text->chars -= NumSize;
-			    for (anc = a; anc; anc = anc->next) {
-				anc->start -= NumSize;
-			    }
 			    prev->size = j;
 			    prev->data[j++] = '\0';
 			    while (j < k)
@@ -5515,8 +5249,8 @@ PUBLIC void HText_endAnchor ARGS2(
 	    a->show_anchor = YES;
 	    if (BlankExtent) {
 		CTRACE((tfp,
-		   "HText_endAnchor: blanks (line,start,pos,ext,BlankExtent):(%d,%d,%d,%d,%d)",
-		   a->line_num,a->start,a->line_pos,a->extent,
+		   "HText_endAnchor0: blanks (line,pos,ext,BlankExtent):(%d,%d,%d,%d)",
+		   a->line_num,a->line_pos,a->extent,
 		   BlankExtent));
 	    }
 	}
@@ -5546,12 +5280,14 @@ PUBLIC void HText_endAnchor ARGS2(
 	}
 	if (BlankExtent || a->extent <= 0 || a->number <= 0) {
 	    CTRACE((tfp,
-		   "->[%d](%d,%d,%d,%d,%d)\n",
+		   "->[%d](%d,%d,%d,%d)\n",
 		   a->number,
-		   a->line_num,a->start,a->line_pos,a->extent,
+		   a->line_num,a->line_pos,a->extent,
 		   BlankExtent));
 	}
     } else {
+	if (!really)			/* Just report whether it is empty */
+	    return FALSE;
 	/*
 	 *  It's a named anchor without an HREF, so it
 	 *  should be registered but not shown as a
@@ -5560,8 +5296,29 @@ PUBLIC void HText_endAnchor ARGS2(
 	a->show_anchor = NO;
 	a->extent = 0;
     }
+    return FALSE;
 }
 
+PUBLIC void HText_endAnchor ARGS2(
+	HText *,	text,
+	int,		number)
+{
+    HText_endAnchor0(text, number, 1);
+}
+
+/*
+    This returns whether the given anchor has blank content. Shamelessly copied
+    from HText_endAnchor. The values returned are meaningful only for "normal"
+    links - like ones produced by <a href=".">foo</a>, no inputs, etc. - VH
+*/
+#ifdef MARK_HIDDEN_LINKS
+PUBLIC BOOL HText_isAnchorBlank ARGS2(
+	HText *,	text,
+	int,		number)
+{
+    return HText_endAnchor0(text, number, 0);
+}
+#endif /* MARK_HIDDEN_LINKS */
 
 PUBLIC void HText_appendText ARGS2(
 	HText *,	text,
@@ -5644,7 +5401,7 @@ PUBLIC void HText_endAppend ARGS1(
     /*
      *  Get the first line.
      */
-    line_ptr = text->last_line->next;
+    line_ptr = FirstHTLine(text);
 
     /*
      *  Remove the blank lines at the end of document.
@@ -5703,7 +5460,7 @@ PUBLIC void HText_trimHightext ARGS3(
 	BOOLEAN,	final,
 	int,		stop_before)
 {
-    int cur_line, cur_char, cur_shift;
+    int cur_line, cur_shift;
     TextAnchor *anchor_ptr;
     TextAnchor *prev_a = NULL;
     HTLine *line_ptr;
@@ -5725,8 +5482,7 @@ PUBLIC void HText_trimHightext ARGS3(
     /*
      *  Get the first line.
      */
-    line_ptr = text->last_line->next;
-    cur_char = line_ptr->size;
+    line_ptr = FirstHTLine(text);
     cur_line = 0;
 
     /*
@@ -5736,15 +5492,13 @@ PUBLIC void HText_trimHightext ARGS3(
     for (anchor_ptr = text->first_anchor;
 	anchor_ptr;
 	prev_a = anchor_ptr, anchor_ptr=anchor_ptr->next) {
-	int have_soft_newline_in_1st_line=0;
+	int have_soft_newline_in_1st_line = 0;
 re_parse:
 	/*
 	 *  Find the right line.
 	 */
-	for (; anchor_ptr->start > cur_char;
-	       line_ptr = line_ptr->next,
-	       cur_char += line_ptr->size+1,
-	       cur_line++) {
+	for (; anchor_ptr->line_num > cur_line;
+	       line_ptr = line_ptr->next, cur_line++) {
 	    ; /* null body */
 	}
 
@@ -5756,7 +5510,8 @@ re_parse:
 	     */
 	    if (cur_line >= stop_before)
 		break;
-	    if (anchor_ptr->start >= text->chars - 1)
+	    if ( anchor_ptr->line_num >= text->Lines - 1
+		 && anchor_ptr->line_pos >= (int) text->last_line->prev->size )
 		break;
 	    /*
 	     *  Also skip this anchor if it looks like HText_endAnchor
@@ -5777,14 +5532,10 @@ re_parse:
 	if (anchor_ptr->hightext)
 	    continue;
 
-	if (anchor_ptr->start == cur_char) {
+	if (anchor_ptr->line_pos > (int) line_ptr->size) {
 	    anchor_ptr->line_pos = line_ptr->size;
-	} else {
-	    anchor_ptr->line_pos = anchor_ptr->start -
-				   (cur_char - line_ptr->size);
 	}
 	if (anchor_ptr->line_pos < 0) {
-	    anchor_ptr->start -= anchor_ptr->line_pos;
 	    anchor_ptr->line_pos = 0;
 	    anchor_ptr->line_num = cur_line;
 	}
@@ -5799,19 +5550,18 @@ re_parse:
 	 *  if they exist, but only on HYPERTEXT_ANCHORS.
 	 */
 	if (anchor_ptr->link_type & HYPERTEXT_ANCHOR) {
-	    ch = (unsigned char)line_ptr->data[anchor_ptr->line_pos];
+	    ch = UCH(line_ptr->data[anchor_ptr->line_pos]);
 	    while (isspace(ch) ||
 		   IsSpecialAttrChar(ch)) {
 		anchor_ptr->line_pos++;
 		anchor_ptr->extent--;
 		cur_shift++;
-		ch = (unsigned char)line_ptr->data[anchor_ptr->line_pos];
+		ch = UCH(line_ptr->data[anchor_ptr->line_pos]);
 	    }
 	}
 	if (anchor_ptr->extent < 0) {
 	    anchor_ptr->extent = 0;
 	}
-	anchor_ptr->start += cur_shift;
 
 	CTRACE((tfp, "anchor text: '%s'\n", line_ptr->data));
 	/*
@@ -5825,8 +5575,10 @@ re_parse:
 	    if (cur_line < text->Lines &&
 		(anchor_ptr->extent ||
 		 anchor_ptr->line_pos != (int)line_ptr->size ||
-		 (prev_a && prev_a->start > anchor_ptr->start))) {
-		anchor_ptr->start++;
+		 (prev_a && /* How could this happen? */
+		  (prev_a->line_num > anchor_ptr->line_num)))) {
+		anchor_ptr->line_num++;
+		anchor_ptr->line_pos = 0;
 		CTRACE((tfp, "found anchor at end of line\n"));
 		goto re_parse;
 	    } else {
@@ -5930,7 +5682,7 @@ re_parse:
 PUBLIC void HText_dump ARGS1(
 	HText *,	text GCC_UNUSED)
 {
-    fprintf(tfp, "HText: Dump called\n");
+    CTRACE((tfp, "HText: Dump called\n"));
 }
 
 
@@ -6083,7 +5835,7 @@ PUBLIC int HTGetRelLinkNum ARGS3(
      * -- find previous closest numbered link
      */
     for (a = HTMainText->first_anchor; a; a = a->next) {
-	CTRACE((tfp,"  a->line_num=%d, a->number=%d\n",a->line_num,a->number));
+	CTRACE((tfp,"  a->line_num=%d, a->number=%d\n", a->line_num, a->number));
 	if ( a->line_num >= scrtop ) break;
 	if ( a->number == 0 ) continue;
 	l = a;
@@ -6151,8 +5903,8 @@ PUBLIC int HTGetLinkInfo ARGS6(
 	 *  and don't count towards nlinks. - KW
 	 */
 	if ((a->show_anchor) &&
-	    (a->link_type != INPUT_ANCHOR ||
-	     a->input_field->type != F_HIDDEN_TYPE)) {
+	    !(a->link_type == INPUT_ANCHOR
+	      && a->input_field->type == F_HIDDEN_TYPE)) {
 	    if (a->line_num == prev_anchor_line) {
 		anchors_this_line++;
 	    } else {
@@ -6302,7 +6054,8 @@ PRIVATE BOOLEAN same_anchor_or_field ARGS5(
 	return(NO);
     }
     if (formA->type != formB->type ||
-	formA->type != F_TEXTAREA_TYPE || formB->type != F_TEXTAREA_TYPE) {
+	formA->type != F_TEXTAREA_TYPE ||
+	formB->type != F_TEXTAREA_TYPE) {
 	return(NO);
     }
     if (formA->number != formB->number)
@@ -6427,8 +6180,8 @@ PUBLIC int HTGetLinkOrFieldStart ARGS5(
 	 *  and don't count towards nlinks. - KW
 	 */
 	if ((a->show_anchor) &&
-	    (a->link_type != INPUT_ANCHOR ||
-	     a->input_field->type != F_HIDDEN_TYPE)) {
+	    !(a->link_type == INPUT_ANCHOR
+	      && a->input_field->type == F_HIDDEN_TYPE)) {
 	    if (a->line_num == prev_anchor_line) {
 		anchors_this_line++;
 	    } else {
@@ -6559,13 +6312,6 @@ PUBLIC int HTGetLinkOrFieldStart ARGS5(
 	    if (*go_line <= group_to_go->prev_anchor_line)
 		*go_line = group_to_go->prev_anchor_line + 1;
 
-#if 0
-	    if (*go_line > HTMainText->top_of_screen &&
-		*go_line < HTMainText->top_of_screen+(display_lines) &&
-		HTMainText->top_of_screen+(display_lines) <= a->line_num &&
-		HTMainText->top_of_screen+2*(display_lines) <= HTMainText->Lines)
-		*go_line = HTMainText->top_of_screen+(display_lines);
-#endif
 	    if (*go_line < 0)
 		*go_line = 0;
 	    if (linknum)
@@ -6612,7 +6358,7 @@ PUBLIC BOOL HText_getFirstTargetInLine ARGS7(
     /*
      *  Find the line and set up its data and offset - FM
      */
-    for (i = 0, line = text->last_line->next;
+    for (i = 0, line = FirstHTLine(text);
 	 i < line_num && (line != text->last_line);
 	 i++, line = line->next) {
 	if (line->next == NULL) {
@@ -6630,18 +6376,12 @@ PUBLIC BOOL HText_getFirstTargetInLine ARGS7(
      *  strip any special characters from the loaded line
      *  data, and return TRUE. - FM
      */
-    if ((case_sensitive ?
-	 (cp = LYno_attr_mbcs_strstr(LineData,
-				     target,
-				     utf_flag, YES,
-				     &HitOffset,
-				     &LenNeeded)) != NULL :
-	 (cp = LYno_attr_mbcs_case_strstr(LineData,
-				     target,
-				     utf_flag, YES,
-				     &HitOffset,
-				     &LenNeeded)) != NULL) &&
-	(LineOffset + LenNeeded) < LYcols) {
+    if (((cp = LYno_attr_mb_strstr(LineData,
+				   target,
+				   utf_flag, YES,
+				   &HitOffset,
+				   &LenNeeded)) != NULL) &&
+	(LineOffset + LenNeeded) < DISPLAY_COLS) {
 	/*
 	 *  We had a hit so load the results,
 	 *  remove IsSpecial characters from
@@ -6680,7 +6420,7 @@ PUBLIC CONST char * HText_getTitle NOARGS
 	  HTAnchor_title(HTMainText->node_anchor) : 0);
 }
 
-#ifdef USE_HASH
+#ifdef USE_COLOR_STYLE
 PUBLIC CONST char *HText_getStyle NOARGS
 {
    return(HTMainText ?
@@ -6718,25 +6458,23 @@ PUBLIC void HTCheckFnameForCompression ARGS3(
 {
     char *fn = *fname;
     char *dot = NULL, *cp = NULL;
+    char *suffix;
     CONST char *ct = NULL;
     CONST char *ce = NULL;
-    BOOLEAN method = 0;
+    CompressFileType method = cftNone;
+    CompressFileType second;
 
     /*
      *  Make sure we have a string and anchor. - FM
      */
-    if (!(fn && *fn && anchor))
+    if (!(fn && anchor))
 	return;
 
     /*
      *  Make sure we have a file, not directory, name. -FM
      */
-    if ((cp = strrchr(fn, '/')) != NULL) {
-	fn = (cp +1);
-	if (*fn == '\0') {
-	    return;
-	}
-    }
+    if (*(fn = LYPathLeaf(fn)) == '\0')
+	return;
 
     /*
      *  Check the anchor's content_type and content_encoding
@@ -6744,32 +6482,32 @@ PUBLIC void HTCheckFnameForCompression ARGS3(
      */
     ct = HTAnchor_content_type(anchor);
     ce = HTAnchor_content_encoding(anchor);
-    if (ce == NULL) {
+    if (ce == NULL && ct != 0) {
 	/*
 	 *  No Content-Encoding, so check
 	 *  the Content-Type. - FM
 	 */
-	if (!strncasecomp((ct ? ct : ""), "application/gzip", 16) ||
-	    !strncasecomp((ct ? ct : ""), "application/x-gzip", 18)) {
-	    method = 1;
-	} else if (!strncasecomp((ct ? ct : ""),
-				 "application/compress", 20) ||
-		   !strncasecomp((ct ? ct : ""),
-				 "application/x-compress", 22)) {
-	    method = 2;
+	if (!strncasecomp(ct, "application/gzip", 16) ||
+	    !strncasecomp(ct, "application/x-gzip", 18)) {
+	    method = cftGzip;
+	} else if (!strncasecomp(ct, "application/compress", 20) ||
+		   !strncasecomp(ct, "application/x-compress", 22)) {
+	    method = cftCompress;
+	} else if (!strncasecomp(ct, "application/bzip2", 17) ||
+		   !strncasecomp(ct, "application/x-bzip2", 19)) {
+	    method = cftBzip2;
 	}
-    } else if (!strcasecomp(ce, "gzip") ||
-	       !strcasecomp(ce, "x-gzip")) {
-	    /*
-	     *  It's gzipped. - FM
-	     */
-	    method = 1;
-    } else if (!strcasecomp(ce, "compress") ||
-	       !strcasecomp(ce, "x-compress")) {
-	    /*
-	     *  It's Unix compressed. - FM
-	     */
-	    method = 2;
+    } else if (ce != 0) {
+	if (!strcasecomp(ce, "gzip") ||
+	    !strcasecomp(ce, "x-gzip")) {
+	    method = cftGzip;
+	} else if (!strcasecomp(ce, "compress") ||
+		   !strcasecomp(ce, "x-compress")) {
+	    method = cftCompress;
+	} else if (!strcasecomp(ce, "bzip2") ||
+		   !strcasecomp(ce, "x-bzip2")) {
+	    method = cftBzip2;
+	}
     }
 
     /*
@@ -6777,121 +6515,96 @@ PUBLIC void HTCheckFnameForCompression ARGS3(
      *  pointer, but strip_ok is not set, there is nothing left
      *  to do. - kw
      */
-    if (method == 0 && !strip_ok)
+    if ((method == cftNone) && !strip_ok)
 	return;
+
+    /*
+     * Treat .tgz specially
+     */
+    if ((dot = strrchr(fn, '.')) != NULL
+     && !strcasecomp(dot, ".tgz")) {
+	if (method == cftNone) {
+	    strcpy(dot, ".tar");
+	}
+	return;
+    }
 
     /*
      *  Seek the last dot, and check whether
      *  we have a gzip or compress suffix. - FM
      */
     if ((dot = strrchr(fn, '.')) != NULL) {
-	if (!strcasecomp(dot, ".tgz") ||
-	    !strcasecomp(dot, ".gz") ||
-	    !strcasecomp(dot, ".Z")) {
-	    if (!method) {
+	if (HTCompressFileType(fn, ".", &cp) != cftNone) {
+	    if (method == cftNone) {
 		/*
 		 *  It has a suffix which signifies a gzipped
 		 *  or compressed file for us, but the anchor
 		 *  claims otherwise, so tweak the suffix. - FM
 		 */
-		cp = (dot + 1);
 		*dot = '\0';
-		if (!strcasecomp(cp, "tgz")) {
-		    StrAllocCat(*fname, ".tar");
-		}
 	    }
 	    return;
 	}
-	if (strlen(dot) > 4) {
-	    cp = ((dot + strlen(dot)) - 3);
-	    if (!strcasecomp(cp, "-gz") ||
-		!strcasecomp(cp, "_gz")) {
-		if (!method) {
-		    /*
-		     *  It has a tail which signifies a gzipped
-		     *  file for us, but the anchor claims otherwise,
-		     *  so tweak the suffix. - FM
-		     */
-		    if (cp == dot+1)
-			cp--;
-		    *cp = '\0';
-		} else {
-		    /*
-		     *  The anchor claims it's gzipped, and we
-		     *  believe it, so force this tail to the
-		     *  conventional suffix. - FM
-		     */
+	if ((second = HTCompressFileType(fn, "-_", &cp)) != cftNone) {
+	    if (method == cftNone) {
+		/*
+		 *  It has a tail which signifies a gzipped
+		 *  file for us, but the anchor claims otherwise,
+		 *  so tweak the suffix. - FM
+		 */
+		if (cp == dot+1)
+		    cp--;
+		*cp = '\0';
+	    } else {
+		/*
+		 *  The anchor claims it's gzipped, and we
+		 *  believe it, so force this tail to the
+		 *  conventional suffix. - FM
+		 */
 #ifdef VMS
-		    *cp = '-';
+		*cp = '-';
 #else
-		    *cp = '.';
+		*cp = '.';
 #endif /* VMS */
-		    cp++;
-		    *cp = (char) TOLOWER(*cp);
-		    cp++;
-		    *cp = (char) TOLOWER(*cp);
-		}
-		return;
+		if (second == cftCompress)
+		    LYUpperCase(cp);
+		else
+		    LYLowerCase(cp);
 	    }
-	}
-	if (strlen(dot) > 3) {
-	    cp = ((dot + strlen(dot)) - 2);
-	    if (!strcasecomp(cp, "-Z") ||
-		!strcasecomp(cp, "_Z")) {
-		if (!method) {
-		    /*
-		     *  It has a tail which signifies a compressed
-		     *  file for us, but the anchor claims otherwise,
-		     *  so tweak the suffix. - FM
-		     */
-		    if (cp == dot+1)
-			cp--;
-		    *cp = '\0';
-		} else {
-		    /*
-		     *  The anchor claims it's compressed, and
-		     *  we believe it, so force this tail to the
-		     *  conventional suffix. - FM
-		     */
-#ifdef VMS
-		    *cp = '-';
-#else
-		    *cp = '.';
-#endif /* VMS */
-		    cp++;
-		    *cp = (char) TOUPPER(*cp);
-		}
-		return;
-	    }
+	    return;
 	}
     }
-    if (!method) {
-	/*
-	 *  Don't know what compression method
-	 *  was used, if any, so we won't do
-	 *  anything. - FM
-	 */
-	return;
+
+    switch (method) {
+    default:
+	suffix = "";
+	break;
+    case cftCompress:
+	suffix = ".Z";
+	break;
+    case cftGzip:
+	suffix = ".gz";
+	break;
+    case cftBzip2:
+	suffix = ".bz2";
+	break;
     }
 
     /*
      *  Add the appropriate suffix. - FM
      */
-    if (!dot) {
-	StrAllocCat(*fname, ((method == 1) ? ".gz" : ".Z"));
-	return;
-    }
-    dot++;
-    if (*dot == '\0') {
-	StrAllocCat(*fname, ((method == 1) ? "gz" : "Z"));
-	return;
-    }
+    if (*suffix) {
+	if (!dot) {
+	    StrAllocCat(*fname, suffix);
+	} else if (*++dot == '\0') {
+	    StrAllocCat(*fname, suffix + 1);
+	} else {
+	    StrAllocCat(*fname, suffix);
 #ifdef VMS
-    StrAllocCat(*fname, ((method == 1) ? "-gz" : "-Z"));
-#else
-    StrAllocCat(*fname, ((method == 1) ? ".gz" : ".Z"));
+	    (*fname)[strlen(*fname) - strlen(suffix)] = '-';
 #endif /* !VMS */
-    return;
+	}
+    }
 }
 
 /*
@@ -6950,7 +6663,7 @@ PUBLIC void HText_pageDisplay ARGS2(
 	**  Multiple calls of HText_trimHightext works without problem now.
 	*/
 	if (HTMainText && HTMainText->stbl)
-	    stop_before = Stbl_getStartLine(HTMainText->stbl);
+	    stop_before = Stbl_getStartLineDeep(HTMainText->stbl);
 	HText_trimHightext(HTMainText, FALSE, stop_before);
     }
 #endif
@@ -7006,8 +6719,8 @@ PUBLIC int HText_LinksInLines ARGS3(
 	if (Anchor_ptr->line_num >= start &&
 	    Anchor_ptr->line_num < end &&
 	    Anchor_ptr->show_anchor &&
-	    (Anchor_ptr->link_type != INPUT_ANCHOR ||
-	     Anchor_ptr->input_field->type != F_HIDDEN_TYPE))
+	    !(Anchor_ptr->link_type == INPUT_ANCHOR
+	      && Anchor_ptr->input_field->type == F_HIDDEN_TYPE))
 	    ++total;
 	if (Anchor_ptr == text->last_anchor)
 	    break;
@@ -7082,22 +6795,6 @@ PUBLIC void HText_scrollBottom ARGS1(
 
 /* Bring to front and highlight it
 */
-PRIVATE int line_for_char ARGS2(
-	HText *,	text,
-	int,		char_num)
-{
-    int line_number = 0;
-    int characters = 0;
-    HTLine * line = text->last_line->next;
-    for (;;) {
-	if (line == text->last_line) return 0;	/* Invalid */
-	characters = characters + line->size + 1;
-	if (characters > char_num) return line_number;
-	line_number ++;
-	line = line->next;
-    }
-}
-
 PUBLIC BOOL HText_select ARGS1(
 	HText *,	text)
 {
@@ -7119,6 +6816,12 @@ PUBLIC BOOL HText_select ARGS1(
 	}
 #endif /* DISP_PARTIAL */
 
+#ifdef CAN_SWITCH_DISPLAY_CHARSET
+	/* text->UCLYhndl is not reset by META, so use a more circumvent way */
+	if ( text->node_anchor->UCStages->s[UCT_STAGE_HTEXT].LYhndl
+	     != current_char_set )
+	    Switch_Display_Charset(text->node_anchor->UCStages->s[UCT_STAGE_HTEXT].LYhndl, SWITCH_DISPLAY_CHARSET_MAYBE);
+#endif
 	if (HTMainText) {
 	    if (HText_hasUTF8OutputSet(HTMainText) &&
 		HTLoadedDocumentEightbit() &&
@@ -7203,8 +6906,8 @@ PUBLIC BOOL HTFindPoundSelector ARGS1(
 		www_search_result = a->line_num+1;
 
 		CTRACE((tfp,
-		       "HText: Selecting anchor [%d] at character %d, line %d\n",
-				     a->number, a->start, www_search_result));
+		       "HText: Selecting anchor [%d] at line %d\n",
+				     a->number, www_search_result));
 		if (!strcmp(selector, LYToolbarName)) {
 		    --www_search_result;
 		}
@@ -7243,10 +6946,10 @@ PUBLIC BOOL HText_selectAnchor ARGS2(
     }
 
     {
-	 int l = line_for_char(text, a->start);
+	 int l = a->line_num;
 	 CTRACE((tfp,
-	    "HText: Selecting anchor [%d] at character %d, line %d\n",
-	    a->number, a->start, l));
+	    "HText: Selecting anchor [%d] at line %d\n",
+	    a->number, l));
 
 	if ( !text->stale &&
 	     (l >= text->top_of_screen) &&
@@ -7470,7 +7173,7 @@ PUBLIC int do_www_search ARGS1(
 	_statusline(EDIT_CURRENT_QUERY);
     QueryTotal = (search_queries ? HTList_count(search_queries) : 0);
     recall = (((PreviousSearch && QueryTotal >= 2) ||
-	       (!PreviousSearch && QueryTotal >= 1)) ? RECALL : NORECALL);
+	       (!PreviousSearch && QueryTotal >= 1)) ? RECALL_URL : NORECALL);
     QueryNum = QueryTotal;
 get_query:
     if ((ch=LYgetstr(searchstring, VISIBLE,
@@ -7621,6 +7324,33 @@ get_query:
     return(NOT_FOUND);
 }
 
+PRIVATE void write_offset ARGS2(
+	FILE *,		fp,
+	HTLine *,	line)
+{
+    int i;
+
+    if (line->data[0]) {
+	for (i = 0; i < (int)line->offset; i++) {
+	     fputc(' ', fp);
+	}
+    }
+}
+
+PRIVATE void write_hyphen ARGS1(
+	FILE *,		fp)
+{
+    if (dump_output_immediately &&
+	LYRawMode &&
+	LYlowest_eightbit[current_char_set] <= 173 &&
+	(LYCharSet_UC[current_char_set].enc == UCT_ENC_8859 ||
+	 (LYCharSet_UC[current_char_set].like8859 & UCT_R_8859SPECL)) != 0) {
+	fputc(0xad, fp); /* the iso8859 byte for SHY */
+    } else {
+	fputc('-', fp);
+    }
+}
+
 /*
  *  Print the contents of the file in HTMainText to
  *  the file descriptor fp.
@@ -7629,21 +7359,26 @@ get_query:
  */
 PUBLIC void print_wwwfile_to_fd ARGS2(
 	FILE *,		fp,
-	int,		is_reply)
+	BOOLEAN,	is_reply)
 {
     register int i;
     int first = TRUE;
     HTLine * line;
 #ifndef NO_DUMP_WITH_BACKSPACES
     HText* text = HTMainText;
-    BOOL in_b=FALSE,in_u=FALSE,
-	bs=(BOOL)(text && with_backspaces && HTCJK==NOCJK && !text->T.output_utf8);
+    BOOL in_b = FALSE;
+    BOOL in_u = FALSE;
+    BOOL bs = (BOOL)(!is_reply
+		&& text != 0
+		&& with_backspaces
+		&& HTCJK == NOCJK
+		&& !text->T.output_utf8);
 #endif
 
     if (!HTMainText)
 	return;
 
-    line = HTMainText->last_line->next;
+    line = FirstHTLine(HTMainText);
     for (;; line = line->next) {
 	if (!first && line->data[0] != LY_SOFT_NEWLINE) {
 	    fputc('\n',fp);
@@ -7656,12 +7391,7 @@ PUBLIC void print_wwwfile_to_fd ARGS2(
 	}
 
 	first = FALSE;
-	/*
-	 *  Add offset.
-	 */
-	for (i = 0; i < (int)line->offset; i++) {
-	     fputc(' ', fp);
-	}
+	write_offset(fp, line);
 
 	/*
 	 *  Add data.
@@ -7682,16 +7412,7 @@ PUBLIC void print_wwwfile_to_fd ARGS2(
 		fputc(line->data[i], fp);
 	    } else if (line->data[i] == LY_SOFT_HYPHEN &&
 		line->data[i + 1] == '\0') { /* last char on line */
-		if (dump_output_immediately &&
-		    LYRawMode &&
-		    LYlowest_eightbit[current_char_set] <= 173 &&
-		    (LYCharSet_UC[current_char_set].enc == UCT_ENC_8859 ||
-		     (LYCharSet_UC[current_char_set].like8859 &
-				  UCT_R_8859SPECL)) != 0) {
-		    fputc(0xad, fp); /* the iso8859 byte for SHY */
-		} else {
-		    fputc('-', fp);
-		}
+		write_hyphen(fp);
 	    } else if (dump_output_immediately && use_underscore) {
 		switch (line->data[i]) {
 		    case LY_UNDERLINE_START_CHAR:
@@ -7751,17 +7472,11 @@ PUBLIC void print_crawl_to_fd ARGS3(
     register int i;
     int first = TRUE;
     HTLine * line;
-#ifndef NO_DUMP_WITH_BACKSPACES
-    HText* text = HTMainText;
-    BOOL in_b=FALSE,in_u=FALSE,
-	bs=(BOOL)(text && with_backspaces && HTCJK==NOCJK && !text->T.output_utf8);
-#endif
-
 
     if (!HTMainText)
 	return;
 
-    line = HTMainText->last_line->next;
+    line = FirstHTLine(HTMainText);
     fprintf(fp, "THE_URL:%s\n", thelink);
     if (thetitle != NULL) {
 	fprintf(fp, "THE_TITLE:%s\n", thetitle);
@@ -7771,12 +7486,7 @@ PUBLIC void print_crawl_to_fd ARGS3(
 	if (!first && line->data[0] != LY_SOFT_NEWLINE)
 	    fputc('\n',fp);
 	first = FALSE;
-	/*
-	 *  Add offset.
-	 */
-	for (i = 0; i < (int)line->offset; i++) {
-	    fputc(' ', fp);
-	}
+	write_offset(fp, line);
 
 	/*
 	 *  Add data.
@@ -7786,39 +7496,8 @@ PUBLIC void print_crawl_to_fd ARGS3(
 		fputc(line->data[i], fp);
 	    } else if (line->data[i] == LY_SOFT_HYPHEN &&
 		line->data[i + 1] == '\0') { /* last char on line */
-		if (dump_output_immediately &&
-		    LYRawMode &&
-		    LYlowest_eightbit[current_char_set] <= 173 &&
-		    (LYCharSet_UC[current_char_set].enc == UCT_ENC_8859 ||
-		     (LYCharSet_UC[current_char_set].like8859 &
-				  UCT_R_8859SPECL)) != 0) {
-		    fputc(0xad, fp); /* the iso8859 byte for SHY */
-		} else {
-		    fputc('-', fp);
-		}
-	     }
-#ifndef NO_DUMP_WITH_BACKSPACES
-	    else if (bs) {
-		switch (line->data[i]) {
-		    case LY_UNDERLINE_START_CHAR:
-			if (!in_b)
-			    in_u = TRUE; /*favor bold over underline*/
-			break;
-		    case LY_UNDERLINE_END_CHAR:
-			in_u = FALSE;
-			break;
-		    case LY_BOLD_START_CHAR:
-			if (in_u)
-			    in_u = FALSE; /* turn it off*/
-			in_b = TRUE;
-			break;
-		    case LY_BOLD_END_CHAR:
-			in_b = FALSE;
-			break;
-		}
+		write_hyphen(fp);
 	    }
-#endif
-
 	}
 
 	if (line == HTMainText->last_line) {
@@ -7912,199 +7591,238 @@ PRIVATE void adjust_search_result ARGS3(
     }
 }
 
-/*
-   John Bley, April 1, 1999 (No joke)
-   www_user_search_internals was spawned from www_user_search to
-   remove a cut-n-paste coding hack: basically, this entire function
-   was duplicated at the two points that www_user_search now calls it.
-   And, because www_user_search has a return value defined as modification
-   of the screen and some global values, and since it used an awkward for(;;)
-   construct, this method has to distinguish between when it's "really"
-   returning and when it's just falling through via a break; in the
-   infinite-for-loop.  So, basically, we have a large amount of arguments
-   since this loop used to be directly in www_user_search, and we return
-   1 to say we're "really" returning and 0 to indicate we fell through.
-   Also, due to exactly one difference between the first pass of this
-   code and the second pass, we have the "firstpass" argument, which is
-   true iff it's the first pass.
-
-   I hate cut-n-paste coding.
- */
-PRIVATE int www_user_search_internals ARGS8(
-	int,		firstpass,
-	int,		start_line,
-	document *,	doc,
-	char *,		target,
+PRIVATE BOOL anchor_has_target ARGS2(
 	TextAnchor *,	a,
-	HTLine *,	line,
-	int *,		count,
-	int *,		tentative_result)
+	char *,		target)
 {
     OptionType * option;
     char *stars = NULL, *cp;
 
-    for (;;) {
-	while ((a != NULL) && a->line_num == (*count - 1)) {
-	    if (a->show_anchor &&
-		(a->link_type != INPUT_ANCHOR ||
-		 a->input_field->type != F_HIDDEN_TYPE)) {
-		if (((a->hightext != NULL && case_sensitive == TRUE) &&
-		     LYno_attr_char_strstr(a->hightext, target)) ||
-		    ((a->hightext != NULL && case_sensitive == FALSE) &&
-		     LYno_attr_char_case_strstr(a->hightext, target))) {
-		    adjust_search_result(doc, *count, start_line);
-		    return 1;
-		}
-		if (((a->hightext2 != NULL && case_sensitive == TRUE) &&
-		     LYno_attr_char_strstr(a->hightext2, target)) ||
-		    ((a->hightext2 != NULL && case_sensitive == FALSE) &&
-		     LYno_attr_char_case_strstr(a->hightext2, target))) {
-		    adjust_search_result(doc, *count, start_line);
-		    return 1;
-		}
+    /*
+     *  Search the hightext string, and hightext2 if present,
+     *  taking the case_sensitive setting into account. - FM
+     */
+    if (LYno_attr_strstr(a->hightext, target)
+     || LYno_attr_strstr(a->hightext2, target)) {
+	return TRUE;
+    }
 
-		/*
-		 *  Search the relevant form fields, taking the
-		 *  case_sensitive setting into account. - FM
-		 */
-		if ((a->input_field != NULL && a->input_field->value != NULL) &&
-		    a->input_field->type != F_HIDDEN_TYPE) {
-		    if (a->input_field->type == F_PASSWORD_TYPE) {
-			/*
-			 *  Check the actual, hidden password, and then
-			 *  the displayed string. - FM
-			 */
-			if (((case_sensitive == TRUE) &&
-			     LYno_attr_char_strstr(a->input_field->value,
-						   target)) ||
-			    ((case_sensitive == FALSE) &&
-			     LYno_attr_char_case_strstr(a->input_field->value,
-							target))) {
-			    adjust_search_result(doc, *count, start_line);
-			    return 1;
-			}
-			StrAllocCopy(stars, a->input_field->value);
-			for (cp = stars; *cp != '\0'; cp++)
-			    *cp = '*';
-			if (((case_sensitive == TRUE) &&
-			     LYno_attr_char_strstr(stars, target)) ||
-			    ((case_sensitive == FALSE) &&
-			     LYno_attr_char_case_strstr(stars, target))) {
-			    FREE(stars);
-			    adjust_search_result(doc, *count, start_line);
-			    return 1;
-			}
-			FREE(stars);
-		   } else if (a->input_field->type == F_OPTION_LIST_TYPE) {
-			/*
-			 *  Search the option strings that are displayed
-			 *  when the popup is invoked. - FM
-			 */
-			option = a->input_field->select_list;
-			while (option != NULL) {
-			    if (((option->name != NULL &&
-				  case_sensitive == TRUE) &&
-				 LYno_attr_char_strstr(option->name,
-						       target)) ||
-				((option->name != NULL &&
-				  case_sensitive == FALSE) &&
-				 LYno_attr_char_case_strstr(option->name,
-							    target))) {
-				adjust_search_result(doc, *count, start_line);
-				return 1;
-			    }
-			    option = option->next;
-			}
-		    } else if (a->input_field->type == F_RADIO_TYPE) {
-			/*
-			 *  Search for checked or unchecked parens. - FM
-			 */
-			if (a->input_field->num_value) {
-			    cp = checked_radio;
-			} else {
-			    cp = unchecked_radio;
-			}
-			if (((case_sensitive == TRUE) &&
-			     LYno_attr_char_strstr(cp, target)) ||
-			    ((case_sensitive == FALSE) &&
-			     LYno_attr_char_case_strstr(cp, target))) {
-			    adjust_search_result(doc, *count, start_line);
-			    return 1;
-			}
-		    } else if (a->input_field->type == F_CHECKBOX_TYPE) {
-			/*
-			 *  Search for checked or unchecked
-			 *  square brackets. - FM
-			 */
-			if (a->input_field->num_value) {
-			    cp = checked_box;
-			} else {
-			    cp = unchecked_box;
-			}
-			if (((case_sensitive == TRUE) &&
-			     LYno_attr_char_strstr(cp, target)) ||
-			    ((case_sensitive == FALSE) &&
-			     LYno_attr_char_case_strstr(cp, target))) {
-			    adjust_search_result(doc, *count, start_line);
-			    return 1;
-			}
-		    } else {
-			/*
-			 *  Check the values intended for display.
-			 *  May have been found already via the
-			 *  hightext search, but make sure here
-			 *  that the entire value is searched. - FM
-			 */
-			if (((case_sensitive == TRUE) &&
-			     LYno_attr_char_strstr(a->input_field->value,
-						   target)) ||
-			    ((case_sensitive == FALSE) &&
-			     LYno_attr_char_case_strstr(a->input_field->value,
-							target))) {
-			    adjust_search_result(doc, *count, start_line);
-			    return 1;
-			}
-		    }
+    /*
+     *  Search the relevant form fields, taking the
+     *  case_sensitive setting into account. - FM
+     */
+    if ((a->input_field != NULL && a->input_field->value != NULL) &&
+	a->input_field->type != F_HIDDEN_TYPE) {
+	if (a->input_field->type == F_PASSWORD_TYPE) {
+	    /*
+	     *  Check the actual, hidden password, and then
+	     *  the displayed string. - FM
+	     */
+	    if (LYno_attr_strstr(a->input_field->value, target)) {
+		return TRUE;
+	    }
+	    StrAllocCopy(stars, a->input_field->value);
+	    for (cp = stars; *cp != '\0'; cp++)
+		*cp = '*';
+	    if (LYno_attr_strstr(stars, target)) {
+		FREE(stars);
+		return TRUE;
+	    }
+	    FREE(stars);
+       } else if (a->input_field->type == F_OPTION_LIST_TYPE) {
+	    /*
+	     *  Search the option strings that are displayed
+	     *  when the popup is invoked. - FM
+	     */
+	    option = a->input_field->select_list;
+	    while (option != NULL) {
+		if (LYno_attr_strstr(option->name, target)) {
+		    return TRUE;
+		}
+		option = option->next;
+	    }
+	} else if (a->input_field->type == F_RADIO_TYPE) {
+	    /*
+	     *  Search for checked or unchecked parens. - FM
+	     */
+	    if (a->input_field->num_value) {
+		cp = checked_radio;
+	    } else {
+		cp = unchecked_radio;
+	    }
+	    if (LYno_attr_strstr(cp, target)) {
+		return TRUE;
+	    }
+	} else if (a->input_field->type == F_CHECKBOX_TYPE) {
+	    /*
+	     *  Search for checked or unchecked square brackets. - FM
+	     */
+	    if (a->input_field->num_value) {
+		cp = checked_box;
+	    } else {
+		cp = unchecked_box;
+	    }
+	    if (LYno_attr_strstr(cp, target)) {
+		return TRUE;
+	    }
+	} else {
+	    /*
+	     *  Check the values intended for display.
+	     *  May have been found already via the
+	     *  hightext search, but make sure here
+	     *  that the entire value is searched. - FM
+	     */
+	    if (LYno_attr_strstr(a->input_field->value, target)) {
+		return TRUE;
+	    }
+	}
+    }
+    return FALSE;
+}
+
+PRIVATE TextAnchor *line_num_to_anchor ARGS1(
+    int,	line_num)
+{
+    TextAnchor *a;
+
+    if (HTMainText != 0) {
+	a = HTMainText->first_anchor;
+	while (a != 0 && a->line_num < line_num) {
+	    a = a->next;
+	}
+    } else {
+	a = 0;
+    }
+    return a;
+}
+
+PRIVATE int line_num_in_text ARGS2(
+    HText *,		text,
+    HTLine *,		line)
+{
+    int result = 1;
+    HTLine *temp = FirstHTLine(text);
+
+    while (temp != line) {
+	temp = temp->next;
+	++result;
+    }
+    return result;
+}
+
+/* Computes the 'prev' pointers on demand, and returns the one for the given
+ * anchor.
+ */
+PRIVATE TextAnchor *get_prev_anchor ARGS1(
+    TextAnchor *,	a)
+{
+    TextAnchor *p, *q;
+
+    if (a->prev == 0) {
+	if ((p = HTMainText->first_anchor) != 0) {
+	    while ((q = p->next) != 0) {
+		q->prev = p;
+		p = q;
+	    }
+	}
+    }
+    return a->prev;
+}
+
+PRIVATE int www_search_forward ARGS5(
+	int,		start_line,
+	document *,	doc,
+	char *,		target,
+	HTLine *,	line,
+	int,		count)
+{
+    BOOL wrapped = FALSE;
+    TextAnchor *a = line_num_to_anchor(count - 1);
+    int tentative_result = -1;
+
+    for (;;) {
+	while ((a != NULL) && a->line_num == (count - 1)) {
+	    if (a->show_anchor &&
+		!(a->link_type == INPUT_ANCHOR
+		  && a->input_field->type == F_HIDDEN_TYPE)) {
+		if (anchor_has_target(a, target)) {
+		    adjust_search_result(doc, count, start_line);
+		    return 1;
 		}
 	    }
 	    a = a->next;
 	}
-	if (a != NULL && a->line_num <= (*count - 1)) {
-	    a = a->next;
-	}
 
-	if (case_sensitive && LYno_attr_char_strstr(line->data, target)) {
-	    *tentative_result = *count;
+	if (LYno_attr_strstr(line->data, target)) {
+	    tentative_result = count;
 	    break;
-	} else if (!case_sensitive &&
-		   LYno_attr_char_case_strstr(line->data, target)) {
-	    *tentative_result = *count;
-	    break;
-	/* Note: this is where the two passes differ */
-	} else if (firstpass && line == HTMainText->last_line) {
-	    /* next line */
-	    break;
-	} else if (!firstpass && *count > start_line) {
+	} else if (count == start_line && wrapped) {
 	    HTUserMsg2(STRING_NOT_FOUND, target);
-	    return 1;			/* end */
-	} else {			/* end */
-	    line = line->next;
-	    (*count)++;
+	    return -1;
+	} else if (line == HTMainText->last_line) {
+	    count = 0;
+	    wrapped = TRUE;
 	}
+	line = line->next;
+	count++;
     }
-    /* No, man, we just fell through.  You want to call us again. */
+    if (tentative_result > 0) {
+	adjust_search_result(doc, tentative_result, start_line);
+    }
     return 0;
 }
 
-PUBLIC void www_user_search ARGS3(
+PRIVATE int www_search_backward ARGS5(
 	int,		start_line,
 	document *,	doc,
-	char *,		target)
+	char *,		target,
+	HTLine *,	line,
+	int,		count)
+{
+    BOOL wrapped = FALSE;
+    TextAnchor *a = line_num_to_anchor(count - 1);
+    int tentative_result = -1;
+
+    for (;;) {
+	while ((a != NULL) && a->line_num == (count - 1)) {
+	    if (a->show_anchor &&
+		!(a->link_type == INPUT_ANCHOR
+		  && a->input_field->type == F_HIDDEN_TYPE)) {
+		if (anchor_has_target(a, target)) {
+		    adjust_search_result(doc, count, start_line);
+		    return 1;
+		}
+	    }
+	    a = get_prev_anchor(a);
+	}
+
+	if (LYno_attr_strstr(line->data, target)) {
+	    tentative_result = count;
+	    break;
+	} else if (count == start_line && wrapped) {
+	    HTUserMsg2(STRING_NOT_FOUND, target);
+	    return -1;
+	} else if (line == FirstHTLine(HTMainText)) {
+	    count = line_num_in_text(HTMainText, LastHTLine(HTMainText)) + 1;
+	    wrapped = TRUE;
+	}
+	line = line->prev;
+	count--;
+    }
+    if (tentative_result > 0) {
+	adjust_search_result(doc, tentative_result, start_line);
+    }
+    return 0;
+}
+
+PUBLIC void www_user_search ARGS4(
+	int,		start_line,
+	document *,	doc,
+	char *,		target,
+	int,		direction)
 {
     HTLine * line;
     int count;
-    int tentative_result = -1;
-    TextAnchor *a;
 
     if (!HTMainText) {
 	return;
@@ -8113,41 +7831,24 @@ PUBLIC void www_user_search ARGS3(
     /*
      *  Advance to the start line.
      */
-    line = HTMainText->last_line->next;
-    for (count = 1; count <= start_line; line = line->next, count++) {
-	if (line == HTMainText->last_line) {
-	    line = HTMainText->last_line->next; /* set to first line */
-	    count = 1;
-	    break;
+    line = FirstHTLine(HTMainText);
+    if (start_line + direction > 0) {
+	for (count = 1; count < start_line + direction; line = line->next, count++) {
+	    if (line == HTMainText->last_line) {
+		line = FirstHTLine(HTMainText);
+		count = 1;
+		break;
+	    }
 	}
-    }
-    a = HTMainText->first_anchor;
-    while (a && a->line_num < count - 1) {
-	a = a->next;
-    }
-    if (www_user_search_internals(1, start_line, doc, target,
-	a, line, &count, &tentative_result) == 1) {
-	return; /* Return the www_user_search_internals result */
+    } else {
+	line = HTMainText->last_line;
+	count = line_num_in_text(HTMainText, line);
     }
 
-    if (tentative_result > 0) {
-	adjust_search_result(doc, tentative_result, start_line);
-	return;
-    }
-    /* That didn't work, search from the beginning instead */
-    line = HTMainText->last_line->next; /* set to first line */
-    count = 1;
-    a = HTMainText->first_anchor;
-    while (a && a->line_num < count - 1) {
-	a = a->next;
-    }
-    if (www_user_search_internals(0, start_line, doc, target,
-	a, line, &count, &tentative_result) == 1) {
-	return; /* Return the www_user_search_internals result */
-    }
-    if (tentative_result > 0) {
-	adjust_search_result(doc, tentative_result, start_line);
-    }
+    if (direction >= 0)
+	www_search_forward(start_line, doc, target, line, count);
+    else
+	www_search_backward(start_line, doc, target, line, count);
 }
 
 PUBLIC void user_message ARGS2(
@@ -8275,9 +7976,6 @@ PRIVATE HTProtocol scm = { "source-cache-mem", 0, 0 }; /* dummy - kw */
 PUBLIC BOOLEAN HTreparse_document NOARGS
 {
     BOOLEAN ok = FALSE;
-#if 0
-    char *source_url = NULL;	/* unused - see comments below */
-#endif
 
     if (!HTMainAnchor || LYCacheSource == SOURCE_CACHE_NONE ||
 	(LYCacheSource == SOURCE_CACHE_FILE &&
@@ -8336,14 +8034,9 @@ PUBLIC BOOLEAN HTreparse_document NOARGS
 	 * the SourceCacheWriter to not regenerate the cache file (which
 	 * would be an unnecessary "loop"). - kw
 	 */
-#if 0 /* If cache writer looked at physical not protocol, we could use this: */
-	LYLocalFileToURL(&source_url, HTMainAnchor->source_cache_file);
-	HTAnchor_setPhysical(HTMainAnchor, source_url);
-	FREE(source_url);
-#endif /* 0 */
 	HTAnchor_setProtocol(HTMainAnchor, &HTFile);
 	ret = HTParseFile(format, HTOutputFormat, HTMainAnchor, fp, NULL);
-	fclose(fp);
+	LYCloseInput(fp);
 	if (ret == HT_PARTIAL_CONTENT) {
 	    HTInfoMsg(gettext("Loading incomplete."));
 	    CTRACE((tfp, "SourceCache: `%s' has been accessed, partial content.\n",
@@ -8396,12 +8089,6 @@ PUBLIC BOOLEAN HTreparse_document NOARGS
 	 */
 	HTAnchor_setProtocol(HTMainAnchor, &scm); /* cheating -
 				   anything != &HTTP or &HTTPS would do - kw */
-#if 0 /* If cache writer looked at physical not protocol, we could use this: */
-	HTSprintf0(&source_url, "source-cache-mem:%p",
-		   HTMainAnchor->source_cache_chunk);
-	HTAnchor_setPhysical(HTMainAnchor, source_url);
-	FREE(source_url);
-#endif /* 0 */
 	ret = HTParseMem(format, HTOutputFormat, HTMainAnchor,
 			HTMainAnchor->source_cache_chunk, NULL);
 	ok = (BOOL) (ret == HT_LOADED);
@@ -8422,14 +8109,7 @@ PUBLIC BOOLEAN HTcan_reparse_document NOARGS
 	return FALSE;
 
     if (LYCacheSource == SOURCE_CACHE_FILE && HTMainAnchor->source_cache_file) {
-	FILE * fp;
-
-	fp = fopen(HTMainAnchor->source_cache_file, "r");
-	if (!fp) {
-	    return FALSE;
-	}
-	fclose(fp);
-	return TRUE;
+	return LYCanReadFile(HTMainAnchor->source_cache_file);
     }
 
     if (LYCacheSource == SOURCE_CACHE_MEMORY &&
@@ -8442,12 +8122,12 @@ PUBLIC BOOLEAN HTcan_reparse_document NOARGS
 
 PRIVATE void trace_setting_change ARGS3(
 	CONST char *,	name,
-	BOOLEAN,	prev_setting,
-	BOOLEAN,	new_setting)
+	int,		prev_setting,
+	int,		new_setting)
 {
     if (prev_setting != new_setting)
-	CTRACE((tfp, "HTdocument_settings_changed: %s setting has changed (was %s, now %s)\n",
-	       name, prev_setting ? "ON" : "OFF", new_setting ? "ON" : "OFF"));
+	CTRACE((tfp, "HTdocument_settings_changed: %s setting has changed (was %d, now %d)\n",
+	       name, prev_setting, new_setting));
 }
 
 PUBLIC BOOLEAN HTdocument_settings_changed NOARGS
@@ -8487,10 +8167,10 @@ PUBLIC BOOLEAN HTdocument_settings_changed NOARGS
 	trace_setting_change("OLD_DTD", HTMainText->old_dtd, Old_DTD);
 	trace_setting_change("KEYPAD_MODE",
 			     HTMainText->keypad_mode, keypad_mode);
-	if (HTMainText->disp_lines != LYlines || HTMainText->disp_cols != LYcols)
+	if (HTMainText->disp_lines != LYlines || HTMainText->disp_cols != DISPLAY_COLS)
 	    CTRACE((tfp,
 		   "HTdocument_settings_changed: Screen size has changed (was %dx%d, now %dx%d)\n",
-		   HTMainText->disp_cols, HTMainText->disp_lines, LYcols, LYlines));
+		   HTMainText->disp_cols, HTMainText->disp_lines, DISPLAY_COLS, LYlines));
     }
 
     return (HTMainText->clickable_images != clickable_images ||
@@ -8503,7 +8183,7 @@ PUBLIC BOOLEAN HTdocument_settings_changed NOARGS
 	    HTMainText->soft_dquotes != soft_dquotes ||
 	    HTMainText->old_dtd != Old_DTD ||
 	    HTMainText->keypad_mode != keypad_mode ||
-	    HTMainText->disp_cols != LYcols);
+	    HTMainText->disp_cols != DISPLAY_COLS);
 }
 #endif
 
@@ -8616,6 +8296,14 @@ PUBLIC int HText_LastLineSize ARGS2(
     return HText_TrueLineSize(text->last_line, text, IgnoreSpaces);
 }
 
+PUBLIC int HText_LastLineOffset ARGS1(
+	HText *,	text)
+{
+    if (!text || !text->last_line)
+	return 0;
+    return  text->last_line->offset;
+}
+
 PUBLIC int HText_PreviousLineSize ARGS2(
 	HText *,	text,
 	BOOL,		IgnoreSpaces)
@@ -8642,13 +8330,13 @@ PRIVATE int HText_TrueLineSize ARGS3(
 
     if (IgnoreSpaces) {
 	for (i = 0; i < line->size; i++) {
-	    if (!IsSpecialAttrChar((unsigned char)line->data[i]) &&
+	    if (!IsSpecialAttrChar(UCH(line->data[i])) &&
 		(!(text && text->T.output_utf8) ||
-		 (unsigned char)line->data[i] < 128 ||
-		 ((unsigned char)(line->data[i] & 0xc0) == 0xc0)) &&
-		!isspace((unsigned char)line->data[i]) &&
-		(unsigned char)line->data[i] != HT_NON_BREAK_SPACE &&
-		(unsigned char)line->data[i] != HT_EN_SPACE) {
+		 UCH(line->data[i]) < 128 ||
+		 (UCH((line->data[i] & 0xc0)) == 0xc0)) &&
+		!isspace(UCH(line->data[i])) &&
+		UCH(line->data[i]) != HT_NON_BREAK_SPACE &&
+		UCH(line->data[i]) != HT_EN_SPACE) {
 		true_size++;
 	    }
 	}
@@ -8656,8 +8344,8 @@ PRIVATE int HText_TrueLineSize ARGS3(
 	for (i = 0; i < line->size; i++) {
 	    if (!IsSpecialAttrChar(line->data[i]) &&
 		(!(text && text->T.output_utf8) ||
-		 (unsigned char)line->data[i] < 128 ||
-		 ((unsigned char)(line->data[i] & 0xc0) == 0xc0))) {
+		 UCH(line->data[i]) < 128 ||
+		 (UCH(line->data[i] & 0xc0) == 0xc0))) {
 		true_size++;
 	    }
 	}
@@ -8707,8 +8395,6 @@ PUBLIC void HText_RemovePreviousLine ARGS1(
     previous = line->prev;
     previous->next = text->last_line;
     text->last_line->prev = previous;
-    text->chars -= ((data && *data == '\0') ?
-					  1 : strlen(line->data) + 1);
     text->Lines--;
     FREE(line);
 }
@@ -8738,10 +8424,10 @@ PUBLIC int HText_getCurrentColumn ARGS1(
 PUBLIC int HText_getMaximumColumn ARGS1(
 	HText *,	text)
 {
-    int column = (LYcols-2);
+    int column = (DISPLAY_COLS-2);
     if (text) {
-	column = ((int)text->style->rightIndent ? (LYcols-2) :
-		  ((LYcols-1) - (int)text->style->rightIndent));
+	column = ((int)text->style->rightIndent ? (DISPLAY_COLS-2) :
+		  ((DISPLAY_COLS-1) - (int)text->style->rightIndent));
     }
     return column;
 }
@@ -9141,8 +8827,8 @@ PRIVATE char * HText_skipOptionNumPrefix ARGS1(
 	char *cp = opname;
 
 	if ((cp && *cp && *cp++ == '(') &&
-	    *cp && isdigit(*cp++)) {
-	    while (*cp && isdigit(*cp))
+	    *cp && isdigit(UCH(*cp++))) {
+	    while (*cp && isdigit(UCH(*cp)))
 		++cp;
 	    if (*cp && *cp++ == ')') {
 		int i = (cp - opname);
@@ -9202,8 +8888,8 @@ PUBLIC char * HText_setLastOptionValue ARGS7(
      */
     if (*value) {
 	cp = &value[strlen(value)-1];
-	while ((cp >= value) && (isspace((unsigned char)*cp) ||
-				 IsSpecialAttrChar((unsigned char)*cp)))
+	while ((cp >= value) && (isspace(UCH(*cp)) ||
+				 IsSpecialAttrChar(UCH(*cp))))
 	    cp--;
 	*(cp+1) = '\0';
     }
@@ -9212,8 +8898,8 @@ PUBLIC char * HText_setLastOptionValue ARGS7(
      *  Find first non space
      */
     cp = value;
-    while (isspace((unsigned char)*cp) ||
-	   IsSpecialAttrChar((unsigned char)*cp))
+    while (isspace(UCH(*cp)) ||
+	   IsSpecialAttrChar(UCH(*cp)))
 	cp++;
     if (HTCurSelectGroupType == F_RADIO_TYPE &&
 	LYSelectPopups &&
@@ -9224,8 +8910,8 @@ PUBLIC char * HText_setLastOptionValue ARGS7(
 	 */
 	if ((cp1 = HText_skipOptionNumPrefix(cp)) > cp) {
 	    i = 0, j = (cp1 - cp);
-	    while (isspace((unsigned char)cp1[i]) ||
-		   IsSpecialAttrChar((unsigned char)cp1[i])) {
+	    while (isspace(UCH(cp1[i])) ||
+		   IsSpecialAttrChar(UCH(cp1[i]))) {
 		i++;
 	    }
 	    if (i > 0) {
@@ -9288,7 +8974,7 @@ PUBLIC char * HText_setLastOptionValue ARGS7(
 	} else {
 	    while (op_ptr->next) {
 		number++;
-		op_ptr=op_ptr->next;
+		op_ptr = op_ptr->next;
 	    }
 	    number++;  /* add one more */
 
@@ -9305,22 +8991,22 @@ PUBLIC char * HText_setLastOptionValue ARGS7(
 	 *  changed the string. - kw
 	 */
 	cp = value;
-	while (isspace((unsigned char)*cp) ||
-	       IsSpecialAttrChar((unsigned char)*cp))
+	while (isspace(UCH(*cp)) ||
+	       IsSpecialAttrChar(UCH(*cp)))
 	    cp++;
 	for (i = 0, j = 0; cp[i]; i++) {
 	    if (cp[i] == HT_NON_BREAK_SPACE ||
 		cp[i] == HT_EN_SPACE) {
 		cp[j++] = ' ';
 	    } else if (cp[i] != LY_SOFT_HYPHEN &&
-		       !IsSpecialAttrChar((unsigned char)cp[i])) {
+		       !IsSpecialAttrChar(UCH(cp[i]))) {
 		cp[j++] = cp[i];
 	    }
 	}
 	cp[j] = '\0';
 	if (HTCJK != NOCJK) {
 	    if (cp &&
-		(tmp = (unsigned char *)calloc(1, strlen(cp)+1))) {
+		(tmp = typecallocn(unsigned char, strlen(cp)+1)) != 0) {
 #ifdef SH_EX
 		if (tmp == NULL)
 		    outofmem(__FILE__, "HText_setLastOptionValue");
@@ -9418,24 +9104,24 @@ PUBLIC char * HText_setLastOptionValue ARGS7(
     }
 
     if (TRACE) {
-	fprintf(tfp,"HText_setLastOptionValue:%s value=%s",
+	CTRACE((tfp, "HText_setLastOptionValue:%s value=%s",
 		(order == LAST_ORDER) ? " LAST_ORDER" : "",
-		value);
-	fprintf(tfp,"            val_cs=%d \"%s\"",
+		value));
+	CTRACE((tfp,"            val_cs=%d \"%s\"",
 			val_cs,
 			(val_cs >= 0 ?
-			 LYCharSet_UC[val_cs].MIMEname : "<UNKNOWN>"));
+			 LYCharSet_UC[val_cs].MIMEname : "<UNKNOWN>")));
 	if (submit_value) {
-	    fprintf(tfp, " (submit_val_cs %d \"%s\") submit_value%s=%s\n",
+	    CTRACE((tfp, " (submit_val_cs %d \"%s\") submit_value%s=%s\n",
 		    submit_val_cs,
 		    (submit_val_cs >= 0 ?
 		     LYCharSet_UC[submit_val_cs].MIMEname : "<UNKNOWN>"),
 		    (HTCurSelectGroupType == F_CHECKBOX_TYPE) ?
 						  "(ignored)" : "",
-		    submit_value);
+		    submit_value));
 	}
 	else {
-	    fprintf(tfp,"\n");
+	    CTRACE((tfp,"\n"));
 	}
     }
     return(ret_Value);
@@ -9451,7 +9137,6 @@ PUBLIC int HText_beginInput ARGS3(
 	BOOL,			underline,
 	InputFieldData *,	I)
 {
-
     TextAnchor * a = typecalloc(TextAnchor);
     FormInfo * f = typecalloc(FormInfo);
     CONST char *cp_option = NULL;
@@ -9464,7 +9149,6 @@ PUBLIC int HText_beginInput ARGS3(
     if (a == NULL || f == NULL)
 	outofmem(__FILE__, "HText_beginInput");
 
-    a->start = text->chars + text->last_line->size;
     a->inUnderline = underline;
     a->line_num = text->Lines;
     a->line_pos = text->last_line->size;
@@ -9542,11 +9226,7 @@ PUBLIC int HText_beginInput ARGS3(
     if (I->value)
 	StrAllocCopy(IValue, I->value);
     if (IValue && HTCJK != NOCJK) {
-	if ((tmp = (unsigned char *)calloc(1, (strlen(IValue) + 1)))) {
-#ifdef SH_EX
-	    if (tmp == NULL)
-		outofmem(__FILE__, "HText_beginInput");
-#endif
+	if ((tmp = typecallocn(unsigned char, strlen(IValue) + 1)) != 0) {
 	    if (kanji_code == EUC) {
 		TO_EUC((unsigned char *)IValue, tmp);
 		I->value_cs = current_char_set;
@@ -9832,7 +9512,6 @@ PUBLIC int HText_beginInput ARGS3(
 	     *  Add option list designation char.
 	     */
 	    HText_appendCharacter(text, '[');
-	a->start = text->chars + text->last_line->size;
 	a->line_num = text->Lines;
 	a->line_pos = text->last_line->size;
     }
@@ -9857,16 +9536,18 @@ PUBLIC int HText_beginInput ARGS3(
 	     *  text entry lines can be long, and will be scrolled
 	     *  horizontally within the editing window. - FM
 	     */
-	    MaximumSize = (LYcols - 1) -
+	    MaximumSize = (WRAP_COLS(text) - 1) -
 			  (int)text->style->leftIndent -
 			  (int)text->style->rightIndent;
 
-	    /*
-	     *  If we are numbering form links, take that into
-	     *  account as well. - FM
-	     */
+	    /*  If we are numbering form links, place is taken by [nn]  */
 	    if (keypad_mode == LINKS_AND_FIELDS_ARE_NUMBERED)
-		MaximumSize -= ((a->number/10) + 3);
+		MaximumSize -= (a->number >= 10	/*Buggy if 1e6 links, sowhat?*/
+				? (a->number >= 100
+				   ? (a->number >= 1000
+				      ? (a->number >= 10000
+					 ? (a->number >= 100000
+					    ? 6 : 5) : 4) : 3) : 2) : 1) + 2;
 	    if (f->size > MaximumSize)
 		f->size = MaximumSize;
 
@@ -9885,8 +9566,8 @@ PUBLIC int HText_beginInput ARGS3(
 	     *  are types with small placeholders, and/or are a
 	     *  type which is handled via a popup window. - FM
 	     */
-	    if (f->size > LYcols-10)
-		f->size = LYcols-10;  /* maximum */
+	    if (f->size > WRAP_COLS(text)-10)
+		f->size = WRAP_COLS(text)-10;  /* maximum */
 	    break;
     }
 
@@ -10082,7 +9763,7 @@ PUBLIC int HText_SubmitForm ARGS4(
     char *copied_val_used = NULL;
     char *copied_name_used = NULL;
 
-    CTRACE((tfp, "FIXME:SubmitForm\n"));
+    CTRACE((tfp, "SubmitForm\n  link_name=%s\n  link_value=%s\n", link_name, link_value));
     if (!HTMainText)
 	return 0;
 
@@ -10209,7 +9890,7 @@ PUBLIC int HText_SubmitForm ARGS4(
 		     p && *p && !(field_has_8bit && field_has_special);
 		     p++)
 		    if ((*p == HT_NON_BREAK_SPACE) ||
-		       (*p == HT_EN_SPACE) ||
+			(*p == HT_EN_SPACE) ||
 			(*p == LY_SOFT_HYPHEN)) {
 			field_has_special = YES;
 		    } else if ((*p & 0x80) != 0) {
@@ -10366,7 +10047,6 @@ PUBLIC int HText_SubmitForm ARGS4(
 	    }
 	}
     }
-
 
     out_csname = target_csname;
 
@@ -10620,6 +10300,7 @@ PUBLIC int HText_SubmitForm ARGS4(
 		default:
 		    CTRACE((tfp, "SubmitForm: What type is %d?\n",
 				form_ptr->type));
+		    break;
 		}
 
 		switch(form_ptr->type) {
@@ -10672,9 +10353,9 @@ PUBLIC int HText_SubmitForm ARGS4(
 			escaped1 = HTEscapeSP(name_used, URL_XALPHAS);
 		    }
 
-		    if ((fd = fopen(val_used, "rb")) == 0) {
+		    if ((fd = fopen(val_used, BIN_R)) == 0) {
 			/* We can't open the file, what do we do? */
-			HTAlert("Can't open file for uploading");
+			HTAlert(gettext("Can't open file for uploading"));
 			goto exit_disgracefully;
 		    }
 		    StrAllocCopy(escaped2, "");
@@ -10685,11 +10366,11 @@ PUBLIC int HText_SubmitForm ARGS4(
 		    }
 		    if (ferror(fd)) {
 			/* We got an error reading the file, what do we do? */
-			HTAlert("Short read from file, problem?");
-			fclose(fd);
+			HTAlert(gettext("Short read from file, problem?"));
+			LYCloseInput(fd);
 			goto exit_disgracefully;
 		    }
-		    fclose(fd);
+		    LYCloseInput(fd);
 		    /* we need to modify the mime-type here - rp */
 		    /* Note: could use LYGetFileInfo for that and for
 		       other headers that should be transmitted - kw */
@@ -10713,7 +10394,7 @@ PUBLIC int HText_SubmitForm ARGS4(
 		case F_IMAGE_SUBMIT_TYPE:
 		    /*
 		     *  If it has a non-zero length name (e.g., because
-		     *  it's IMAGE_SUBMIT_TYPE to be handled homologously
+		     *  its IMAGE_SUBMIT_TYPE is to be handled homologously
 		     *  to an image map, or a SUBMIT_TYPE in a set of
 		     *  multiple submit buttons, or a single type="text"
 		     *  that's been converted to a TEXT_SUBMIT_TYPE),
@@ -10900,7 +10581,7 @@ PUBLIC int HText_SubmitForm ARGS4(
 			    if (Boundary) {
 				HTSprintf(&query, "--%s\r\n", Boundary);
 			    }
-			    first_one=FALSE;
+			    first_one = FALSE;
 			} else {
 			    if (PlainText) {
 				StrAllocCat(query, "\n");
@@ -11430,10 +11111,6 @@ PUBLIC void HText_setKcode ARGS3(
 	       !strcmp(charset, "x-euc") ||	/* 1997/11/28 (Fri) 18:11:24 */
 	       !strcmp(charset, "euc-jp") ||
 	       !strncmp(charset, "x-euc-", 6) ||
-#if 0 /* iso-2022-jp* shouldn't be treated as euc-jp */
-	       !strcmp(charset, "iso-2022-jp") ||
-	       !strcmp(charset, "iso-2022-jp-2") ||
-#endif
 	       !strcmp(charset, "euc-kr") ||
 	       !strcmp(charset, "iso-2022-kr") ||
 	       !strcmp(charset, "big5") ||
@@ -11624,11 +11301,13 @@ PRIVATE void cleanup_line_for_textarea ARGS2(
     /*
      *  Whack off trailing whitespace from the line.
      */
-    for (i = len, p = line + (len - 1); i != 0; p--, i--) {
-	if (isspace (*p))
-	    *p = '\0';
-	else
-	    break;
+    if (LYtrimInputFields) {
+	for (i = len, p = line + (len - 1); i != 0; p--, i--) {
+	    if (isspace(UCH(*p)))
+		*p = '\0';
+	    else
+		break;
+	}
     }
 
     if (strlen (line) != 0) {
@@ -11681,14 +11360,14 @@ PRIVATE void cleanup_line_for_textarea ARGS2(
 	 */
 	for (p = line, s = tbuf; *s != '\0'; p++, s++) {
 #ifndef EBCDIC
-	    *p = (((unsigned char)*s  < (unsigned char)' ')       ||
-		  ((unsigned char)*s == (unsigned char)'\177')    ||
-		  (((unsigned char)*s > (unsigned char)'\177') &&
-		   ((unsigned char)*s <
-		    (unsigned char)LYlowest_eightbit[current_char_set])))
+	    *p = ((UCH(*s)  < UCH(' '))       ||
+		  (UCH(*s) == UCH('\177'))    ||
+		  ((UCH(*s) > UCH('\177')) &&
+		   (UCH(*s) <
+		    UCH(LYlowest_eightbit[current_char_set]))))
 		 ? (char) SPLAT : *s;
 #else
-	    *p = ((unsigned char)*s < (unsigned char)' ') ? SPLAT : *s;
+	    *p = (UCH(*s) < UCH(' ')) ? SPLAT : *s;
 #endif
 	}
 	*p = '\0';
@@ -11746,6 +11425,7 @@ PRIVATE int increment_tagged_htline ARGS6(
     int   n;
     int   new_n;
     int   pre_n;
+    int   post_n;
     int   fixup = 0;
 
 
@@ -11795,7 +11475,7 @@ PRIVATE int increment_tagged_htline ARGS6(
 		    plx   = TRUE;
 		    break;
 		}
-		if (isdigit (*t++) != 0) {
+		if (isdigit(UCH(*t++))) {
 		    n++;
 		    continue;
 		} else {
@@ -11814,7 +11494,7 @@ PRIVATE int increment_tagged_htline ARGS6(
 	     *   nn), one of which is the [tag], and the other being part of
 	     *   a document.  In such a case, the 1st [nn] string will get
 	     *   incremented; the 2nd one won't, which makes it a 50-50 chance
-	     *   of being correct, if and when such an unlikely juxitposition
+	     *   of being correct, if and when such an unlikely juxtaposition
 	     *   of text ever occurs.  Further validation tests of the [nnn]
 	     *   string are probably not possible, since little of the actual
 	     *   anchor-associated-text is retained in the TextAnchor or the
@@ -11836,7 +11516,7 @@ PRIVATE int increment_tagged_htline ARGS6(
 		    /*
 		     *  If the number of digits in an existing [tag] increased
 		     *  (eg, [99] --> [100], etc), we need to "adjust" its
-		     *  horizontal position, and that of all subsequant tags
+		     *  horizontal position, and that of all subsequent tags
 		     *  that may be on the same line.  PITA.
 		     *
 		     *  [This seems to work as long as a tag isn't a line
@@ -11864,7 +11544,7 @@ PRIVATE int increment_tagged_htline ARGS6(
 			if (st_anchor) st_anchor = st_anchor->next;
 		    }
 		}
-	   }
+	    }
 
 	    /*
 	     *  Unfortunately, valid [tag] strings *can* be split across two
@@ -11877,9 +11557,11 @@ PRIVATE int increment_tagged_htline ARGS6(
 	     *
 	     *  We use lxbuf[] to deal with the two lines involved.
 	     */
-	    if (plx) {
+	    pre_n = strlen (p);	/* count of 1st part chars in this line */
+	    post_n = strlen(ht->next->data);
+	    if (plx
+	     && (pre_n + post_n + 2 < (int) sizeof(lxbuf))) {
 		strcpy (lx, p);      /* <- 1st part of a possible lx'ing tag */
-		pre_n = strlen (p);  /* count of 1st part chars in this line */
 		strcat (lx, ht->next->data);   /* tack on NEXT line	     */
 
 		t     = lx;
@@ -11890,7 +11572,7 @@ PRIVATE int increment_tagged_htline ARGS6(
 		 *  Go hunting again for just digits, followed by tag end ']'.
 		 */
 		while (*t != ']') {
-		    if (isdigit (*t++) != 0) {
+		    if (isdigit(UCH(*t++))) {
 			n++;
 			continue;
 		    } else {
@@ -11905,7 +11587,9 @@ PRIVATE int increment_tagged_htline ARGS6(
 		 *  above], and if it matches, increment it into the buffer,
 		 *  along with the 2nd line's text.
 		 */
-		if ((valid) && (n > 0)) {
+		if ((valid)
+		 && (n > 0)
+		 && (n + post_n + 2) < MAX_LINE) {
 		    val = atoi (lx);
 		    if ((val == *old_val) || (*old_val == 0)) {
 			if (*old_val != 0)
@@ -11983,7 +11667,7 @@ PRIVATE void insert_new_textarea_anchor ARGS2(
      *   YAS (Yet Another Struct), but there are too many structs{}
      *   floating around in here, as it is.  IMNSHO.]
      */
-    for (htline = HTMainText->last_line->next, i = 0;
+    for (htline = FirstHTLine(HTMainText), i = 0;
 	 anchor->line_num != i;                i++) {
 	htline = htline->next;
 	if (htline == HTMainText->last_line)
@@ -12003,7 +11687,6 @@ PRIVATE void insert_new_textarea_anchor ARGS2(
     /*  [anything "special" needed based on ->show_anchor value ?] */
     a->next	       = anchor->next;
     a->number	       = anchor->number;
-    a->start	       = anchor->start + anchor->input_field->size + 1;
     a->line_pos	       = anchor->line_pos;
     a->extent	       = anchor->extent;
     a->line_num	       = anchor->line_num + 1;
@@ -12034,16 +11717,11 @@ PRIVATE void insert_new_textarea_anchor ARGS2(
     l->prev	       = htline;
     l->offset	       = htline->offset;
     l->size	       = htline->size;
-    l->split_after     = htline->split_after;
-    l->bullet	       = htline->bullet;
-    l->expansion_line  = TRUE;
 #if defined(USE_COLOR_STYLE)
     /* dup styles[] if needed [no need in TEXTAREA (?); leave 0's] */
     l->numstyles       = htline->numstyles;
-#ifndef OLD_HTSTYLECHANGE
     /*we fork the pointers!*/
     l->styles = htline->styles;
-#endif
 #endif
     strcpy (l->data,     htline->data);
     if (keypad_mode == LINKS_AND_FIELDS_ARE_NUMBERED) {
@@ -12090,15 +11768,14 @@ PRIVATE void insert_new_textarea_anchor ARGS2(
  *  --KED  02/13/99
  */
 PRIVATE void update_subsequent_anchors ARGS4(
-	int,		 n,
+	int,		 newlines,
 	TextAnchor *,	 start_anchor,
-	HTLine *,        start_htline,
+	HTLine *,	 start_htline,
 	int,		 start_tag)
 {
     TextAnchor *anchor;
     HTLine     *htline = start_htline;
 
-    int form_chars_added = (start_anchor->input_field->size + 1) * n;
     int		line_adj = 0;
     int		tag_adj	 = 0;
     int		lx	 = 0;
@@ -12106,7 +11783,7 @@ PRIVATE void update_subsequent_anchors ARGS4(
     int      hang_detect = 100000;  /* ditto */
 
 
-    CTRACE((tfp, "GridText: adjusting struct's to add %d new line(s)\n", n));
+    CTRACE((tfp, "GridText: adjusting struct's to add %d new line(s)\n", newlines));
 
     /*
      *  Update numeric fields of the rest of the anchors.
@@ -12120,9 +11797,8 @@ PRIVATE void update_subsequent_anchors ARGS4(
     while (anchor) {
 	if ((keypad_mode == LINKS_AND_FIELDS_ARE_NUMBERED) &&
 	    (anchor->number != 0))
-	    anchor->number += n;
-	anchor->line_num  += n;
-	anchor->start	  += form_chars_added;
+	    anchor->number += newlines;
+	anchor->line_num  += newlines;
 	anchor = anchor->next;
     }
 
@@ -12158,10 +11834,10 @@ PRIVATE void update_subsequent_anchors ARGS4(
      */
     if (keypad_mode == LINKS_AND_FIELDS_ARE_NUMBERED) {
 	anchor = start_anchor->next;
-	while (htline != HTMainText->last_line->next) {
+	while (htline != FirstHTLine(HTMainText)) {
 
 	    while (anchor) {
-		if ((anchor->number - n) == start_tag)
+		if ((anchor->number - newlines) == start_tag)
 		    break;
 
 		/*** A HANG (infinite loop) *has* occurred here, with */
@@ -12191,7 +11867,8 @@ PRIVATE void update_subsequent_anchors ARGS4(
 
 	    if (anchor) {
 		line_adj = increment_tagged_htline (htline,  anchor,  &lx,
-						    &start_tag, n,  NOCHOP);
+						    &start_tag, newlines,
+						    NOCHOP);
 		htline->size += line_adj;
 		tag_adj      += line_adj;
 
@@ -12204,14 +11881,13 @@ PRIVATE void update_subsequent_anchors ARGS4(
 	}
     }
 
-exit:
+finish:
     /*
      *  Fixup various global variables.
      */
-    nlinks                         += n;
-    HTMainText->Lines              += n;
-    HTMainText->last_anchor_number += n;
-    HTMainText->chars              += (form_chars_added + tag_adj);
+    nlinks                         += newlines;
+    HTMainText->Lines              += newlines;
+    HTMainText->last_anchor_number += newlines;
 
     more = HText_canScrollDown();
 
@@ -12219,13 +11895,10 @@ exit:
 
     return;
 
-hang_detected:  /* uglyness has happened; inform user and do the best we can */
+hang_detected:  /* ugliness has happened; inform user and do the best we can */
 
-    printf ("\007");  /* beep the user */
-    fflush (NULL);
-    HTAlert ("Hang Detect: TextAnchor struct corrupted - suggest aborting!");
-    HTAlert ("Hang Detect: TextAnchor struct corrupted - suggest aborting!");
-    goto exit;
+    HTAlert(gettext("Hang Detect: TextAnchor struct corrupted - suggest aborting!"));
+    goto finish;
 }
 
 
@@ -12249,7 +11922,6 @@ PUBLIC int HText_ExtEditForm ARGS1(
 
     char       *ed_temp;
     FILE       *fp;
-    int		rv;
 
     TextAnchor *anchor_ptr;
     TextAnchor *start_anchor  = NULL;
@@ -12271,11 +11943,10 @@ PUBLIC int HText_ExtEditForm ARGS1(
     HTLine     *htline	 = NULL;
 
     char       *ebuf;
-    char       *tbuf = NULL;
     char       *line;
     char       *lp;
     char       *cp;
-    int         match_tag = 0;
+    int		match_tag = 0;
     int		newlines  = 0;
     int		len, len0, len_in;
     int		wanted_fieldlen_wrap = -1; /* not yet asked; 0 means don't. */
@@ -12347,47 +12018,9 @@ PUBLIC int HText_ExtEditForm ARGS1(
      */
     ed_offset[0] = 0; /* pre-ANSI compilers don't initialize aggregates - TD */
     if (((entry_line - start_line) > 0) && editor_can_position())
-#ifdef VMS
-	sprintf (ed_offset, "-%d", ((entry_line - start_line) + 1));
-    HTSprintf0 (&tbuf, "%s %s %s", editor, ed_temp, ed_offset);
-#else
-	sprintf (ed_offset, "+%d", ((entry_line - start_line) + 1));
-    HTSprintf0 (&tbuf, "%s %s %s", editor, ed_offset, ed_temp);
-#endif
+	sprintf (ed_offset, "%d", ((entry_line - start_line) + 1));
 
-#ifdef UNIX
-    set_errno(0);
-#endif
-    rv = LYSystem (tbuf);	/* finally the editor is called */
-    if (rv) {
-	/*
-	 *  If something went wrong, we should probably return soon;
-	 *  currently we don't, but at least put out a message. - kw
-	 */
-#ifdef UNIX
-	int rvhi = (rv >> 8);
-	CTRACE((tfp, "ExtEditForm: system() returned %d (0x%x), %s\n",
-	       rv, rv, errno ? LYStrerror(errno) : "reason unknown"));
-	LYFixCursesOn("show error warning:");
-	if (rv != -1 && (rv && 0xff) && !rvhi) {
-	    HTAlwaysAlert(NULL, gettext("Editor killed by signal"));
-	} else if (!(rv == -1 || (rvhi == 127 && errno))) {
-	    HTUserMsg2(gettext("Editor returned with error status, %s"),
-		       errno ? LYStrerror(errno) : gettext("reason unknown."));
-	} else
-#endif
-	    HTAlwaysAlert(NULL, ERROR_SPAWNING_EDITOR);
-    }
-
-#ifdef UNIX
-    /*
-     *  Delete backup file, if that's your style.
-     */
-    HTSprintf0 (&tbuf, "%s~", ed_temp);
-    if (stat (tbuf, &stat_info) == 0)
-	remove (tbuf);
-#endif
-    FREE(tbuf);
+    edit_temporary_file(ed_temp, ed_offset, NULL);
 
     CTRACE((tfp, "GridText: returned from editor (%s)\n", editor));
 
@@ -12417,15 +12050,18 @@ PUBLIC int HText_ExtEditForm ARGS1(
 
 	fp = fopen (ed_temp, "r");
 	size = fread (ebuf, 1, size, fp);
-	fclose (fp);
+	LYCloseInput (fp);
 	ebuf[size] = '\0';	/* Terminate! - kw */
     }
 
     /*
      *	Nuke any blank lines from the end of the edited data.
      */
-    while ((size != 0) && (isspace (ebuf[size-1]) || (ebuf[size-1] == '\0')))
-	ebuf[--size] = '\0';
+    if (LYtrimInputFields) {
+	while ((size != 0)
+	 && (isspace(UCH(ebuf[size-1])) || (ebuf[size-1] == '\0')))
+	    ebuf[--size] = '\0';
+    }
 
     /*
      *	Copy each line from the temp file into the corresponding anchor
@@ -12468,7 +12104,7 @@ PUBLIC int HText_ExtEditForm ARGS1(
 	    (cp = strchr(lp, ' ')) != NULL &&
 	    (cp-lp) < start_anchor->input_field->size - 1) {
 	    LYFixCursesOn("ask for confirmation:");
-	    erase();		/* don't show previous state */
+	    LYerase();		/* don't show previous state */
 	    if (HTConfirmDefault(gettext("Wrap lines to fit displayed area?"),
 				 NO)) {
 		wanted_fieldlen_wrap = start_anchor->input_field->size - 1;
@@ -12479,16 +12115,16 @@ PUBLIC int HText_ExtEditForm ARGS1(
 	if (wanted_fieldlen_wrap > 0 && len0+len > wanted_fieldlen_wrap) {
 	    for (i = wanted_fieldlen_wrap-len0;
 		 i+len0 >= wanted_fieldlen_wrap/4; i--) {
-		if (isspace((unsigned char)lp[i])) {
+		if (isspace(UCH(lp[i]))) {
 		    len = i + 1;
 		    cp = lp + i;
 		    if (cp[1] != '\n' &&
-			isspace((unsigned char)cp[1]) &&
-			!isspace((unsigned char)cp[2])) {
+			isspace(UCH(cp[1])) &&
+			!isspace(UCH(cp[2]))) {
 			len++;
 			cp++;
 		    }
-		    if (!isspace((unsigned char)cp[1])) {
+		    if (!isspace(UCH(cp[1]))) {
 			while (*cp && *cp != '\r' && *cp != '\n' &&
 			       (cp - lp) <= len + (3 * wanted_fieldlen_wrap/4))
 			    cp++;	/* search for next line break */
@@ -12496,9 +12132,9 @@ PUBLIC int HText_ExtEditForm ARGS1(
 			    cp++;
 			if (*cp == '\n' &&
 			    (cp[1] == '\r' || cp[1] == '\n' ||
-			     !isspace((unsigned char)cp[1]))) {
+			     !isspace(UCH(cp[1])))) {
 			    *cp = ' ';
-			    while (isspace((unsigned char)*(cp-1))) {
+			    while (isspace(UCH(*(cp-1)))) {
 				skip_num++;
 				cp--;
 			    }
@@ -12512,7 +12148,7 @@ PUBLIC int HText_ExtEditForm ARGS1(
 	if (wanted_fieldlen_wrap > 0 && len0+len > wanted_fieldlen_wrap) {
 	    i = len-1;
 	    while (len0+i+1 > wanted_fieldlen_wrap &&
-		   isspace((unsigned char)lp[i]))
+		   isspace(UCH(lp[i])))
 		i--;
 	    if (len0+i+1 > wanted_fieldlen_wrap)
 		len = wanted_fieldlen_wrap - len0;
@@ -12528,7 +12164,7 @@ PUBLIC int HText_ExtEditForm ARGS1(
 	     *  First try to find a space character for wrapping - kw
 	     */
 	    for (i = MAX_LINE - len0 - 1; i > 0; i--) {
-		if (isspace((unsigned char)lp[i])) {
+		if (isspace(UCH(lp[i]))) {
 		    len = i;
 		    break;
 		}
@@ -12571,7 +12207,7 @@ PUBLIC int HText_ExtEditForm ARGS1(
 	 *  And do the next line of edited text, for the next anchor ...
 	 */
 	lp += len;
-	if (*lp && isspace((unsigned char)*lp)) lp++;
+	if (*lp && isspace(UCH(*lp))) lp++;
 
 	end_anchor = anchor_ptr;
 	anchor_ptr = anchor_ptr->next;
@@ -12620,7 +12256,7 @@ PUBLIC int HText_ExtEditForm ARGS1(
  */
 PUBLIC void HText_ExpandTextarea ARGS2(
 	    struct link *,  form_link,
-	    int,            newlines)
+	    int,	    newlines)
 {
     TextAnchor *anchor_ptr;
     TextAnchor *end_anchor    = NULL;
@@ -12709,8 +12345,8 @@ PUBLIC void HText_ExpandTextarea ARGS2(
 
 
 /*
- *  Insert the contents of a file into a TEXTAREA between the cursorline,
- *  and the line preceeding it.
+ *  Insert the contents of a file into a TEXTAREA between the cursor line,
+ *  and the line preceding it.
  *
  *  Returns the number of lines that the cursor should be moved so that it
  *  will end up on the 1st line in the TEXTAREA following the inserted file
@@ -12813,7 +12449,7 @@ PUBLIC int HText_InsertFile ARGS1(
 	    return 0;
 	}
 	size = fread (fbuf, 1, size, fp);
-	fclose (fp);
+	LYCloseInput (fp);
 	FREE(fn);
 	fbuf[size] = '\0';	/* Terminate! - kw */
     }
@@ -12862,7 +12498,7 @@ PUBLIC int HText_InsertFile ARGS1(
      *   line).  Beware of the differences ... some are a bit subtle to
      *   notice.]
      */
-    for (htline = HTMainText->last_line->next, i = 0;
+    for (htline = FirstHTLine(HTMainText), i = 0;
 	 anchor_ptr->line_num != i;            i++) {
 	htline = htline->next;
 	if (htline == HTMainText->last_line)
@@ -12878,7 +12514,6 @@ PUBLIC int HText_InsertFile ARGS1(
     /*  [anything "special" needed based on ->show_anchor value ?] */
     a->next	       = anchor_ptr;
     a->number	       = anchor_ptr->number;
-    a->start	       = anchor_ptr->start;
     a->line_pos	       = anchor_ptr->line_pos;
     a->extent	       = anchor_ptr->extent;
     a->line_num	       = anchor_ptr->line_num;
@@ -12907,16 +12542,11 @@ PUBLIC int HText_InsertFile ARGS1(
     /*  Init all the fields in the new HTLine (but see the #if).   */
     l->offset	       = htline->offset;
     l->size	       = htline->size;
-    l->split_after     = htline->split_after;
-    l->bullet	       = htline->bullet;
-    l->expansion_line  = TRUE;
 #if defined(USE_COLOR_STYLE)
     /* dup styles[] if needed [no need in TEXTAREA (?); leave 0's] */
     l->numstyles       = htline->numstyles;
-#ifndef OLD_HTSTYLECHANGE
     /*we fork the pointers!*/
     l->styles = htline->styles;
-#endif
 #endif
     strcpy (l->data,     htline->data);
 
@@ -12933,11 +12563,11 @@ PUBLIC int HText_InsertFile ARGS1(
     if (prev_anchor)
 	prev_anchor->next = a;
 
-    htline             = htline->prev;
-    l->next	       = htline->next;
-    l->prev	       = htline;
-    htline->next->prev = l;
-    htline->next       = l;
+    htline		= htline->prev;
+    l->next		= htline->next;
+    l->prev		= htline;
+    htline->next->prev	= l;
+    htline->next	= l;
 
     /*
      *  update_subsequent_anchors() expects htline to point to 1st potential
@@ -13027,7 +12657,6 @@ PUBLIC int HText_InsertFile ARGS1(
      */
     update_subsequent_anchors (newlines, end_anchor, htline, match_tag);
 
-
     /*
      *  Cleanup time.
      */
@@ -13091,7 +12720,7 @@ PRIVATE void redraw_part_of_line ARGS4(
 	while (current_style < line->numstyles &&
 	       i >= (int) (CStyle.horizpos + line->offset + 1))
 	{
-		LynxChangeStyle (CStyle.style,CStyle.direction,CStyle.previous);
+		LynxChangeStyle (CStyle.style,CStyle.direction);
 		current_style++;
 	}
 #endif
@@ -13100,7 +12729,7 @@ PRIVATE void redraw_part_of_line ARGS4(
 #ifndef USE_COLOR_STYLE
 	    case LY_UNDERLINE_START_CHAR:
 		if (dump_output_immediately && use_underscore) {
-		    addch('_');
+		    LYaddch('_');
 		    i++;
 		} else {
 		    start_underline();
@@ -13109,7 +12738,7 @@ PRIVATE void redraw_part_of_line ARGS4(
 
 	    case LY_UNDERLINE_END_CHAR:
 		if (dump_output_immediately && use_underscore) {
-		    addch('_');
+		    LYaddch('_');
 		    i++;
 		} else {
 		    stop_underline();
@@ -13127,12 +12756,12 @@ PRIVATE void redraw_part_of_line ARGS4(
 #endif
 	    case LY_SOFT_NEWLINE:
 		if (!dump_output_immediately)
-		    addch('+');
+		    LYaddch('+');
 		break;
 
 	    case LY_SOFT_HYPHEN:
 		if (*data != '\0' ||
-		    isspace((unsigned char)LastDisplayChar) ||
+		    isspace(UCH(LastDisplayChar)) ||
 		    LastDisplayChar == '-') {
 		    /*
 		     *  Ignore the soft hyphen if it is not the last
@@ -13156,7 +12785,7 @@ PRIVATE void redraw_part_of_line ARGS4(
 
 	    default:
 		i++;
-		if (text->T.output_utf8 && !isascii((unsigned char)buffer[0])) {
+		if (text->T.output_utf8 && !isascii(UCH(buffer[0]))) {
 		    if ((*buffer & 0xe0) == 0xc0) {
 			utf_extra = 1;
 		    } else if ((*buffer & 0xf0) == 0xe0) {
@@ -13184,17 +12813,17 @@ PRIVATE void redraw_part_of_line ARGS4(
 		if (utf_extra) {
 		    strncpy(&buffer[1], data, utf_extra);
 		    buffer[utf_extra+1] = '\0';
-		    addstr(buffer);
+		    LYaddstr(buffer);
 		    buffer[1] = '\0';
 		    data += utf_extra;
 		    utf_extra = 0;
-		} else if (HTCJK != NOCJK && !isascii((unsigned char)buffer[0])) {
+		} else if (HTCJK != NOCJK && !isascii(UCH(buffer[0]))) {
 		    /*
 		     *  For CJK strings, by Masanobu Kimura.
 		     */
 		    buffer[1] = *data;
 		    data++;
-		    addstr(buffer);
+		    LYaddstr(buffer);
 		    buffer[1] = '\0';
 		    /*
 		     *  For now, load 'M' into LastDisplayChar,
@@ -13209,16 +12838,7 @@ PRIVATE void redraw_part_of_line ARGS4(
 		     */
 		    LastDisplayChar = 'M';
 		} else {
-#if 0	/* last-ditch attempt to prevent 0x9B to screen - disabled  */
-#if defined(UNIX) || defined(VMS)
-		    if (!dump_output_immediately &&
-			(unsigned char)buffer[0] == 128+27) {
-			addstr("~^");
-			buffer[0] ^= 0xc0;
-		    }
-#endif
-#endif
-		    addstr(buffer);
+		    LYaddstr(buffer);
 		    LastDisplayChar = buffer[0];
 		}
 	} /* end of switch */
@@ -13231,7 +12851,7 @@ PRIVATE void redraw_part_of_line ARGS4(
 
     while (current_style < line->numstyles)
     {
-	LynxChangeStyle (CStyle.style, CStyle.direction, CStyle.previous);
+	LynxChangeStyle (CStyle.style, CStyle.direction);
 	current_style++;
     }
 
@@ -13305,8 +12925,8 @@ PRIVATE void move_to_glyph ARGS10(
      *  go over the COLS limit on the display.
      */
     i = (int)offset;
-    if (i > (int)LYcols - 1)
-	i = (int)LYcols - 1;
+    if (i > (int)DISPLAY_COLS - 1)
+	i = (int)DISPLAY_COLS - 1;
 
     linkvlen = hightext ? LYmbcsstrlen(hightext, utf_flag, YES) : 0;
 
@@ -13324,20 +12944,13 @@ PRIVATE void move_to_glyph ARGS10(
      */
     i_after_tgt = i;
     if (target) {
-	if (case_sensitive)
-	    cp_tgt = LYno_attr_mbcs_strstr(sdata,
-					   target,
-					   utf_flag, YES,
-					   &HitOffset,
-					   &LenNeeded);
-	else
-	    cp_tgt = LYno_attr_mbcs_case_strstr(sdata,
-						target,
-						utf_flag, YES,
-						&HitOffset,
-						&LenNeeded);
+	cp_tgt = LYno_attr_mb_strstr(sdata,
+				     target,
+				     utf_flag, YES,
+				     &HitOffset,
+				     &LenNeeded);
 	if (cp_tgt) {
-	    if ((int)offset + LenNeeded >= LYcols ||
+	    if ((int)offset + LenNeeded >= DISPLAY_COLS ||
 		((int)offset + HitOffset >= XP + linkvlen)) {
 		cp_tgt = NULL;
 	    } else {
@@ -13358,7 +12971,7 @@ PRIVATE void move_to_glyph ARGS10(
      *  XP_draw_min) is found, or when we reach the link itself (if
      *  highlight is non-NULL). - kw
      */
-    while ((i < LYcols - 1) && data < end_of_data && (*data != '\0')) {
+    while ((i < DISPLAY_COLS - 1) && data < end_of_data && (*data != '\0')) {
 
 	if (data && hightext && i >= XP && !incurlink) {
 
@@ -13405,7 +13018,7 @@ PRIVATE void move_to_glyph ARGS10(
 #ifdef SHOW_WHEREIS_TARGETS
 		if (intarget) {
 		    if (i_after_tgt > i) {
-			move(YP, i);
+			LYmove(YP, i);
 			if (flag) {
 			    drawing = YES;
 			    drawingtarget = NO;
@@ -13417,11 +13030,6 @@ PRIVATE void move_to_glyph ARGS10(
 			    LYstartTargetEmphasis();
 			}
 		    }
-#if 0
-		} else {
-		    if (inunderline)	inU = YES;
-		    lynx_start_link_color (flag, inU);
-#endif
 		}
 #endif /* SHOW_WHEREIS_TARGETS */
 	    } else {
@@ -13458,18 +13066,12 @@ PRIVATE void move_to_glyph ARGS10(
 
 		if (incurlink && flag && i == XP - 1)
 		    cp_tgt = NULL;
-		else if (case_sensitive)
-		    cp_tgt = LYno_attr_mbcs_strstr(sdata,
-						   target,
-						   utf_flag, YES,
-						   &HitOffset,
-						   &LenNeeded);
 		else
-		    cp_tgt = LYno_attr_mbcs_case_strstr(sdata,
-							target,
-							utf_flag, YES,
-							&HitOffset,
-							&LenNeeded);
+		    cp_tgt = LYno_attr_mb_strstr(sdata,
+						 target,
+						 utf_flag, YES,
+						 &HitOffset,
+						 &LenNeeded);
 		if (cp_tgt) {
 		    i_start_tgt = i + HitOffset;
 		    i_after_tgt = i + LenNeeded;
@@ -13554,14 +13156,14 @@ PRIVATE void move_to_glyph ARGS10(
 
 	    case LY_SOFT_NEWLINE:
 		if (drawing) {
-		    addch('+');
+		    LYaddch('+');
 		}
 		i++;
 		break;
 
 	    case LY_SOFT_HYPHEN:
 		if (*data != '\0' ||
-		    isspace((unsigned char)LastDisplayChar) ||
+		    isspace(UCH(LastDisplayChar)) ||
 		    LastDisplayChar == '-') {
 		    /*
 		     *  Ignore the soft hyphen if it is not the last
@@ -13593,7 +13195,7 @@ PRIVATE void move_to_glyph ARGS10(
 		    if (i == XP - 1) {
 			i_after_tgt = i;
 		    } else if (i == XP - 2 && HTCJK != NOCJK &&
-			       !isascii((unsigned char)buffer[0])) {
+			       !isascii(UCH(buffer[0]))) {
 			i_after_tgt = i;
 			cp_tgt = NULL;
 			if (drawing) {
@@ -13615,7 +13217,7 @@ PRIVATE void move_to_glyph ARGS10(
 			    lynx_stop_link_color (flag, inU);
 			}
 			if (incurlink && !drawing) {
-			    move(YP, i);
+			    LYmove(YP, i);
 			    if (inunderline)	inU = YES;
 			    if (flag && (i == XP_link || i == XP - 1)) {
 				lynx_start_link_color (flag, inU);
@@ -13643,7 +13245,7 @@ PRIVATE void move_to_glyph ARGS10(
 #endif /* SHOW_WHEREIS_TARGETS */
 		    if (incurlink) {
 			if (!drawing) {
-			    move(YP, i);
+			    LYmove(YP, i);
 			    if (inunderline)	inU = YES;
 			    lynx_start_link_color (flag, inU);
 			    drawing = YES;
@@ -13651,7 +13253,7 @@ PRIVATE void move_to_glyph ARGS10(
 		    }
 
 		i++;
-		if (utf_flag && !isascii((unsigned char)buffer[0])) {
+		if (utf_flag && !isascii(UCH(buffer[0]))) {
 		    hadutf8 = YES;
 		    if ((*buffer & 0xe0) == 0xc0) {
 			utf_extra = 1;
@@ -13681,7 +13283,7 @@ PRIVATE void move_to_glyph ARGS10(
 		    strncpy(&buffer[1], data, utf_extra);
 		    buffer[utf_extra+1] = '\0';
 		    if (!drawing && i >= XP_draw_min) {
-			move(YP, i - 1);
+			LYmove(YP, i - 1);
 			drawing = YES;
 #if defined(SHOW_WHEREIS_TARGETS)
 			if (intarget) {
@@ -13696,17 +13298,17 @@ PRIVATE void move_to_glyph ARGS10(
 				start_underline();
 			}
 		    }
-		    addstr(buffer);
+		    LYaddstr(buffer);
 		    buffer[1] = '\0';
 		    sdata += utf_extra; data += utf_extra;
 		    utf_extra = 0;
-		} else if (HTCJK != NOCJK && !isascii((unsigned char)buffer[0])) {
+		} else if (HTCJK != NOCJK && !isascii(UCH(buffer[0]))) {
 		    /*
 		     *  For CJK strings, by Masanobu Kimura.
 		     */
-		    if (drawing && (i < LYcols - 1)) {
+		    if (drawing && (i < DISPLAY_COLS - 1)) {
 			buffer[1] = *data;
-			addstr(buffer);
+			LYaddstr(buffer);
 			buffer[1] = '\0';
 		    }
 		    i++;
@@ -13725,16 +13327,7 @@ PRIVATE void move_to_glyph ARGS10(
 		    LastDisplayChar = 'M';
 		} else {
 		    if (drawing) {
-#if 0	/* last-ditch attempt to prevent 0x9B to screen - disabled  */
-#if defined(UNIX) || defined(VMS)
-			if (!dump_output_immediately &&
-			    (unsigned char)buffer[0] == 128+27) {
-			    addstr("~^");
-			    buffer[0] ^= 0xc0;
-			}
-#endif
-#endif
-			addstr(buffer);
+			LYaddstr(buffer);
 		    }
 		    LastDisplayChar = buffer[0];
 		}
@@ -13742,7 +13335,7 @@ PRIVATE void move_to_glyph ARGS10(
     } /* end of while */
 
     if (!drawing) {
-	move(YP, i);
+	LYmove(YP, i);
 	lynx_start_link_color (flag, inU);
     } else {
 #if defined(SHOW_WHEREIS_TARGETS)
@@ -13807,7 +13400,7 @@ PUBLIC void LYMoveToLink ARGS6(
     if (!HTMainText) {
 	todr = NULL;
     } else if (HTMainText->stale) {
-	todr = HTMainText->last_line->next;
+	todr = FirstHTLine(HTMainText);
 	n = links[cur].ly - pvtTITLE_HEIGHT + HTMainText->top_of_screen;
     } else {
 	todr = HTMainText->top_of_screen_line;
@@ -13826,7 +13419,7 @@ PUBLIC void LYMoveToLink ARGS6(
 	move_to_glyph(links[cur].ly, links[cur].lx, XP_draw_min,
 		      "", 0, links[cur].lx,
 		      target, hightext, flags, utf_flag);
-	/* move(links[cur].ly, links[cur].lx); */
+	/* LYmove(links[cur].ly, links[cur].lx); */
     }
 }
 #endif /* !USE_COLOR_STYLE */
@@ -13858,11 +13451,11 @@ PUBLIC void redraw_lines_of_link ARGS1(
     todr2 = (links[cur].hightext2 && links[cur].ly < display_lines) ?
 	    todr1->next : 0;
 
-    move(links[cur].ly,  links[cur].lx);
+    LYmove(links[cur].ly,  links[cur].lx);
     redraw_part_of_line (todr1, links[cur].hightext,
 			 strlen(links[cur].hightext),  HTMainText);
     if (todr2) {
-	move(links[cur].ly+1,links[cur].hightext2_offset);
+	LYmove(links[cur].ly+1,links[cur].hightext2_offset);
 	redraw_part_of_line (todr2, links[cur].hightext2,
 			     strlen(links[cur].hightext2),  HTMainText);
     }

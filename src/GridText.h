@@ -61,8 +61,6 @@ extern char * HTCurSelectGroupSize;
 extern HText * HTMainText;		/* Equivalent of main window */
 extern HTParentAnchor * HTMainAnchor;	/* Anchor for HTMainText */
 
-extern int WWW_TraceFlag;
-
 #if defined(VMS) && defined(VAXC) && !defined(__DECC)
 extern int HTVirtualMemorySize;
 #endif /* VMS && VAXC && !__DECC */
@@ -106,11 +104,11 @@ extern CONST char * HText_getContentBase NOPARAMS;
 extern CONST char * HText_getContentLocation NOPARAMS;
 extern CONST char * HText_getMessageID NOPARAMS;
 extern CONST char * HText_getRevTitle NOPARAMS;
-#ifdef USE_HASH
+#ifdef USE_COLOR_STYLE
 extern CONST char * HText_getStyle NOPARAMS;
 #endif
 extern void HText_setMainTextOwner PARAMS((CONST char * owner));
-extern void print_wwwfile_to_fd PARAMS((FILE * fp, int is_reply));
+extern void print_wwwfile_to_fd PARAMS((FILE * fp, BOOLEAN is_reply));
 extern BOOL HText_select PARAMS((HText *text));
 extern BOOL HText_POSTReplyLoaded PARAMS((document *doc));
 extern BOOL HTFindPoundSelector PARAMS((char *selector));
@@ -160,6 +158,7 @@ extern BOOL HTLoadedDocumentEightbit NOPARAMS;
 extern void HText_setNodeAnchorBookmark PARAMS((CONST char *bookmark));
 extern char * HTLoadedDocumentBookmark NOPARAMS;
 extern int HText_LastLineSize PARAMS((HText *me, BOOL IgnoreSpaces));
+extern int HText_LastLineOffset PARAMS((HText *me));
 extern int HText_PreviousLineSize PARAMS((HText *me, BOOL IgnoreSpaces));
 extern void HText_NegateLineOne PARAMS((HText *text));
 extern BOOL HText_inLineOne PARAMS((HText *text));
@@ -172,16 +171,16 @@ extern int HText_HiddenLinkCount PARAMS((HText *text));
 extern char * HText_HiddenLinkAt PARAMS((HText *text, int number));
 
 /* "simple table" stuff */
+extern int HText_endStblTABLE PARAMS((HText *));
 extern void HText_cancelStbl PARAMS((HText *));
-extern void HText_startStblTABLE PARAMS((HText *, short));
-extern void HText_endStblTABLE PARAMS((HText *));
-extern void HText_startStblTR PARAMS((HText *, short));
-extern void HText_endStblTR PARAMS((HText *));
-extern void HText_startStblTD PARAMS((HText *, int, int, short, BOOL));
-extern void HText_endStblTD PARAMS((HText *));
-extern void HText_startStblCOL PARAMS((HText *, int, short, BOOL));
 extern void HText_endStblCOLGROUP PARAMS((HText *));
+extern void HText_endStblTD PARAMS((HText *));
+extern void HText_endStblTR PARAMS((HText *));
+extern void HText_startStblCOL PARAMS((HText *, int, short, BOOL));
 extern void HText_startStblRowGroup PARAMS((HText *, short));
+extern void HText_startStblTABLE PARAMS((HText *, short));
+extern void HText_startStblTD PARAMS((HText *, int, int, short, BOOL));
+extern void HText_startStblTR PARAMS((HText *, short));
 
 /* forms stuff */
 extern void HText_beginForm PARAMS((
@@ -232,7 +231,11 @@ extern void user_message PARAMS((
 
 #define _user_message(msg, arg)	mustshow = TRUE, user_message(msg, arg)
 
-extern void www_user_search PARAMS((int start_line, document *doc, char *target));
+extern void www_user_search PARAMS((
+	int		start_line,
+	document *	doc,
+	char *		target,
+	int		direction));
 
 extern void print_crawl_to_fd PARAMS((
 	FILE *		fp,

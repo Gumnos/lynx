@@ -45,10 +45,7 @@
 #include <LYLocal.h>
 
 #include <LYLeaks.h>
-
-#ifdef HAVE_SYS_WAIT_H
-#include <sys/wait.h>
-#endif
+#include <www_wait.h>
 
 struct _HTStream
 {
@@ -201,7 +198,7 @@ PRIVATE int LYLoadCGI ARGS4(
 	while (statrv < 0 || (statrv = stat(pgm_buff, &stat_buf)) < 0) {
 	    if ((cp=strrchr(pgm_buff, '/')) != NULL) {
 		*cp = '\0';
-		statrv = 999;	/* force new stat()  - kw */
+		statrv = 1;	/* force new stat()  - kw */
 	    } else {
 		PERROR("strrchr(pgm_buff, '/') returned NULL");
 	    	break;
@@ -650,7 +647,8 @@ PRIVATE int LYLoadCGI ARGS4(
 			   format_out,
 			   sink, anAnchor);
 
-    HTSprintf0(&buf, "<head>\n<title>%s</title>\n</head>\n<body>\n", gettext("Good Advice"));
+    HTSprintf0(&buf, "<html>\n<head>\n<title>%s</title>\n</head>\n<body>\n",
+	       gettext("Good Advice"));
     (*target->isa->put_block)(target, buf, strlen(buf));
 
     HTSprintf0(&buf, "<h1>%s</h1>\n", gettext("Good Advice"));
@@ -670,7 +668,7 @@ PRIVATE int LYLoadCGI ARGS4(
 	       gettext("It provides state of the art CGI script support.\n"));
     (*target->isa->put_block)(target, buf, strlen(buf));
 
-    HTSprintf0(&buf,"</body>\n");
+    HTSprintf0(&buf,"</body>\n</html>\n");
     (*target->isa->put_block)(target, buf, strlen(buf));
 
     (*target->isa->_free)(target);

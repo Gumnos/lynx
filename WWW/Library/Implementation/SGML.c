@@ -39,12 +39,6 @@
 # include <LYPrettySrc.h>
 #endif
 
-#if 0
-#ifdef CJK_EX	/* 1997/12/12 (Fri) 16:54:58 */
-extern HTkcode last_kcode;
-#endif
-#endif
-
 #define INVALID (-1)
 
 #ifdef USE_PRETTYSRC
@@ -82,7 +76,7 @@ PRIVATE void fake_put_character ARGS2(
     if (ch->size >= ch->allocated) {\
 	ch->allocated = ch->allocated + ch->growby;\
 	ch->data = ch->data ? (char *)realloc(ch->data, ch->allocated)\
-			    : (char *)calloc(1, ch->allocated);\
+			    : typecallocn(char, ch->allocated);\
       if (!ch->data)\
 	  outofmem(__FILE__, "HTChunkPutc");\
     }\
@@ -126,6 +120,51 @@ struct _HTElement {
 	HTTag*		tag;	/* The tag at this level  */
 };
 
+typedef enum {
+    S_text = 0
+    ,S_attr
+    ,S_attr_gap
+    ,S_comment
+    ,S_cro
+    ,S_doctype
+    ,S_dollar
+    ,S_dollar_dq
+    ,S_dollar_paren
+    ,S_dollar_paren_dq
+    ,S_dollar_paren_sq
+    ,S_dollar_sq
+    ,S_dquoted
+    ,S_end
+    ,S_entity
+    ,S_equals
+    ,S_ero
+    ,S_esc
+    ,S_esc_dq
+    ,S_esc_sq
+    ,S_exclamation
+    ,S_in_kanji
+    ,S_incro
+    ,S_junk_pi
+    ,S_junk_tag
+    ,S_litteral
+    ,S_marked
+    ,S_nonascii_text
+    ,S_nonascii_text_dq
+    ,S_nonascii_text_sq
+    ,S_paren
+    ,S_paren_dq
+    ,S_paren_sq
+    ,S_pcdata
+    ,S_script
+    ,S_sgmlatt
+    ,S_sgmlele
+    ,S_sgmlent
+    ,S_squoted
+    ,S_tag
+    ,S_tag_gap
+    ,S_tagname_slash
+    ,S_value
+} sgml_state;
 
 /*	Internal Context Data Structure
 **	-------------------------------
@@ -146,19 +185,7 @@ struct _HTStream {
     int				current_attribute_number;
     HTChunk			*string;
     HTElement			*element_stack;
-    enum sgml_state { S_text, S_tagname_slash, S_pcdata, S_litteral,
-		S_tag, S_tag_gap, S_attr, S_attr_gap, S_equals, S_value,
-		S_ero, S_cro, S_incro,
-		S_exclamation, S_comment, S_doctype, S_marked,
-		S_sgmlent, S_sgmlele, S_sgmlatt,
-		S_squoted, S_dquoted, S_end, S_entity,
-		S_esc,	  S_dollar,    S_paren,	   S_nonascii_text,
-		S_dollar_paren,
-		S_esc_sq, S_dollar_sq, S_paren_sq, S_nonascii_text_sq,
-		S_dollar_paren_sq,
-		S_esc_dq, S_dollar_dq, S_paren_dq, S_nonascii_text_dq,
-		S_dollar_paren_dq,
-		S_in_kanji, S_junk_tag, S_junk_pi} state;
+    sgml_state			state;
     unsigned char kanji_buf;
 #ifdef CALLERDATA
     void *			callerData;
@@ -200,6 +227,59 @@ struct _HTStream {
     BOOL			seen_nonwhite_in_junk_tag;
 #endif
 };
+
+#ifndef NO_LYNX_TRACE
+PRIVATE char *state_name ARGS1(sgml_state, n)
+{
+    char *result = "?";
+    switch (n) {
+    case S_attr:                result = "S_attr";              break;
+    case S_attr_gap:            result = "S_attr_gap";          break;
+    case S_comment:             result = "S_comment";           break;
+    case S_cro:                 result = "S_cro";               break;
+    case S_doctype:             result = "S_doctype";           break;
+    case S_dollar:              result = "S_dollar";            break;
+    case S_dollar_dq:           result = "S_dollar_dq";         break;
+    case S_dollar_paren:        result = "S_dollar_paren";      break;
+    case S_dollar_paren_dq:     result = "S_dollar_paren_dq";   break;
+    case S_dollar_paren_sq:     result = "S_dollar_paren_sq";   break;
+    case S_dollar_sq:           result = "S_dollar_sq";         break;
+    case S_dquoted:             result = "S_dquoted";           break;
+    case S_end:                 result = "S_end";               break;
+    case S_entity:              result = "S_entity";            break;
+    case S_equals:              result = "S_equals";            break;
+    case S_ero:                 result = "S_ero";               break;
+    case S_esc:                 result = "S_esc";               break;
+    case S_esc_dq:              result = "S_esc_dq";            break;
+    case S_esc_sq:              result = "S_esc_sq";            break;
+    case S_exclamation:         result = "S_exclamation";       break;
+    case S_in_kanji:            result = "S_in_kanji";          break;
+    case S_incro:               result = "S_incro";             break;
+    case S_junk_pi:             result = "S_junk_pi";           break;
+    case S_junk_tag:            result = "S_junk_tag";          break;
+    case S_litteral:            result = "S_litteral";          break;
+    case S_marked:              result = "S_marked";            break;
+    case S_nonascii_text:       result = "S_nonascii_text";     break;
+    case S_nonascii_text_dq:    result = "S_nonascii_text_dq";  break;
+    case S_nonascii_text_sq:    result = "S_nonascii_text_sq";  break;
+    case S_paren:               result = "S_paren";             break;
+    case S_paren_dq:            result = "S_paren_dq";          break;
+    case S_paren_sq:            result = "S_paren_sq";          break;
+    case S_pcdata:              result = "S_pcdata";            break;
+    case S_script:              result = "S_script";            break;
+    case S_sgmlatt:             result = "S_sgmlatt";           break;
+    case S_sgmlele:             result = "S_sgmlele";           break;
+    case S_sgmlent:             result = "S_sgmlent";           break;
+    case S_squoted:             result = "S_squoted";           break;
+    case S_tag:                 result = "S_tag";               break;
+    case S_tag_gap:             result = "S_tag_gap";           break;
+    case S_tagname_slash:       result = "S_tagname_slash";     break;
+    case S_text:                result = "S_text";              break;
+    case S_value:               result = "S_value";             break;
+    }
+    return result;
+}
+#endif
 
 #ifdef USE_PRETTYSRC
 
@@ -1005,13 +1085,6 @@ PRIVATE void end_element ARGS2(
 		do_close_stacked(context);
 		extra_action_taken = YES;
 		stackpos = is_on_stack(context, old_tag);
-#if 0	/* done below with more specific message - kw */
-	    } else {
-		CTRACE((tfp, "SGML: Still open %s \t<- ***invalid end </%s>\n",
-			    context->element_stack->tag->name,
-			    old_tag->name));
-		return;
-#endif
 	    }
 	}
 
@@ -1086,6 +1159,7 @@ PRIVATE void end_element ARGS2(
 	}
 
 	e = NORMAL_TAGNUM(TAGNUM_OF_TAGP(t));
+	CTRACE2(TRACE_SGML, (tfp, "tagnum(%p) = %d\n", t, e));
 #ifdef USE_PRETTYSRC
 	if (!psrc_view) /* Don't actually pass call on if viewing psrc - kw */
 #endif
@@ -1476,13 +1550,9 @@ PRIVATE void SGML_character ARGS2(
     **	we can revert back to the unchanged c_in. - KW
     */
 #define unsign_c clong
-#if 0
-    static unsigned char sjis_1st = '\0';
-    unsigned char sjis_hi, sjis_lo;
-#endif
 
     c = c_in;
-    clong = (unsigned char)c;	/* a.k.a. unsign_c */
+    clong = UCH(c);	/* a.k.a. unsign_c */
 
     if (context->T.decode_utf8) {
 	/*
@@ -1490,7 +1560,7 @@ PRIVATE void SGML_character ARGS2(
 	**  Incomplete characters silently ignored.
 	**  From Linux kernel's console.c. - KW
 	*/
-	if (TOASCII((unsigned char)c) > 127) { /* S/390 -- gil -- 0710 */
+	if (TOASCII(UCH(c)) > 127) { /* S/390 -- gil -- 0710 */
 	    /*
 	    **	We have an octet from a multibyte character. - FM
 	    */
@@ -1669,7 +1739,7 @@ top:
 */
 top0a:
     *(context->utf_buf) = '\0';
-    clong = (unsigned char)c;
+    clong = UCH(c);
 /*
 **  We jump to here from above if we have converted
 **  the input, or a multibyte sequence across calls,
@@ -1692,29 +1762,6 @@ top1:
 	c != '\t' && c != '\n' && c != '\r' &&
 	HTCJK == NOCJK)
 	goto after_switch;
-
-#if 0	/* This JIS X0201 Kana to JIS X0208 Kana conversion is/should be
-	 * done in the HTextAppendCharacter. -- TH
-	 */
-#ifdef CJK_EX	/* 1998/11/24 (Tue) 17:02:31 */
-    if (HTCJK == JAPANESE && last_kcode == SJIS) {
-	if (sjis_1st == '\0' && (IS_SJIS_HI1(c) || IS_SJIS_HI2(c))) {
-	    sjis_1st = c;
-	} else if (sjis_1st && IS_SJIS_LO(c)) {
-	    sjis_1st = '\0';
-	} else {
-	    if (context->state == S_text) {
-		if (0xA1 <= (unsigned char)c && (unsigned char)c <= 0xDF) {
-		    JISx0201TO0208_SJIS(c, &sjis_hi, &sjis_lo);
-		    PUTC(sjis_hi);
-		    PUTC(sjis_lo);
-		    goto after_switch;
-		}
-	    }
-	}
-    }
-#endif
-#endif
 
     /*
     **	Ignore 127 if we don't have HTPassHighCtrlRaw
@@ -1739,9 +1786,10 @@ top1:
      * we have to care them here. -- TH
      */
     if ((HTCJK==JAPANESE) && (context->state==S_in_kanji) &&
-	!IS_JAPANESE_2BYTE(context->kanji_buf,(unsigned char)c)) {
-#ifdef CONV_JISX0201KANA_TO_JISX0208KANA
+	!IS_JAPANESE_2BYTE(context->kanji_buf, UCH(c))) {
+#ifdef CONV_JISX0201KANA_JISX0208KANA
 	if (IS_SJIS_X0201KANA(context->kanji_buf)) {
+	    unsigned char sjis_hi, sjis_lo;
 	    JISx0201TO0208_SJIS(context->kanji_buf, &sjis_hi, &sjis_lo);
 	    PUTC(sjis_hi);
 	    PUTC(sjis_lo);
@@ -1755,6 +1803,10 @@ top1:
     /*
     **	Handle character based on context->state.
     */
+    CTRACE2(TRACE_SGML, (tfp, "SGML before %s|%.*s|%c\n",
+	    state_name(context->state),
+	    string->size,
+	    string->data != NULL ? string->data : "", UCH(c)));
     switch(context->state) {
 
     case S_in_kanji:
@@ -1816,8 +1868,10 @@ top1:
 		testtag = context->current_tag;
 	    } else
 #endif
+	    {
 		testtag = context->element_stack ?
 		     context->element_stack->tag : NULL;
+	    }
 	}
 
 	if (c == '&' && TOASCII(unsign_c) < 127	 &&  /* S/390 -- gil -- 0898 */
@@ -1839,13 +1893,16 @@ top1:
 	    **	Setting up for possible tag. - FM
 	    */
 	    string->size = 0;
-	    if (testtag && testtag->contents == SGML_PCDATA)
+	    if (testtag && testtag->contents == SGML_PCDATA) {
 		context->state = S_pcdata;
-	    else if (testtag && (testtag->contents == SGML_LITTERAL ||
-				 testtag->contents == SGML_CDATA))
+	    } else if (testtag && (testtag->contents == SGML_LITTERAL
+	    			|| testtag->contents == SGML_CDATA)) {
 		context->state = S_litteral;
-	    else
+	    } else if (testtag && (testtag->contents == SGML_SCRIPT)) {
+		context->state = S_script;
+	    } else {
 		context->state = S_tag;
+	    }
 	    context->slashedtag = NULL;
 	} else if (context->slashedtag &&
 		   (c == '/' ||
@@ -1899,9 +1956,9 @@ top1:
 		    PUTC(c);
 		} else if (clong == 0xfffd && saved_char_in &&
 		    HTPassEightBitRaw &&
-		    (unsigned char)saved_char_in >=
+		    UCH(saved_char_in) >=
 		    LYlowest_eightbit[context->outUCLYhndl]) {
-		    PUTUTF8((0xf000 | (unsigned char)saved_char_in));
+		    PUTUTF8((0xf000 | UCH(saved_char_in)));
 		} else {
 		    PUTUTF8(clong);
 		}
@@ -2041,8 +2098,8 @@ top1:
 	**  Check for a strippable koi8-r 8-bit character. - FM
 	*/
 	} else if (context->T.strip_raw_char_in && saved_char_in &&
-		   ((unsigned char)saved_char_in >= 0xc0) &&
-		   ((unsigned char)saved_char_in < 255)) {
+		   (UCH(saved_char_in) >= 0xc0) &&
+		   (UCH(saved_char_in) < 255)) {
 	    /*
 	    **	KOI8 special: strip high bit, gives (somewhat) readable
 	    **	ASCII or KOI7 - it was constructed that way! - KW
@@ -2054,7 +2111,7 @@ top1:
 	**  If we don't actually want the character,
 	**  make it safe and output that now. - FM
 	*/
-	} else if (TOASCII((unsigned char)c) <	 /* S/390 -- gil -- 0997 */
+	} else if (TOASCII(UCH(c)) <	 /* S/390 -- gil -- 0997 */
 			LYlowest_eightbit[context->outUCLYhndl] ||
 		   (context->T.trans_from_uni && !HTPassEightBitRaw)) {
 #ifdef NOTUSED_FOTEMODS
@@ -2138,12 +2195,36 @@ top1:
 		break;
 	    }
 	}
-	/* Fall through to S_litteral - kw */
+	goto case_S_litteral;
+
+    /*
+    **  Found '<' in SGML_SCRIPT content; treat this mode nearly like
+    **  S_litteral, but recognize '<!' to allow the content to be treated
+    **  as a comment by lynx.
+    */
+    case S_script:
+	if (!string->size && TOASCII(unsign_c) < 127) { /* first after '<' */
+	    if (c == '!') { /* <! */
+		/*
+		**	Terminate and set up for possible comment,
+		**	identifier, declaration, or marked section
+		**  as under S_tag. - kw
+		*/
+		context->state = S_exclamation;
+		context->lead_exclamation = TRUE;
+		context->doctype_bracket = FALSE;
+		context->first_bracket = FALSE;
+		HTChunkPutc(string, c);
+		break;
+	    }
+	}
+	goto case_S_litteral;
 
     /*
     **	In litteral mode, waits only for specific end tag (for
     **	compatibility with old servers, and for Lynx). - FM
     */
+    case_S_litteral:
     case S_litteral: /*PSRC:this case not understood completely by HV, not done*/
 	HTChunkPutc(string, c);
 #ifdef USE_PRETTYSRC
@@ -2162,7 +2243,8 @@ top1:
 	    /*
 	    **	If complete match, end litteral.
 	    */
-	    if ((c == '>') && testtag && !testtag->name[string->size-2]) {
+	    if ((c == '>') && testtag &&
+		string->size > 1 && !testtag->name[string->size-2]) {
 #ifdef USE_PRETTYSRC
 		if (psrc_view) {
 		    PSRCSTART(abracket);PUTC('<');PUTC('/');PSRCSTOP(abracket);
@@ -2243,7 +2325,7 @@ top1:
     */
     case S_entity:
 	if (TOASCII(unsign_c) < 127 && (string->size ?	/* S/390 -- gil -- 1029 */
-		  isalnum((unsigned char)c) : isalpha((unsigned char)c))) {
+		  isalnum(UCH(c)) : isalpha(UCH(c)))) {
 	    /* Should probably use IsNmStart/IsNmChar above (is that right?),
 	       but the world is not ready for that - there's &nbsp: (note
 	       colon!) and stuff around. */
@@ -2329,10 +2411,10 @@ top1:
     **	Check for a numeric entity.
     */
     case S_cro:
-	if (TOASCII(unsign_c) < 127 && TOLOWER((unsigned char)c) == 'x') {  /* S/390 -- gil -- 1060 */
+	if (TOASCII(unsign_c) < 127 && TOLOWER(UCH(c)) == 'x') {  /* S/390 -- gil -- 1060 */
 	    context->isHex = TRUE;
 	    context->state = S_incro;
-	} else if (TOASCII(unsign_c) < 127 && isdigit((unsigned char)c)) {
+	} else if (TOASCII(unsign_c) < 127 && isdigit(UCH(c))) {
 	    /*
 	    **	Accept only valid ASCII digits. - FM
 	    */
@@ -2366,8 +2448,8 @@ top1:
 	/* S/390 -- gil -- 1075 */ /* CTRACE((tfp, "%s: %d: numeric %d %d\n",
 			    __FILE__, __LINE__, unsign_c, c)); */
 	if ((TOASCII(unsign_c) < 127) &&
-	    (context->isHex ? isxdigit((unsigned char)c) :
-			      isdigit((unsigned char)c))) {
+	    (context->isHex ? isxdigit(UCH(c)) :
+			      isdigit(UCH(c)))) {
 	    /*
 	    **	Accept only valid hex or ASCII digits. - FM
 	    */
@@ -3066,8 +3148,9 @@ top1:
 			PUTC(c);
 			PSRCSTOP(abracket);
 			context->state = (c == '>') ? S_text : S_tagname_slash;
-		    } else
+		    } else {
 			context->state = S_tag;
+		    }
 		} else {
 		    if (!WHITE(c))
 			PUTC(c);
@@ -3252,7 +3335,7 @@ top1:
 	    break;
 	}
 	context->first_dash = FALSE;
-	if (context->end_comment && !isspace(c))
+	if (context->end_comment && !isspace(UCH(c)))
 	    context->end_comment = FALSE;
 
     S_comment_put_c:
@@ -3266,10 +3349,10 @@ top1:
 		    context->T.trans_from_uni)) {
 	    if (clong == 0xfffd && saved_char_in &&
 		HTPassEightBitRaw &&
-		(unsigned char)saved_char_in >=
+		UCH(saved_char_in) >=
 		LYlowest_eightbit[context->outUCLYhndl]) {
 		HTChunkPutUtf8Char(string,
-				   (0xf000 | (unsigned char)saved_char_in));
+				   (0xf000 | UCH(saved_char_in)));
 	    } else {
 		HTChunkPutUtf8Char(string, clong);
 	    }
@@ -3493,7 +3576,7 @@ top1:
 		break;
 	    }
 #ifdef USE_PRETTYSRC
-	    }  else {
+	    } else {
 		PUTC(' ');
 		if (context->current_attribute_number == INVALID)
 		    PSRCSTART(badattr);
@@ -3533,10 +3616,11 @@ top1:
 	if (c == '>') {		/* End of tag */
 #ifdef USE_PRETTYSRC
 	    if (psrc_view) {
-		if (context->current_attribute_number == INVALID)
+		if (context->current_attribute_number == INVALID) {
 		    PSRCSTOP(badattr);
-		else
+		} else {
 		    PSRCSTOP(attrib);
+		}
 		PSRCSTART(abracket);
 		PUTC('>');
 		PSRCSTOP(abracket);
@@ -3550,24 +3634,16 @@ top1:
 #ifdef USE_PRETTYSRC
 	    if (psrc_view) {
 		PUTC('=');
-		if (context->current_attribute_number == INVALID)
+		if (context->current_attribute_number == INVALID) {
 		    PSRCSTOP(badattr);
-		else
+		} else {
 		    PSRCSTOP(attrib);
+		}
 	    }
 #endif
 	    context->state = S_equals;
 	    break;
 	}
-#ifdef USE_PRETTYSRC
-#if 0 /*seems this is not needed. It was causing some LSS style stack underflow -VH*/
-	/* we are here because this char seemed the beginning of attrname */
-	if (psrc_view && context->current_attribute_number == INVALID) {
-	    PSRCSTOP(badattr);
-	    PUTC(' ');
-	}
-#endif
-#endif
 	HTChunkPutc(string, c);
 	context->state = S_attr; /* Get next attribute */
 	break;
@@ -3614,7 +3690,7 @@ top1:
 	    PSRCSTART(attrval);
 #endif
 	context->state = S_value;
-	/*  no break!  fall through to S_value and proccess current `c`	 */
+	/*  no break!  fall through to S_value and process current `c`	 */
 
     case S_value:
 	if (WHITE(c) || (c == '>')) {		/* End of word */
@@ -3649,7 +3725,7 @@ top1:
 		  if (string->data[1] == 'B' || string->data[1] == '@') {
 		    jis_buf[0] = '\033';
 		    strcpy(jis_buf + 1, string->data);
-		    TO_EUC(jis_buf, string->data);
+		    TO_EUC((CONST unsigned char *)jis_buf, (unsigned char *)string->data);
 		  }
 		}
 	    }
@@ -3680,10 +3756,10 @@ top1:
 		    context->T.trans_from_uni)) {
 	    if (clong == 0xfffd && saved_char_in &&
 		HTPassEightBitRaw &&
-		(unsigned char)saved_char_in >=
+		UCH(saved_char_in) >=
 		LYlowest_eightbit[context->outUCLYhndl]) {
 		HTChunkPutUtf8Char(string,
-				   (0xf000 | (unsigned char)saved_char_in));
+				   (0xf000 | UCH(saved_char_in)));
 	    } else {
 		HTChunkPutUtf8Char(string, clong);
 	    }
@@ -3742,10 +3818,10 @@ top1:
 		    context->T.trans_from_uni)) {
 	    if (clong == 0xfffd && saved_char_in &&
 		HTPassEightBitRaw &&
-		(unsigned char)saved_char_in >=
+		UCH(saved_char_in) >=
 		LYlowest_eightbit[context->outUCLYhndl]) {
 		HTChunkPutUtf8Char(string,
-				   (0xf000 | (unsigned char)saved_char_in));
+				   (0xf000 | UCH(saved_char_in)));
 	    } else {
 		HTChunkPutUtf8Char(string, clong);
 	    }
@@ -3809,10 +3885,10 @@ top1:
 		    context->T.trans_from_uni)) {
 	    if (clong == 0xfffd && saved_char_in &&
 		HTPassEightBitRaw &&
-		(unsigned char)saved_char_in >=
+		UCH(saved_char_in) >=
 		LYlowest_eightbit[context->outUCLYhndl]) {
 		HTChunkPutUtf8Char(string,
-				   (0xf000 | (unsigned char)saved_char_in));
+				   (0xf000 | UCH(saved_char_in)));
 	    } else {
 		HTChunkPutUtf8Char(string, clong);
 	    }
@@ -4254,6 +4330,10 @@ top1:
 #endif
 
     } /* switch on context->state */
+    CTRACE2(TRACE_SGML, (tfp, "SGML after  %s|%.*s|%c\n",
+	    state_name(context->state),
+	    string->size,
+	    string->data != NULL ? string->data : "", UCH(c)));
 
 after_switch:
     /*
@@ -4607,15 +4687,15 @@ PUBLIC unsigned char * SJIS_TO_JIS1 ARGS3(
 	register unsigned char,		LO,
 	register unsigned char *,	JCODE)
 {
-    HI -= (unsigned char) ((HI <= 0x9F) ? 0x71 : 0xB1);
-    HI = (unsigned char) ((HI << 1) + 1);
+    HI -= UCH((HI <= 0x9F) ? 0x71 : 0xB1);
+    HI = UCH((HI << 1) + 1);
     if (0x7F < LO)
 	LO--;
     if (0x9E <= LO) {
-	LO -= (unsigned char) 0x7D;
+	LO -= UCH(0x7D);
 	HI++;
     } else {
-	LO -= (unsigned char) 0x1F;
+	LO -= UCH(0x1F);
     }
     JCODE[0] = HI;
     JCODE[1] = LO;
@@ -4628,15 +4708,15 @@ PUBLIC unsigned char * JIS_TO_SJIS1 ARGS3(
 	register unsigned char *,	SJCODE)
 {
     if (HI & 1)
-	LO += (unsigned char) 0x1F;
+	LO += UCH(0x1F);
     else
-	LO += (unsigned char) 0x7D;
+	LO += UCH(0x7D);
     if (0x7F <= LO)
 	LO++;
 
-    HI = (unsigned char) (((HI - 0x21) >> 1) + 0x81);
+    HI = UCH(((HI - 0x21) >> 1) + 0x81);
     if (0x9F < HI)
-	HI += (unsigned char) 0x40;
+	HI += UCH(0x40);
     SJCODE[0] = HI;
     SJCODE[1] = LO;
     return SJCODE;
@@ -4649,7 +4729,7 @@ PUBLIC unsigned char * EUC_TO_SJIS1 ARGS3(
 {
     if (HI == 0x8E)
 	JISx0201TO0208_EUC(HI, LO, &HI, &LO);
-    JIS_TO_SJIS1((unsigned char) (HI & 0x7F), (unsigned char) (LO & 0x7F), SJCODE);
+    JIS_TO_SJIS1(UCH(HI & 0x7F), UCH(LO & 0x7F), SJCODE);
     return SJCODE;
 }
 
@@ -4661,7 +4741,7 @@ PUBLIC void JISx0201TO0208_SJIS ARGS3(
     unsigned char SJCODE[2];
 
     JISx0201TO0208_EUC(0x8E, I, OHI, OLO);
-    JIS_TO_SJIS1((unsigned char)(*OHI & 0x7F), (unsigned char)(*OLO & 0x7F), SJCODE);
+    JIS_TO_SJIS1(UCH(*OHI & 0x7F), UCH(*OLO & 0x7F), SJCODE);
     *OHI = SJCODE[0];
     *OLO = SJCODE[1];
 }
@@ -4709,7 +4789,7 @@ PUBLIC unsigned char * EUC_TO_SJIS ARGS2(
     for (sp = src, dp = dst; *sp;) {
 	if (*sp & 0x80) {
 	    if (sp[1] && (sp[1] & 0x80)) {
-		JIS_TO_SJIS1((unsigned char)(sp[0] & 0x7F), (unsigned char)(sp[1] & 0x7F), dp);
+		JIS_TO_SJIS1(UCH(sp[0] & 0x7F), UCH(sp[1] & 0x7F), dp);
 		dp += 2;
 		sp += 2;
 	    } else {
@@ -4747,16 +4827,16 @@ PUBLIC unsigned char *EUC_TO_JIS ARGS4(
 		continue;
 	    }
 	    if (!kana_mode) {
-		kana_mode = (unsigned char) ~kana_mode;
+		kana_mode = UCH(~kana_mode);
 		dp = Strcpy(dp, toK);
 	    }
 	    if (*sp & 0x80) {
-		*dp++ = (unsigned char) (cch & ~0x80);
-		*dp++ = (unsigned char) (*sp++ & ~0x80);
+		*dp++ = UCH(cch & ~0x80);
+		*dp++ = UCH(*sp++ & ~0x80);
 	    }
 	} else {
 	    if (kana_mode) {
-		kana_mode = (unsigned char) ~kana_mode;
+		kana_mode = UCH(~kana_mode);
 		dp = Strcpy(dp, toA);
 	    }
 	    *dp++ = cch;
@@ -4795,126 +4875,11 @@ PRIVATE CONST unsigned char *repairJIStoEUC ARGS2(
 	if (!IS_JIS7(ch1, ch2))
 	    return 0;
 
-	*d++ = (unsigned char) (0x80 | ch1);
-	*d++ = (unsigned char) (0x80 | ch2);
+	*d++ = UCH(0x80 | ch1);
+	*d++ = UCH(0x80 | ch2);
     }
     return 0;
 }
-
-#if 0	/* NOTUSED */
-
-static struct {
-    char *ee;
-    char de;
-} entities[] = {
-    {"&lt;", '<' },
-    {"&gt;", '>' },
-    {"&amp;", '&'},
-    {"&quot;", '"'},
-    {NULL, 0}
-};
-
-PRIVATE int isHTMLentity ARGS2(
-	char *, str,
-	int *, chp)
-{
-    int ei, ej;
-    char *es, ec;
-    int off;
-
-    off = *str == '&' ? 0 : 1;
-    for (ei = 0; (es = entities[ei].ee) != '\0'; ei++) {
-	for (ej = 0; (ec = es[off + ej]) != '\0'; ej++) {
-	    if (ec != str[ej])
-		break;
-	    if (ec == ';') {
-		*chp = entities[ei].de;
-		return ej + 1;
-	    }
-	}
-    }
-    return 0;
-}
-
-#define sputc(sp,ch)	(sp?(*sp++ = ch):ch)
-
-PUBLIC int FIX_2022 ARGS3(
-	char *, src,
-	char *, dst,
-	char *, ctype)
-{
-    int in2B;
-    char ch1, ch2, *sp, *dp;
-    int bad;
-    int isHTML, len, ech;
-
-    in2B = 0;
-    sp = src;
-    dp = dst;
-    bad = 0;
-
-    isHTML = strcasecomp(ctype, "text/html") == 0;
-
-    while ((ch1 = *sp++) != '\0') {
-	if (ch1 == ESC) {
-	    if (*sp == TO_2BCODE) {
-		if (sp[1] == 'B' || sp[1] == '@') {
-		    in2B = 1;
-		    sputc(dp, ch1);
-		    sputc(dp, *sp++);
-		    sputc(dp, *sp++);
-		    continue;
-		}
-	    } else if (*sp == TO_1BCODE) {
-		if (sp[1] == 'B' || sp[1] == 'J') {
-		    in2B = 0;
-		    sputc(dp, ch1);
-		    sputc(dp, *sp++);
-		    sputc(dp, *sp++);
-		    continue;
-		}
-	    }
-	}
-	if (in2B) {
-	    if ((ch1 <= 0x20)
-		|| (sp[0] <= 0x20)
-		|| (ch1 == '<' && sp[0] == '/')
-		|| (sp[0] == '<' && sp[1] == '/')) {
-		in2B = 0;
-		sputc(dp, ESC);
-		sputc(dp, TO_1BCODE);
-		sputc(dp, 'B');
-		sputc(dp, ch1);
-		bad = 1;
-		continue;
-	    }
-	    if (isHTML && ch1 == '&')
-		if ((len = isHTMLentity(sp, &ech)) != '\0')
-		    if (sp[len] != 0) {
-			ch1 = ech;
-			sp += len;
-			bad = 1;
-		    }
-	    ch2 = *sp++;
-
-	    if (isHTML && ch2 == '&')
-		if ((len = isHTMLentity(sp, &ech)) != '\0')
-		    if (sp[len] != 0) {
-			ch2 = ech;
-			sp += len;
-			bad = 1;
-		    }
-	    sputc(dp, ch1);
-	    sputc(dp, ch2);
-	} else {
-	    sputc(dp, ch1);
-	}
-    }
-    sputc(dp, 0);
-    return bad;
-}
-
-#endif
 
 PUBLIC unsigned char *TO_EUC ARGS2(
 	CONST unsigned char *,	jis,
@@ -5063,12 +5028,6 @@ PUBLIC void TO_JIS ARGS2(
 	outofmem(__FILE__, "TO_JIS");
 #endif
     TO_EUC(any, euc);
-#if 0
-    if (is_EUC_JP(euc))
-	EUC_TO_JIS(euc, jis, TO_KANJI, TO_ASCII);
-    else
-	strcpy(jis, any);
-#endif
     is_EUC_JP(euc);
     EUC_TO_JIS(euc, jis, TO_KANJI, TO_ASCII);
 

@@ -18,8 +18,11 @@
 **           returns a pointer to a static string which must be copied if
 **                it is to be kept.
 */
+#ifdef INET6
+extern CONST char * HTInetString PARAMS((SockA* mysin));
+#else
 extern CONST char * HTInetString PARAMS((struct sockaddr_in* mysin));
-
+#endif /* INET6 */
 
 /*      Encode INET status (as in sys/errno.h)                    inet_status()
 **      ------------------
@@ -88,26 +91,6 @@ extern int lynx_nsl_status;
 #define LYGetHostByName(host) resolv(host) /* we'll use it the same way */
 #else
 extern struct hostent * LYGetHostByName PARAMS((char * str));
-#endif
-
-
-/*      Parse an internet node address and port
-**      ---------------------------------------
-**
-** On entry:
-**               str points to a string with a node name or number,
-**               with optional trailing colon and port number.
-**               sin points to the binary internet or decnet address field.
-**
-** On exit:
-**               *sin is filled in.  If no port is specified in str, that
-**               field is left unchanged in *sin.
-*/
-#if defined(__STDC__) || defined(__BORLANDC__) || defined(_MSC_VER)
-        extern int HTParseInet(struct sockaddr_in * mysin, CONST char * str);
-        /*!! had to change this to get it to compile. CTB */
-#else
-        extern int HTParseInet();
 #endif
 
 /*      Get Name of This Machine

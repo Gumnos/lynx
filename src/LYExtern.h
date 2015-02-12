@@ -5,8 +5,8 @@
 #include <LYStructs.h>
 #endif /* LYSTRUCTS_H */
 
-void run_external PARAMS((char * c));
-char *string_short PARAMS((char * str, int cut_pos));
+/*returns TRUE if something matching was executed*/
+BOOL run_external PARAMS((char * c, BOOL only_overriders));
 
 #ifdef WIN_EX
 extern char * quote_pathname PARAMS((char * pathname));

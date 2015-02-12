@@ -47,6 +47,14 @@ char *XCursesProgramName = "Lynx";
 #define COLOR_BKGD ((COLOR_PAIRS >= 9) ? COLOR_PAIR(9) : A_NORMAL)
 #endif
 
+#ifdef USE_CURSES_PADS
+WINDOW *LYwin = 0;
+int LYshiftWin = 0;
+int LYwideLines = FALSE;
+int LYtableCols = 0;			/* in 1/12 of screen width */
+BOOL LYuseCursesPads = TRUE;	/* use pads for left/right shifting */
+#endif
+
 /*
  *  These are routines to start and stop curses and to cleanup
  *  the screen at the end.
@@ -55,27 +63,29 @@ char *XCursesProgramName = "Lynx";
 PRIVATE int dumbterm PARAMS((char *terminal));
 BOOLEAN LYCursesON = FALSE;
 
+#if defined(USE_BLINK) && defined(__EMX__)
+PRIVATE void make_blink_boldbg NOARGS;
+#endif
+
 #if USE_COLOR_TABLE || defined(USE_SLANG)
-PRIVATE int Current_Attr;
-PRIVATE int Masked_Attr;
+PUBLIC int Current_Attr, Masked_Attr;
 #endif
 
 #define OMIT_SCN_KEEPING 0 /* whether to omit keeping of Style_className
     in HTML.c when lss support is on. 1 to increase performance. The value
     must correspond to the value of macro OMIT_SCN_KEEPING defined in HTML.c*/
 
-
 #ifdef USE_SLANG
 PUBLIC unsigned int Lynx_Color_Flags = 0;
 PUBLIC BOOLEAN FullRefresh = FALSE;
 PUBLIC int curscr = 0;
+
 #ifdef SLANG_MBCS_HACK
 /*
  *  Will be set by size_change. - KW
  */
 PUBLIC int PHYSICAL_SLtt_Screen_Cols = 10;
 #endif /* SLANG_MBCS_HACK */
-
 
 
 PUBLIC void LY_SLrefresh NOARGS
@@ -199,48 +209,112 @@ PRIVATE void sl_suspend ARGS1(
 #endif /* SIGSTOP */
     return;
 }
-
-#else  /* Not slang: */
-
-#ifdef VMS
-/*
-**  This function boxes windows with graphic characters for
-**  VMS curses.  Pass it the window, it's height, and it's
-**  width. - FM
-*/
-PUBLIC void VMSbox ARGS3(
-	WINDOW *,	win,
-	int,		height,
-	int,		width)
-{
-    int i;
-
-    wmove(win, 0, 0);
-    waddstr(win, "\033)0\016l");
-    for (i = 1; i < width; i++)
-	waddch(win, 'q');
-    waddch(win, 'k');
-    for (i = 1; i < height-1; i++) {
-	wmove(win, i, 0);
-	waddch(win, 'x');
-	wmove(win, i, width-1);
-	waddch(win, 'x');
-    }
-    wmove(win, i, 0);
-    waddch(win, 'm');
-    for (i = 1; i < width; i++)
-	waddch(win, 'q');
-    waddstr(win, "j\017");
-}
 #else
+
+#ifdef FANCY_CURSES
+
+#ifndef VMS
+/* definitions for the mono attributes we can use */
+static struct {
+    char *name;
+    int code;
+} Mono_Attrs[7] =
+{
+    { "normal",		A_NORMAL },
+    { "bold",		A_BOLD },
+    { "reverse",	A_REVERSE },
+    { "underline",	A_UNDERLINE },
+    { "standout",	A_STANDOUT },
+    { "blink",		A_BLINK },
+    { "dim",		A_DIM },
+};
+
+PUBLIC int string_to_attr ARGS1(
+    char *,	name)
+{
+    unsigned i;
+
+    for (i = 0; i < TABLESIZE(Mono_Attrs); i++) {
+	if (!strcasecomp(Mono_Attrs[i].name, name)) {
+	    return Mono_Attrs[i].code;
+	}
+    }
+    return 0;
+}
+#endif /* VMS */
+
+#ifdef USE_COLOR_STYLE
+PRIVATE char *attr_to_string ARGS1(
+    int,	code)
+{
+    static char result[sizeof(Mono_Attrs) + 80];
+    unsigned i;
+    int pair = PAIR_NUMBER(code);
+    int bold = (pair != 0 && (code & A_BOLD) != 0);
+
+    if (bold)
+	code &= ~A_BOLD;
+
+    *result = 0;
+    for (i = 0; i < TABLESIZE(Mono_Attrs); i++) {
+	if (Mono_Attrs[i].code & code) {
+	    if (*result)
+		strcat(result, "+");
+	    strcat(result, Mono_Attrs[i].name);
+	}
+    }
+    if (pair != 0) {
+	short f, b;
+	if (pair_content(pair, &f, &b) != ERR) {
+	    CONST char *fg = lookup_color(bold ? f+COLORS : f);
+	    CONST char *bg = lookup_color(b);
+	    if (*result)
+		strcat(result, "+");
+	    sprintf(result + strlen(result), "%s/%s", fg, bg);
+	}
+    }
+    return result;
+}
+#endif /* USE_COLOR_STYLE */
+#endif /* FANCY_CURSES */
+#endif /* USE_SLANG */
+
 /*
-**  This function boxes windows for non-VMS (n)curses.
-**  Pass it the window. - FM
+**  This function boxes windows for (n)curses.
 */
 PUBLIC void LYbox ARGS2(
 	WINDOW *,	win,
 	BOOLEAN,	formfield GCC_UNUSED)
 {
+#ifdef USE_SLANG
+    SLsmg_draw_box(win->top_y, win->left_x, win->height, win->width + 4);
+#else
+#ifdef VMS
+    /*
+     * This should work for VAX-C and DEC-C, since they both have the same
+     * win._max_y and win._max_x members -TD
+     *
+     * (originally VMSbox by FM)
+     */
+    int i;
+
+    wmove(win, 0, 0);
+    waddstr(win, "\033)0\016l");
+    for (i = 1; i < win->_max_x; i++)
+	waddch(win, 'q');
+    waddch(win, 'k');
+    for (i = 1; i < win->_max_y-1; i++) {
+	wmove(win, i, 0);
+	waddch(win, 'x');
+	wmove(win, i, win->_max_x-1);
+	waddch(win, 'x');
+    }
+    wmove(win, i, 0);
+    waddch(win, 'm');
+    for (i = 1; i < win->_max_x; i++)
+	waddch(win, 'q');
+    waddstr(win, "j\017");
+#else /* !VMS */
     /*
      *	If the terminal is in UTF-8 mode, it probably cannot understand
      *	box drawing characters as (n)curses handles them.  (This may also
@@ -263,6 +337,7 @@ PUBLIC void LYbox ARGS2(
      *	specify our own ASCII characters for the corners and call
      *	wborder() instead of box(). - kw
      */
+    LynxWChangeStyle(win, s_menu_frame, STACK_ON);
 #ifdef HAVE_WBORDER
     if (!boxvert || !boxhori)
 	box(win, boxvert, boxhori);
@@ -273,13 +348,15 @@ PUBLIC void LYbox ARGS2(
 #else
     box(win, boxvert, boxhori);
 #endif
+    LynxWChangeStyle(win, s_menu_frame, STACK_OFF);
 #ifdef CSS
     if (formfield)
 	wcurses_css(win, "frame", ABS_OFF);
 #endif
-}
 #endif /* VMS */
+    wrefresh(win);
 #endif /* USE_SLANG */
+}
 
 #if defined(USE_COLOR_STYLE)
 /* Ok, explanation of the USE_COLOR_STYLE styles.  The basic styles (ie non
@@ -291,17 +368,28 @@ PUBLIC HTCharStyle displayStyles[DSTYLE_ELEMENTS];
 /*
  * set a style's attributes - RP
  */
-PUBLIC void setStyle ARGS4(int,style,int,color,int,cattr,int,mono)
+PUBLIC void setStyle ARGS4(
+    int,	style,
+    int,	color,
+    int,	cattr,
+    int,	mono)
 {
     displayStyles[style].color = color;
     displayStyles[style].cattr = cattr;
     displayStyles[style].mono = mono;
 }
 
-PUBLIC void setHashStyle ARGS5(int,style,int,color,int,cattr,int,mono,char*,element)
+PUBLIC void setHashStyle ARGS5(
+    int,	style,
+    int,	color,
+    int,	cattr,
+    int,	mono,
+    char *,	element)
 {
     bucket* ds = &hashStyles[style];
-    CTRACE((tfp, "CSS(SET): <%s> hash=%d, ca=%d, ma=%d\n", element, style, color, mono));
+
+    CTRACE2(TRACE_STYLE, (tfp, "CSS(SET): <%s> hash=%d, ca=%#x, ma=%#x\n", element, style, color, mono));
+
     ds->color = color;
     ds->cattr = cattr;
     ds->mono = mono;
@@ -313,21 +401,26 @@ PUBLIC void setHashStyle ARGS5(int,style,int,color,int,cattr,int,mono,char*,elem
 /*
  * set the curses attributes to be color or mono - RP
  */
-PRIVATE int LYAttrset ARGS3(WINDOW*,win,int,color,int,mono)
+PRIVATE int LYAttrset ARGS3(
+    WINDOW *,	win,
+    int,	color,
+    int,	mono)
 {
-	CTRACE((tfp, "CSS:LYAttrset (%#x, %#x)\n", color, mono));
-	if (lynx_has_color && LYShowColor >= SHOW_COLOR_ON && color > -1)
-	{
-		wattrset(win,color);
-		return color;
-	}
-	if (mono > -1)
-	{
-		wattrset(win,mono);
-		return mono;
-	}
-	wattrset(win,A_NORMAL);
+    if (lynx_has_color
+     && LYShowColor >= SHOW_COLOR_ON
+     && color >= 0) {
+	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset color (%s)\n", attr_to_string(color)));
+	wattrset(win, color);
+	return color;
+    } else if (mono >= 0) {
+	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset mono (%s)\n", attr_to_string(mono)));
+	wattrset(win, mono);
+	return mono;
+    } else {
+	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset (A_NORMAL)\n"));
+	wattrset(win, A_NORMAL);
 	return A_NORMAL;
+    }
 }
 
 PUBLIC void curses_w_style ARGS3(
@@ -337,132 +430,127 @@ PUBLIC void curses_w_style ARGS3(
 {
 #if OMIT_SCN_KEEPING
 # define SPECIAL_STYLE /*(CSHASHSIZE+1) */ 88888
-  /* if TRACEs are not compiled in, this macro is redundant - we neend't valid
-    'ds' to stack off. */
+/* if TRACEs are not compiled in, this macro is redundant - we needn't valid
+'ds' to stack off. */
 #endif
 
-	int YP,XP;
+    int YP,XP;
 #if !OMIT_SCN_KEEPING
-	bucket* ds= (style == NOSTYLE ? &nostyle_bucket : &hashStyles[style]);
+    bucket* ds= (style == NOSTYLE ? &nostyle_bucket : &hashStyles[style]);
 #else
-	bucket* ds= (style == NOSTYLE ?	     &nostyle_bucket :
-		(style== SPECIAL_STYLE ? &special_bucket :&hashStyles[style]) );
+    bucket* ds= (style == NOSTYLE ?	     &nostyle_bucket :
+	    (style== SPECIAL_STYLE ? &special_bucket :&hashStyles[style]) );
 #endif
 
 
-	if (!ds->name)
-	{
-		CTRACE((tfp, "CSS.CS:Style %d not configured\n",style));
+    if (!ds->name) {
+	CTRACE2(TRACE_STYLE, (tfp, "CSS.CS:Style %d not configured\n",style));
 #if !OMIT_SCN_KEEPING
-		return;
+	return;
 #endif
+    }
+
+    CTRACE2(TRACE_STYLE, (tfp, "CSS.CS:<%s%s> (%d)\n",(dir?"":"/"),ds->name,ds->code));
+
+    getyx (win, YP, XP);
+
+    if (style == s_normal && dir) {
+	wattrset(win,A_NORMAL);
+	if (win == LYwin) cached_styles[YP][XP] = s_normal;
+	return;
+    }
+
+    switch (dir)
+    {
+	/* ABS_OFF is the same as STACK_OFF for the moment */
+    case STACK_OFF:
+	if (last_colorattr_ptr) {
+	    int last_attr = last_styles[--last_colorattr_ptr];
+	    LYAttrset(win,last_attr,last_attr);
 	}
+	else
+	    LYAttrset(win,A_NORMAL,-1);
+	break;
 
-	CTRACE((tfp, "CSS.CS:<%s%s> (%d)\n",(dir?"":"/"),ds->name,ds->code));
-
-	getyx (win, YP, XP);
-
-	if (style == s_normal && dir)
-	{
-		wattrset(win,A_NORMAL);
-		if (win==stdscr) cached_styles[YP][XP]=s_normal;
-		return;
+    case STACK_ON: /* remember the current attributes */
+	if (last_colorattr_ptr > 127) {
+	    CTRACE2(TRACE_STYLE, (tfp,"........... %s (0x%x) %s\r\n",
+			"attribute cache FULL, dropping last",
+			last_styles[last_colorattr_ptr],
+			"in LynxChangeStyle(curses_w_style)"));
+	    last_colorattr_ptr--;
 	}
-
-	switch (dir)
-	{
-		/* ABS_OFF is the same as STACK_OFF for the moment */
-	case STACK_OFF:
-		if (last_colorattr_ptr) {
-		    int last_attr = last_styles[--last_colorattr_ptr];
-		    LYAttrset(win,last_attr,last_attr);
-		}
-		else
-			LYAttrset(win,A_NORMAL,-1);
-		return;
-
-	case STACK_ON: /* remember the current attributes */
-		if (last_colorattr_ptr > 127) {
-		    CTRACE((tfp,"........... %s (0x%x) %s\r\n",
-				"attribute cache FULL, dropping last",
-				last_styles[last_colorattr_ptr],
-				"in LynxChangeStyle(curses_w_style)"));
-		    last_colorattr_ptr--;
-		}
-		last_styles[last_colorattr_ptr++] = getattrs(stdscr);
-		/* don't cache style changes for active links */
+	last_styles[last_colorattr_ptr++] = getattrs(win);
+	/* don't cache style changes for active links */
 #if OMIT_SCN_KEEPING
-		/* since we don't compute the hcode to stack off in HTML.c, we
-		 * don't know whether this style is configured.  So, we
-		 * shouldn't simply return on stacking on on unconfigured
-		 * styles, we should push curr attrs on stack.  -HV
-		 */
-		if (!ds->name) return;
+	/* since we don't compute the hcode to stack off in HTML.c, we
+	 * don't know whether this style is configured.  So, we
+	 * shouldn't simply return on stacking on unconfigured
+	 * styles, we should push curr attrs on stack.  -HV
+	 */
+	if (!ds->name) break;
 #endif
-		if (style != s_alink)
-		{
-			CTRACE((tfp, "CACHED: <%s> @(%d,%d)\n", ds->name, YP, XP));
-			if (win==stdscr) cached_styles[YP][XP]=style;
-		}
-		LYAttrset(win, ds->color, ds->mono);
-		return;
-
-	case ABS_ON: /* change without remembering the previous style */
-		/* don't cache style changes for active links */
-		if (style != s_alink)
-		{
-			CTRACE((tfp, "CACHED: <%s> @(%d,%d)\n", ds->name, YP, XP));
-			if (win==stdscr) cached_styles[YP][XP]=style;
-		}
-		LYAttrset(win, ds->color, ds->mono);
-		return;
+	/* FALL THROUGH */
+    case ABS_ON: /* change without remembering the previous style */
+	    /* don't cache style changes for active links and edits */
+	if ( style != s_alink
+	     && style != s_curedit
+	     && style != s_aedit
+	     && style != s_aedit_sel
+	     && style != s_aedit_pad
+	     && style != s_aedit_arr ) {
+	    CTRACE2(TRACE_STYLE, (tfp, "CACHED: <%s> @(%d,%d)\n", ds->name, YP, XP));
+	    if (win == LYwin) cached_styles[YP][XP] = style;
 	}
+	LYAttrset(win, ds->color, ds->mono);
+	break;
+    }
 }
 
 /*
  * wrapper function to set on-screen styles - RP
  */
-PUBLIC void wcurses_css ARGS3(WINDOW *,win,char*,name,int,dir)
+PUBLIC void wcurses_css ARGS3(
+    WINDOW *,	win,
+    char*,	name,
+    int,	dir)
 {
-	int try_again=1;
-	while (try_again)
-	{
-		int tmpHash=hash_code(name);
-		CTRACE((tfp, "CSSTRIM:trying to set [%s] style - ", name));
-		if (tmpHash==NOSTYLE) {
-			char *class=strrchr(name, '.');
-			CTRACE((tfp, "undefined, trimming at %p\n", class));
-			if (class)	*class='\0';
-			else		try_again=0;
-		} else {
-			CTRACE((tfp, "ok (%d)\n", hash_code(name)));
-			curses_w_style(win, hash_code(name), dir);
-			try_again=0;
-		}
+    int try_again = 1;
+
+    while (try_again) {
+	int tmpHash = hash_code(name);
+	CTRACE2(TRACE_STYLE, (tfp, "CSSTRIM:trying to set [%s] style - ", name));
+	if (tmpHash == NOSTYLE) {
+	    char *class = strrchr(name, '.');
+	    CTRACE2(TRACE_STYLE, (tfp, "undefined, trimming at %p\n", class));
+	    if (class)	*class = '\0';
+	    else	try_again = 0;
+	} else {
+	    CTRACE2(TRACE_STYLE, (tfp, "ok (%d)\n", hash_code(name)));
+	    curses_w_style(win, hash_code(name), dir);
+	    try_again = 0;
 	}
+    }
 }
 
-PUBLIC void curses_css ARGS2(char *,name,int,dir)
+PUBLIC void curses_css ARGS2(
+    char *,	name,
+    int,	dir)
 {
-    wcurses_css(stdscr, name, dir);
+    wcurses_css(LYwin, name, dir);
 }
 
 PUBLIC void curses_style ARGS2(
 	int,	style,
 	int,	dir)
 {
-    curses_w_style(stdscr, style, dir);
+    curses_w_style(LYwin, style, dir);
 }
-
-#ifdef NOT_USED
-void attribute ARGS2(int,style,int,dir)
-{
-    curses_style(style, dir, 0);
-}
-#endif
 #endif /* USE_COLOR_STYLE */
 
-PRIVATE int lynx_called_initscr;
+#ifndef USE_SLANG
+PRIVATE BOOL lynx_called_initscr = FALSE;
+#endif
 
 #if HAVE_USE_DEFAULT_COLORS && USE_DEFAULT_COLORS
 /*
@@ -474,7 +562,7 @@ PUBLIC int lynx_default_colors NOARGS
     int code = 0;
     if (lynx_called_initscr) {
 	code = -1;
-	if (use_default_colors() == OK) {
+	if (!default_color_reset && use_default_colors() == OK) {
 	    default_fg = DEFAULT_COLOR;
 	    default_bg = DEFAULT_COLOR;
 	    code = 1;
@@ -569,7 +657,7 @@ PRIVATE void lynx_map_color ARGS1(int, n)
 		    (short)lynx_color_pairs[pair].bg);
 	}
 	if (n == 0 && LYShowColor >= SHOW_COLOR_ON)
-	    bkgd(COLOR_BKGD | ' ');
+	    wbkgd(LYwin, COLOR_BKGD | ' ');
     }
 }
 
@@ -594,7 +682,7 @@ PUBLIC int lynx_chg_color ARGS3(
 PUBLIC void lynx_set_color ARGS1(int, a)
 {
     if (lynx_has_color && LYShowColor >= SHOW_COLOR_ON) {
-	attrset(lynx_color_cfg[a].attr
+	wattrset(LYwin, lynx_color_cfg[a].attr
 		| (((a+1) < COLOR_PAIRS)
 			? COLOR_PAIR(a+1)
 			: A_NORMAL));
@@ -628,7 +716,7 @@ PRIVATE void lynx_init_colors NOARGS
 			(short)lynx_color_pairs[pair].bg);
 	    }
 	    if (n == 0 && LYShowColor >= SHOW_COLOR_ON)
-		bkgd(COLOR_BKGD | ' ');
+		wbkgd(LYwin, COLOR_BKGD | ' ');
 	}
     } else if (LYShowColor != SHOW_COLOR_NEVER) {
 	LYShowColor = SHOW_COLOR_OFF;
@@ -662,6 +750,36 @@ PUBLIC void LYnoVideo ARGS1(
 #endif
 }
 
+#if       !defined(VMS) && !defined(USE_SLANG)
+/*
+ * If newterm is not defined, assume a curses subset which
+ * supports only initscr.  --gil
+ */
+#if defined(HAVE_NEWTERM) && defined(HAVE_DELSCREEN) && !(defined(NCURSES) && defined(HAVE_RESIZETERM))
+static SCREEN *LYscreen = NULL;
+#define LYDELSCR() { \
+if (recent_sizechange) { \
+    delscreen(LYscreen); \
+    LYscreen = NULL; } }
+/*
+ * Surrogates for newterm annd delscreen
+ */
+#else  /* HAVE_NEWTERM   */
+static WINDOW *LYscreen = NULL;
+#undef  newterm
+#define newterm(type, out, in) (initscr())
+#define LYDELSCR()  /* nothing */
+#endif /* HAVE_NEWTERM   */
+#else  /* !defined(VMS) && !defined(USE_SLANG) */
+/*
+ * Provide last recourse definitions of LYscreen and LYDELSCR for
+ * stop_curses, which only tests LYscreen for zero/nonzero but
+ * never uses it as a pointer or L-value.
+ */
+#define LYscreen TRUE
+#define LYDELSCR()  /* nothing */
+#endif /* !defined(VMS) && !defined(USE_SLANG) */
+
 PUBLIC void start_curses NOARGS
 {
 #ifdef USE_SLANG
@@ -673,7 +791,10 @@ PUBLIC void start_curses NOARGS
     }
 
     if (slinit == 0) {
-#if !defined(USE_KEYMAPS)
+#if defined(USE_KEYMAPS)
+	if (-1 == lynx_initialize_keymaps ())
+	    exit (EXIT_FAILURE);
+#else
 	SLtt_get_terminfo();
 #endif
 #if (defined(__DJGPP__) && !defined(DJGPP_KEYHANDLER)) || defined(__CYGWIN__)
@@ -729,11 +850,7 @@ PUBLIC void start_curses NOARGS
 	 *  If set, the blink escape sequence will turn on high
 	 *  intensity background (rxvt and maybe Linux console).
 	 */
-	if (LYShowColor && (Lynx_Color_Flags & SL_LYNX_USE_BLINK)) {
-	    SLtt_Blink_Mode = 1;
-	} else {
-	    SLtt_Blink_Mode = 0;
-	}
+	SLtt_Blink_Mode = term_blink_is_boldbg;
 #endif /* (VMS || REAL_UNIX_SYSTEM) && !__CYGWIN__  */
     }
 #ifdef __DJGPP__
@@ -759,6 +876,9 @@ PUBLIC void start_curses NOARGS
 	SLsmg_Display_Eight_Bit = 191; /* may print ctrl chars otherwise - kw */
     scrollok(0,0);
     SLsmg_Backspace_Moves = 1;
+#if SLANG_VERSION > 10306
+    SLsmg_touch_screen ();
+#endif
 #ifndef VMS
 #if defined(REAL_UNIX_SYSTEM) && !defined(__CYGWIN__)
     SLtty_set_suspend_state(1);
@@ -770,10 +890,10 @@ PUBLIC void start_curses NOARGS
     signal(SIGINT, cleanup_sig);
 #endif /* !VMS */
 
-   lynx_enable_mouse (1);
+    lynx_enable_mouse (1);
 
-#else /* Using curses: */
-
+#else /* USE_SLANG; Now using curses: */
+    int keypad_on = 0;
 
 #ifdef VMS
     /*
@@ -783,27 +903,74 @@ PUBLIC void start_curses NOARGS
     initscr();	/* start curses */
 #else  /* Unix: */
 
-    static BOOLEAN first_time = TRUE;
-
-    if (first_time) {
+    if (!LYscreen) {
 	/*
 	 *  If we're not VMS then only do initscr() one time,
 	 *  and one time only!
 	 */
-	if (initscr() == NULL) {  /* start curses */
+#if defined(HAVE_NEWTERM)
+#if !(defined(NCURSES) && !defined(HAVE_RESIZETERM))
+	BOOLEAN savesize;
+
+	savesize = recent_sizechange;
+	size_change(0);
+	recent_sizechange = savesize;    /* avoid extra redraw */
+#if defined(__MVS__)
+	{
+	    /*
+	     * The requirement to do this may be a bug in OS/390.
+	     *
+	     * Put screen geometry in environment variables used by
+	     * XOpen curses before calling newterm().  I believe this
+	     * completes work left unfinished by AJL & FM -- gil
+	     */
+	    static char lines_putenv[] = "LINES=abcde",
+			cols_putenv[]  = "COLUMNS=abcde";
+
+	    sprintf(lines_putenv + 6, "%d", LYlines & 0xfff);
+	    sprintf(cols_putenv  + 8, "%d", LYcols  & 0xfff);
+	    putenv(lines_putenv);
+	    putenv(cols_putenv);
+	    CTRACE((tfp, "start_curses putenv %s, %s\n", lines_putenv, cols_putenv));
+	}
+#endif /* defined(__MVS__) */
+#endif /* !(defined(NCURSES) && defined(HAVE_RESIZETERM)) */
+	if (!(LYscreen = newterm(NULL,stdout,stdin))) {  /* start curses */
 	    fprintf(tfp, "%s\n",
 		gettext("Terminal initialisation failed - unknown terminal type?"));
-	    exit_immediately (-1);
+	    exit_immediately (EXIT_FAILURE);
 	}
+#else
+	initscr();
+#endif /* HAVE_NEWTERM */
 	lynx_called_initscr = TRUE;
+
 #if defined(SIGWINCH) && defined(NCURSES_VERSION)
 	size_change(0);
 	recent_sizechange = FALSE; /* prevent mainloop drawing 1st doc twice */
 #endif /* SIGWINCH */
+
+#ifdef USE_CURSES_PADS
+	if (LYuseCursesPads) {
+	    LYwin = newpad(LYlines, MAX_COLS);
+	    LYshiftWin = 0;
+	    LYwideLines = FALSE;
+	} else {
+	    LYwin = stdscr;
+	}
+#endif
+
 #if defined(USE_KEYMAPS) && defined(NCURSES_VERSION)
+#  if HAVE_KEYPAD
+	/* Need to switch keypad on before initializing keymaps, otherwise
+	   when the keypad is switched on, some keybindings may be overriden. */
+	keypad(LYwin,TRUE);
+	keypad_on = 1;
+#  endif /* HAVE_KEYPAD */
+
 	if (-1 == lynx_initialize_keymaps ()) {
 	    endwin();
-	    exit (-1);
+	    exit (EXIT_FAILURE);
 	}
 #endif
 
@@ -863,7 +1030,6 @@ PUBLIC void start_curses NOARGS
 #ifdef USE_COLOR_STYLE
 	parse_userstyles();
 #endif
-	first_time = FALSE;
 #if USE_COLOR_TABLE
 	lynx_init_colors();
 #endif /* USE_COLOR_TABLE */
@@ -894,7 +1060,8 @@ PUBLIC void start_curses NOARGS
     noecho();
 
 #if HAVE_KEYPAD
-    keypad(stdscr,TRUE);
+    if (!keypad_on)
+	keypad(LYwin,TRUE);
 #endif /* HAVE_KEYPAD */
 
     lynx_enable_mouse (1);
@@ -905,7 +1072,12 @@ PUBLIC void start_curses NOARGS
 #endif /* USE_SLANG */
 
 #if defined(WIN_EX)
-    clear();
+    LYclear();
+#endif
+
+#if defined(USE_BLINK) && defined(__EMX__)
+    if (term_blink_is_boldbg)		/* Now actually make it so! */
+	make_blink_boldbg();
 #endif
 
     LYCursesON = TRUE;
@@ -987,7 +1159,7 @@ PUBLIC void lynx_enable_mouse ARGS1(int,state)
 #if defined(PDCURSES)
     if (state)
 	mouse_set(
-	    	BUTTON1_CLICKED | BUTTON1_PRESSED | BUTTON1_RELEASED |
+		BUTTON1_CLICKED | BUTTON1_PRESSED | BUTTON1_RELEASED |
 		BUTTON2_CLICKED | BUTTON2_PRESSED | BUTTON2_RELEASED |
 		BUTTON3_CLICKED | BUTTON3_PRESSED | BUTTON3_RELEASED);
 #endif
@@ -995,6 +1167,64 @@ PUBLIC void lynx_enable_mouse ARGS1(int,state)
 
 /***********************************************************************/
 #endif /* USE_MOUSE */
+}
+
+/*
+ * SVr4 curses (and ncurses) initialize the terminal I/O to raw mode, and
+ * simulate other modes in the library.  This means that when running, it
+ * simulates the OCRNL setting.  Normally that is not a problem.  However, when
+ * spawning a subprocess (e.g., xli), the subprocess may write to the screen.
+ * Fine so far - curses resets the terminal I/O to the normal state on exit.
+ * But the subprocess's messages can still be coming to the screen when lynx
+ * returns to the screen mode.  This function delays restoring OCRNL until
+ * after the first getch() call.
+ *
+ * The OCRNL setting is controlled by nl()/nonl() of course - but we do not
+ * want to give up that optimization since it would be a bit slower.  (Note -
+ * slang does not use this optimization; if it did, the same screen glitch
+ * would occur).
+ *
+ * FIXME:  for simplicity, only ncurses is implemented here - the TTY and
+ * SET_TTY definitions are ncurses-specific.  The same effect could be done for
+ * other curses implementations, since the "cur_term->Nttyb" part is common to
+ * SVr4 curses.
+ */
+PUBLIC void lynx_nl2crlf ARGS1(int, normal GCC_UNUSED)
+{
+#if defined(NCURSES_VERSION_PATCH) && defined(SET_TTY) && defined(TERMIOS) && defined(ONLCR)
+    static TTY saved_tty;
+    static int did_save = FALSE;
+    static int waiting = FALSE;
+    static int can_fix = TRUE;
+
+    if (!did_save) {
+	saved_tty = cur_term->Nttyb;
+	did_save = TRUE;
+#if NCURSES_VERSION_PATCH < 20010529
+	/* workaround for optimizer bug with nonl() */
+	if ((tigetstr("cud1") != 0 && *tigetstr("cud1") == '\n')
+	 || (tigetstr("ind")  != 0 && *tigetstr("ind")  == '\n'))
+	    can_fix = FALSE;
+#endif
+    }
+    if (can_fix) {
+	if (normal) {
+	    if (!waiting) {
+		cur_term->Nttyb.c_oflag |= ONLCR;
+		waiting = TRUE;
+		nonl();
+	    }
+	} else {
+	    if (waiting) {
+		cur_term->Nttyb = saved_tty;
+		SET_TTY(fileno(stdout), &saved_tty);
+		waiting = FALSE;
+		nl();
+		LYrefresh();
+	    }
+	}
+    }
+#endif
 }
 
 PUBLIC void stop_curses NOARGS
@@ -1017,9 +1247,13 @@ PUBLIC void stop_curses NOARGS
      *	05-28-94 Lynx 2-3-1 Garrett Arch Blythe
      */
     if(LYCursesON == TRUE)	{
-	 lynx_enable_mouse (0);
+	lynx_nl2crlf(TRUE);
+	lynx_enable_mouse (0);
 #if (!defined(WIN_EX) || defined(__CYGWIN__))	/* @@@ */
-	 endwin();	/* stop curses */
+	if(LYscreen) {
+	    endwin();	/* stop curses */
+	    LYDELSCR();
+	}
 #endif
     }
 #ifdef SH_EX
@@ -1032,7 +1266,7 @@ PUBLIC void stop_curses NOARGS
 #endif
 
     fflush(stdout);
-#endif /* DJGPP */
+#endif /* defined(DOSPATH) && !(defined(USE_SLANG) || _WIN_CC) */
     fflush(stderr);
 
     LYCursesON = FALSE;
@@ -1055,7 +1289,7 @@ PUBLIC void stop_curses NOARGS
  *  Check terminal type, start curses & setup terminal.
  */
 PUBLIC BOOLEAN setup ARGS1(
-	char *, 	terminal)
+	char *,		terminal)
 {
     int c;
     int status;
@@ -1085,7 +1319,7 @@ PUBLIC BOOLEAN setup ARGS1(
 	 *  -dump, so force that mode here. - FM
 	 */
 	dump_output_immediately = TRUE;
-	LYcols = 80;
+	LYcols = DFT_COLS;
 	if (keypad_mode == NUMBERS_AS_ARROWS)
 	    keypad_mode = LINKS_ARE_NUMBERED;
 	status = mainloop();
@@ -1100,7 +1334,6 @@ PUBLIC BOOLEAN setup ARGS1(
     LYLowerCase(term);
 
     printf("%s%s\n", gettext("Terminal ="), term);
-    sleep(InfoSecs);
     if ((strlen(term) < 5) ||
 	strncmp(term, "vt", 2) || !isdigit(term[2])) {
 	printf("%s\n",
@@ -1117,12 +1350,8 @@ PUBLIC BOOLEAN setup ARGS1(
     ttopen();
     start_curses();
 
-    LYlines = LINES;
-    LYcols = COLS;
-    if (LYlines <= 0)
-	LYlines = 24;
-    if (LYcols <= 0)
-	LYcols = 80;
+    LYlines = LYscreenHeight();
+    LYcols = LYscreenWidth();
 
     return(TRUE);
 }
@@ -1133,38 +1362,16 @@ PUBLIC BOOLEAN setup ARGS1(
  *  Check terminal type, start curses & setup terminal.
  */
 PUBLIC BOOLEAN setup ARGS1(
-	char *, 	terminal)
+	char *,		terminal)
 {
     char *term_putenv = NULL;
     char *buffer = NULL;
     char *cp;
-#if defined(HAVE_SIZECHANGE) && !defined(USE_SLANG) && defined(NOTDEFINED)
-/*
- *  Hack to deal with a problem in sysV curses, that screen can't be
- *  resized to greater than the size used by initscr, which can only
- *  be called once.  So set environment variables LINES and COLUMNS
- *  to some suitably large size to force initscr to allocate enough
- *  space.  Later we get the real window size for setting LYlines
- *  and LYcols. - AJL & FM
- *
- *  Has problems, so we don't use this hack, but the code is here
- *  if someone wants to play with it some more. - FM
- */
-    char *lines_putenv = NULL;
-    char *cols_putenv = NULL;
 
-    if (getenv("LINES") == NULL && getenv("COLUMNS") == NULL) {
-	StrAllocCopy(lines_putenv, "LINES=120");
-	(void) putenv(lines_putenv);
-	StrAllocCopy(cols_putenv, "COLUMNS=240");
-	(void) putenv(cols_putenv);
-    }
-#endif /* HAVE_SIZECHANGE && !USE_SLANG && NOTDEFINED */
-
-   /*
-    *  If the display was not set by a command line option then
-    *  see if it is available from the environment .
-    */
+    /*
+     *  If the display was not set by a command line option then
+     *  see if it is available from the environment .
+     */
     if ((cp = LYgetXDisplay()) != NULL) {
 	StrAllocCopy(x_display, cp);
     } else {
@@ -1218,52 +1425,19 @@ PUBLIC BOOLEAN setup ARGS1(
      *  the current link is indistinguishable from all other links.
      *  The workaround here is to disable the 'rev' capability.
      */
-    if ((strncmp(ttytype, "sun", 3) == 0)) {
+    if ((strncmp((CONST char *)ttytype, "sun", 3) == 0)) {
 	LYnoVideo(2);
     }
 #endif /* HAVE_TTYTYPE */
 
-#if defined(HAVE_SIZECHANGE) && !defined(USE_SLANG) && defined(NOTDEFINED)
-    if (lines_putenv != NULL) {
-	/*
-	 *  Use SIGWINCH handler to set the true window size. - AJL && FM
-	 *
-	 *  Has problems, so we don't use this hack, but the code is here
-	 *  if someone wants to play with it some more. - FM
-	 */
-	size_change(0);
-	lines_putenv[6] = '\0';
-	(void) putenv(lines_putenv);
-	cols_putenv[8] = '\0';
-	(void) putenv(cols_putenv);
-	FREE(lines_putenv);
-	FREE(cols_putenv);
-    } else {
-	LYlines = LINES;
-	LYcols = COLS;
-    }
-#else
-    LYlines = LINES;
-    LYcols = COLS;
-#endif /* HAVE_SIZECHANGE && !USE_SLANG && USE_NOTDEFINED */
-#if defined(PDCURSES_EXP) && defined(WIN_EX) && defined(CJK_EX) /* 1999/08/26 (Thu) 17:53:38 */
-    {
-	extern int current_codepage;	/* PDCurses lib. */
-
-	if (current_codepage == 932)
-	    LYcols = COLS - 1;
-    }
-#endif
-    if (LYlines <= 0)
-	LYlines = 24;
-    if (LYcols <= 0)
-	LYcols = 80;
+    LYlines = LYscreenHeight();
+    LYcols = LYscreenWidth();
 
     return(1);
 }
 
 PRIVATE int dumbterm ARGS1(
-	char *, 	terminal)
+	char *,		terminal)
 {
     int dumb = FALSE;
 
@@ -1296,7 +1470,7 @@ PUBLIC void LYaddWAttr ARGS2(
 PUBLIC void LYaddAttr ARGS1(
 	int,		a)
 {
-    LYaddWAttr(stdscr, a);
+    LYaddWAttr(LYwin, a);
 }
 
 PUBLIC void LYsubWAttr ARGS2(
@@ -1310,12 +1484,78 @@ PUBLIC void LYsubWAttr ARGS2(
 PUBLIC void LYsubAttr ARGS1(
 	int,		a)
 {
-    LYsubWAttr(stdscr, a);
+    LYsubWAttr(LYwin, a);
 }
 #endif /* USE_COLOR_TABLE */
 #endif /* !USE_COLOR_STYLE */
 #endif /* FANCY_CURSES */
 #endif /* VMS */
+
+/* Use this rather than the 'wprintw()' function to write a blank-padded
+ * string to the given window, since someone's asserted that printw doesn't
+ * handle 8-bit characters unlike addstr (though more info would be useful).
+ *
+ * We're blank-filling so that with SVr4 curses, it'll show the background
+ * color to a uniform width in the popup-menu.
+ */
+#ifndef USE_SLANG
+PUBLIC void LYpaddstr ARGS3(
+	WINDOW *,	the_window,
+	int,		width,
+	CONST char *,	the_string)
+{
+    int y, x;
+    getyx(the_window, y, x);
+    if (width + x >= LYcols)
+	width = LYcols - x - 1;
+    LYwaddnstr(the_window, the_string, width);
+    width -= strlen(the_string);
+    while (width-- > 0)
+	waddstr(the_window, " ");
+}
+#endif
+
+PUBLIC WINDOW *LYstartPopup ARGS4(
+    int,	top_y,
+    int,	left_x,
+    int,	height,
+    int,	width)
+{
+    WINDOW *form_window = 0;
+#ifdef USE_SLANG
+    static WINDOW fake_window;
+    SLsmg_fill_region(top_y, left_x - 1, height, width + 4, ' ');
+    form_window = &fake_window;
+    form_window->top_y  = top_y;
+    form_window->left_x = left_x;
+    form_window->height = height;
+    form_window->width  = width;
+#else
+    if (!(form_window = newwin(height, width + 4, top_y, left_x - 1)) &&
+	!(form_window = newwin(height, 0, top_y, 0))) {
+	HTAlert(POPUP_FAILED);
+    } else {
+	LYsubwindow(form_window);
+#  ifdef USE_COLOR_STYLE
+	{
+	    attr_t b;
+
+	    /* Get a proper value for the attribute */
+	    LynxWChangeStyle(form_window, s_menu_bg, STACK_ON);
+	    b = getattrs(form_window);
+	    LynxWChangeStyle(form_window, s_menu_bg, STACK_OFF);
+	    wbkgd(form_window, b | ' ');
+	    /* wbkgdset does not make a lot of sense with USE_COLOR_STYLE
+	       since it *forces* attributes on all the cells in the window.
+	       Undo the change done in LYsubwindow, since we set our styles.
+	     */
+	    wbkgdset(form_window, (b & ~(A_BOLD|A_BLINK)) | ' ');
+	}
+#  endif
+    }
+#endif /* USE_SLANG */
+    return form_window;
+}
 
 PUBLIC void LYstartTargetEmphasis NOARGS
 {
@@ -1354,20 +1594,23 @@ PUBLIC void LYtouchline ARGS1(
 	int,		row)
 {
 #if defined(HAVE_WREDRAWLN)
-    wredrawln(stdscr, row, 1);
+    wredrawln(LYwin, row, 1);
 #else
-#if defined(VMS) && !defined(_BSD44_CURSES)
-    /* touchline() is not available on VMS before version 7.0, and then
-     * only on Alpha, since prior ports of curses were broken.
+#if defined(HAVE_TOUCHLINE)
+    /* touchline() is not available on VMS before version 7.0, and then only on
+     * Alpha, since prior ports of curses were broken.  BSD touchline() has a
+     * 4th parameter since it is used internally by touchwin().
      */
-    touchwin(stdscr);
+#if defined(HAVE_BSD_TOUCHLINE)
+    touchline(LYwin, row, 0, COLS);
 #else
-#if defined(FANCY_CURSES)
-    touchline(stdscr, row, 1);
-#else
-#if defined(USE_SLANG)
-    SLsmg_touch_lines(row, 1);
+    touchline(LYwin, row, 1);
 #endif
+#else
+#if !defined(USE_SLANG)
+    touchwin(LYwin);
+#else
+    SLsmg_touch_lines(row, 1);
 #endif
 #endif
 #endif
@@ -1382,11 +1625,20 @@ PUBLIC void LYwaddnstr ARGS3(
 	CONST char *,	s,
 	size_t,		len)
 {
-    if (len != 0) {
+#ifdef USE_COLOR_STYLE
+    if (TRACE) {
+	int y, x;
+	LYGetYX(y, x);
+	CTRACE2(TRACE_STYLE, (tfp, "[%2d,%2d] LYwaddnstr(%.*s)\n", y, x, (int) len, s));
+    }
+#endif
+    while (len > 0) {
 	char temp[MAX_LINE];
-	memcpy(temp, s, len);
-	temp[len] = 0;
+	size_t use = (len >= MAX_LINE) ? MAX_LINE - 1 : len;
+	memcpy(temp, s, use);
+	temp[use] = 0;
 	waddstr(w, temp);
+	len -= use;
     }
 }
 
@@ -1453,11 +1705,11 @@ PUBLIC void LYwaddnstr ARGS3(
 
 #define EFN	0			/* Event flag			*/
 
-static	unsigned char buffer[20];	/* Input buffer 		*/
-static	int	in_pos, in_len; 	/* For escape sequences 	*/
+static	unsigned char buffer[20];	/* Input buffer			*/
+static	int	in_pos, in_len;		/* For escape sequences		*/
 static	int	oldmode[3];		/* Old TTY mode bits		*/
 static	int	newmode[3];		/* New TTY mode bits		*/
-static	short	iochan; 		/* TTY I/O channel		*/
+static	short	iochan;			/* TTY I/O channel		*/
 static	$DESCRIPTOR(term_nam_dsc,"TT"); /* Descriptor for iochan	*/
 static	unsigned long mask = LIB$M_CLI_CTRLY|LIB$M_CLI_CTRLT; /* ^Y and ^T */
 static	unsigned long old_msk;		/* Saved control mask		*/
@@ -1466,7 +1718,7 @@ BOOLEAN DidCleanup = FALSE;		/* Exit handler flag		*/
 static char VersionVMS[20];		/* Version of VMS		*/
 
 PUBLIC int VMSVersion ARGS2(
-	char *, 	VerString,
+	char *,		VerString,
 	int,		VerLen)
 {
      unsigned long status, itm_cod = SYI$_VERSION;
@@ -1786,12 +2038,12 @@ void (*func)();
  */
 #ifdef __DECC
 PRIVATE unsigned int DCLspawn_exception ARGS2(
-	void *, 	sigarr,
-	void *, 	mecharr)
+	void *,		sigarr,
+	void *,		mecharr)
 #else
 PRIVATE int DCLspawn_exception ARGS2(
-	void *, 	sigarr,
-	void *, 	mecharr)
+	void *,		sigarr,
+	void *,		mecharr)
 #endif /* __DECC */
 {
      int status;
@@ -1801,7 +2053,7 @@ PRIVATE int DCLspawn_exception ARGS2(
 }
 
 PRIVATE int spawn_DCLprocess ARGS1(
-	char *, 	command)
+	char *,		command)
 {
      int status;
      unsigned long Status = 0;
@@ -1851,7 +2103,7 @@ PRIVATE int spawn_DCLprocess ARGS1(
 }
 
 PUBLIC int DCLsystem ARGS1(
-	char *, 	command)
+	char *,		command)
 {
      int status;
      extern void controlc();
@@ -1866,22 +2118,103 @@ PUBLIC int DCLsystem ARGS1(
 }
 #endif /* VMS */
 
+/*
+ * Return the physical screen dimensions that we're allowed to use.
+ */
+PUBLIC int LYscreenHeight NOARGS
+{
+    int result = LINES;
+    if (result <= 0)
+	result = DFT_ROWS;
+    return result;
+}
+
+PUBLIC int LYscreenWidth NOARGS
+{
+    int result = COLS;
+#if defined(PDCURSES_EXP) && defined(WIN_EX) && defined(CJK_EX) /* 1999/08/26 (Thu) 17:53:38 */
+    {
+	extern int current_codepage;	/* PDCurses lib. */
+
+	if (current_codepage == 932)
+	    result--;
+    }
+#endif
+    if (result <= 0)
+	result = DFT_COLS;
+    return result;
+}
+
+/*
+ * The functions ifdef'd with USE_CURSES_PADS are implemented that way so we
+ * don't break the slang configuration.
+ */
+PUBLIC void LYclear NOARGS
+{
+#ifdef USE_CURSES_PADS
+    wclear(LYwin);
+#else
+    clear();
+#endif
+}
+
+PUBLIC void LYclrtoeol NOARGS
+{
+#ifdef USE_CURSES_PADS
+    wclrtoeol(LYwin);
+#else
+    clrtoeol();
+#endif
+}
+
+PUBLIC void LYerase NOARGS
+{
+#ifdef USE_CURSES_PADS
+    werase(LYwin);
+#else
+    erase();
+#endif
+}
+
+PUBLIC void LYmove ARGS2(int, y, int, x)
+{
+#ifdef USE_CURSES_PADS
+    wmove(LYwin, y, x);
+#else
+    move(y, x);
+#endif
+}
+
+PUBLIC void LYrefresh NOARGS
+{
+#ifdef USE_CURSES_PADS
+    if (LYwin != stdscr) {
+	/*
+	 * Workaround for special case where lynx is prompting for a mailto,
+	 * and has a subject line that is wider than the screen.  The
+	 * wnoutrefresh() call resets newscr's position to match stdscr's,
+	 * which happens to be the window's origin because we were not updating
+	 * that, and other stray wmove's in lynx fail because the coordinate
+	 * is on/after the right margin.  Force things to look ok here.
+	 */
+	int y, x;
+	getyx(LYwin, y, x);
+	if (x >= LYcols) x = LYcols-1;
+	wmove(stdscr, y, x);
+
+	wnoutrefresh(stdscr);
+	pnoutrefresh(LYwin, 0, LYshiftWin, 0, 0, LYlines, LYscreenWidth()-1);
+	doupdate();
+    } else {
+	refresh();
+    }
+#else
+    refresh();
+#endif
+}
+
 PUBLIC void lynx_force_repaint NOARGS
 {
-#if defined(COLOR_CURSES)
-    chtype a;
-    if (LYShowColor >= SHOW_COLOR_ON)
-	a = COLOR_BKGD;
-    else
-	a = A_NORMAL;
-    bkgdset(a | ' ');
-#if !defined(USE_COLOR_STYLE) && defined(NCURSES_VERSION)
-#if NCURSES_VERSION_MAJOR < 4 || (NCURSES_VERSION_MAJOR == 4 && NCURSES_VERSION_MINOR == 0)
-    bkgd(a | ' ');
-#endif
-#endif
-    attrset(a);
-#endif /* COLOR_CURSES */
     clearok(curscr, TRUE);
 }
 
@@ -1936,7 +2269,7 @@ PUBLIC void lynx_stop_link_color ARGS2(
 	int,	pending GCC_UNUSED)
 {
 #ifdef USE_COLOR_STYLE
-    LynxChangeStyle(flag == ON ? s_alink : s_a, ABS_OFF, 0);
+    LynxChangeStyle(flag == ON ? s_alink : s_a, ABS_OFF);
 #else
     if (flag) {
 	stop_reverse();
@@ -1964,16 +2297,16 @@ PUBLIC void lynx_stop_link_color ARGS2(
 
 PUBLIC void lynx_stop_target_color NOARGS
 {
-   stop_underline();
-   stop_reverse();
-   stop_bold();
+    stop_underline();
+    stop_reverse();
+    stop_bold();
 }
 
 PUBLIC void lynx_start_target_color NOARGS
 {
-   start_bold();
-   start_reverse();
-   start_underline();
+    start_bold();
+    start_reverse();
+    start_underline();
 }
 
 
@@ -1999,39 +2332,83 @@ PUBLIC void lynx_stop_status_color NOARGS
 
 PUBLIC void lynx_start_h1_color NOARGS
 {
-   if (bold_H1 || bold_headers)
-     start_bold();
+    if (bold_H1 || bold_headers)
+	start_bold();
 }
 
 PUBLIC void lynx_stop_h1_color NOARGS
 {
-   if (bold_H1 || bold_headers)
-     stop_bold();
+    if (bold_H1 || bold_headers)
+	stop_bold();
 }
 
 PUBLIC void lynx_start_prompt_color NOARGS
 {
-   start_reverse ();
+    start_reverse ();
 }
 
 PUBLIC void lynx_stop_prompt_color NOARGS
 {
-   stop_reverse ();
+    stop_reverse ();
 }
 
 PUBLIC void lynx_start_radio_color NOARGS
 {
-   start_bold ();
+    start_bold ();
 }
 
 PUBLIC void lynx_stop_radio_color NOARGS
 {
-   stop_bold ();
+    stop_bold ();
 }
 
 PUBLIC void lynx_stop_all_colors NOARGS
 {
-   stop_underline ();
-   stop_reverse ();
-   stop_bold ();
+    stop_underline ();
+    stop_reverse ();
+    stop_bold ();
 }
+
+/*
+ * If LYShowCursor is ON, move the cursor to the left of the current option, so
+ * that blind users, who are most likely to have LYShowCursor ON, will have
+ * it's string spoken or passed to the braille interface as each option is made
+ * current.  Otherwise, move it to the bottom, right column of the screen, to
+ * "hide" the cursor as for the main document, and let sighted users rely on
+ * the current option's highlighting or color without the distraction of a
+ * blinking cursor in the window.  - FM
+ */
+PUBLIC void LYstowCursor ARGS3(
+    WINDOW *,	win,
+    int,	row,
+    int,	col)
+{
+#ifdef USE_SLANG
+    if (LYShowCursor)
+	SLsmg_gotorc(win->top_y + row, win->left_x + col);
+    else
+	LYHideCursor();
+    SLsmg_refresh();
+#else
+    if (LYShowCursor)
+	wmove(win, row, col);
+    else
+	LYHideCursor();
+    wrefresh(win);
+#endif /* USE_SLANG  */
+}
+
+#if defined(USE_BLINK) && defined(__EMX__) /* Can't put it earler due to BOOLEAN conflict */
+#  define BOOLEAN os2BOOLEAN
+#  define INCL_VIO
+#  include "os2.h"
+PRIVATE void make_blink_boldbg NOARGS
+{
+    VIOINTENSITY buf;		/* VIO windows have it anyway, */
+				/* but FS session need a switch */
+    buf.cb = sizeof(buf);
+    buf.type = 2;		/* VIOINTENSITY request */
+    buf.fs = 1;			/* Intensity == boldbg */
+    VioSetState(&buf,0);
+}
+#endif

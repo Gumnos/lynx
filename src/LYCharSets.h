@@ -93,4 +93,33 @@ extern int displayed_display_charset_idx;
 extern void init_charset_subsets NOPARAMS;
 #endif /* EXP_CHARSET_CHOICE */
 
+#if !defined(NO_AUTODETECT_DISPLAY_CHARSET)
+#  ifdef __EMX__
+#    define CAN_AUTODETECT_DISPLAY_CHARSET
+#    ifdef EXP_CHARTRANS_AUTOSWITCH
+#      define CAN_SWITCH_DISPLAY_CHARSET
+#    endif
+#  endif
+#endif
+
+#ifdef CAN_AUTODETECT_DISPLAY_CHARSET
+extern int auto_display_charset;
+#endif
+
+#ifdef CAN_SWITCH_DISPLAY_CHARSET
+enum switch_display_charset_t {
+    SWITCH_DISPLAY_CHARSET_MAYBE,
+    SWITCH_DISPLAY_CHARSET_REALLY,
+    SWITCH_DISPLAY_CHARSET_SIZECHANGE
+};
+extern int Switch_Display_Charset PARAMS((int ord, enum switch_display_charset_t really));
+extern int Find_Best_Display_Charset PARAMS((int ord));
+extern char *charsets_directory;
+extern char *charset_switch_rules;
+extern int switch_display_charsets;
+extern int auto_other_display_charset;
+extern int codepages[2];
+extern int real_charsets[2];	/* Non "auto-" charsets for the codepages */
+#endif
+
 #endif /* LYCHARSETS_H */

@@ -32,7 +32,7 @@ extern BOOL HTPassEightBitRaw;
 **		-----------
 */
 
-typedef enum _MIME_state {
+typedef enum {
 	MIME_TRANSPARENT,	/* put straight through to target ASAP! */
 	miBEGINNING_OF_LINE,	/* first character and not a continuation */
 	miA,
@@ -100,12 +100,12 @@ typedef enum _MIME_state {
 	miJUNK_LINE,		/* Ignore the rest of this folded line */
 	miNEWLINE,		/* Just found a LF .. maybe continuation */
 	miCHECK,		/* check against check_pointer */
-	MIME_NET_ASCII, 	/* Translate from net ascii */
+	MIME_NET_ASCII,		/* Translate from net ascii */
 	MIME_IGNORE		/* Ignore entire file */
 	/* TRANSPARENT and IGNORE are defined as stg else in _WINDOWS */
 } MIME_state;
 
-#define VALUE_SIZE 5120 	/* @@@@@@@ Arbitrary? */
+#define VALUE_SIZE 5120		/* @@@@@@@ Arbitrary? */
 struct _HTStream {
 	CONST HTStreamClass *	isa;
 
@@ -122,7 +122,7 @@ struct _HTStream {
 	char *			value_pointer;	/* storing values */
 	char			value[VALUE_SIZE];
 
-	HTParentAnchor *	anchor; 	/* Given on creation */
+	HTParentAnchor *	anchor;		/* Given on creation */
 	HTStream *		sink;		/* Given on creation */
 
 	char *			boundary;	/* For multipart */
@@ -132,8 +132,8 @@ struct _HTStream {
 
 	HTFormat		encoding;	/* Content-Transfer-Encoding */
 	char *			compression_encoding;
-	HTFormat		format; 	/* Content-Type */
-	HTStream *		target; 	/* While writing out */
+	HTFormat		format;		/* Content-Type */
+	HTStream *		target;		/* While writing out */
 	HTStreamClass		targetClass;
 
 	HTAtom *		targetRep;	/* Converting into? */
@@ -147,7 +147,7 @@ struct _HTStream {
 **  first and last characters are double-quotes. - FM
 */
 PUBLIC void HTMIME_TrimDoubleQuotes ARGS1(
-	char *, 	value)
+	char *,		value)
 {
     int i;
     char *cp = value;
@@ -285,7 +285,7 @@ PRIVATE int pumpData ARGS1(HTStream *, me)
 		    */
 		    BOOL given_is_8859
 			= (BOOL) (!strncmp(cp4, "iso-8859-", 9) &&
-				  isdigit((unsigned char)cp4[9]));
+				  isdigit(UCH(cp4[9])));
 		    BOOL given_is_8859like
 			= (BOOL) (given_is_8859 ||
 				  !strncmp(cp4, "windows-", 8) ||
@@ -305,7 +305,7 @@ PRIVATE int pumpData ARGS1(HTStream *, me)
 		    if (given_is_8859) {
 			cp1 = &cp4[10];
 			while (*cp1 &&
-			       isdigit((unsigned char)(*cp1)))
+			       isdigit(UCH(*cp1)))
 			    cp1++;
 			*cp1 = '\0';
 		    }
@@ -507,9 +507,9 @@ PRIVATE int dispatchField ARGS1(HTStream *, me)
 		    cp1++;
 		    while (*cp1 != '\0' && WHITE(*cp1))
 			cp1++;
-		    if (isdigit((unsigned char)*cp1)) {
+		    if (isdigit(UCH(*cp1))) {
 			cp0 = cp1;
-			while (isdigit((unsigned char)*cp1))
+			while (isdigit(UCH(*cp1)))
 			    cp1++;
 			if (*cp0 == '0' && cp1 == (cp0 + 1)) {
 			    me->anchor->no_cache = TRUE;
@@ -1187,7 +1187,7 @@ PRIVATE void HTMIME_put_character ARGS2(
 	} /* switch on character */
 	break;
 
-    case miCON: 			/* Check for 'n' or 't' */
+    case miCON:				/* Check for 'n' or 't' */
 	switch (c) {
 	case 'n':
 	case 'N':
@@ -1707,7 +1707,7 @@ PRIVATE void HTMIME_put_character ARGS2(
 
     case miGET_VALUE:
     GET_VALUE:
-    	if (c != '\n') {			/* Not end of line */
+	if (c != '\n') {			/* Not end of line */
 	    if (me->value_pointer < me->value + VALUE_SIZE - 1) {
 		*me->value_pointer++ = c;
 		break;
@@ -1732,7 +1732,7 @@ PRIVATE void HTMIME_put_character ARGS2(
 value_too_long:
     CTRACE((tfp, "HTMIME: *** Syntax error. (string too long)\n"));
 
-bad_field_name: 			/* Ignore it */
+bad_field_name:				/* Ignore it */
     me->state = miJUNK_LINE;
     return;
 
@@ -1841,7 +1841,7 @@ PUBLIC HTStream* HTMIMEConvert ARGS3(
 {
     HTStream* me;
 
-    me = (HTStream *)calloc(1, sizeof(*me));
+    me = typecalloc(HTStream);
     if (me == NULL)
 	outofmem(__FILE__, "HTMIMEConvert");
     me->isa	=	&HTMIME;
@@ -1983,8 +1983,8 @@ PRIVATE char HTmmquote[] = "0123456789ABCDEF";
 PRIVATE int HTmmcont = 0;
 
 PUBLIC void HTmmdec_base64 ARGS2(
-	char *, 	t,
-	char *, 	s)
+	char *,		t,
+	char *,		s)
 {
     int   d, count, j, val;
     char  buf[LINE_LENGTH], *bp, nw[4], *p;
@@ -2022,8 +2022,8 @@ PUBLIC void HTmmdec_base64 ARGS2(
 }
 
 PUBLIC void HTmmdec_quote ARGS2(
-	char *, 	t,
-	char *, 	s)
+	char *,		t,
+	char *,		s)
 {
     char  buf[LINE_LENGTH], cval, *bp, *p;
 
@@ -2059,8 +2059,8 @@ PUBLIC void HTmmdec_quote ARGS2(
 **	HTmmdecode for ISO-2022-JP - FM
 */
 PUBLIC void HTmmdecode ARGS2(
-	char *, 	trg,
-	char *, 	str)
+	char *,		trg,
+	char *,		str)
 {
     char buf[LINE_LENGTH], mmbuf[LINE_LENGTH];
     char *s, *t, *u;
@@ -2124,8 +2124,8 @@ end:
 **  (The author of this function "rjis" is S. Ichikawa.)
 */
 PUBLIC int HTrjis ARGS2(
-	char *, 	t,
-	char *, 	s)
+	char *,		t,
+	char *,		s)
 {
     char *p, buf[LINE_LENGTH];
     int kanji = 0;

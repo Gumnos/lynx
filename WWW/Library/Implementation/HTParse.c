@@ -19,7 +19,7 @@ struct struct_parts {
 };
 
 
-/*	Strip white space off a string. 			HTStrip()
+/*	Strip white space off a string.				HTStrip()
 **	-------------------------------
 **
 ** On exit,
@@ -27,7 +27,7 @@ struct struct_parts {
 **	All trailing white space is OVERWRITTEN with zero.
 */
 PUBLIC char * HTStrip ARGS1(
-	char *, 	s)
+	char *,		s)
 {
 #define SPACE(c) ((c == ' ') || (c == '\t') || (c == '\n'))
     char * p = s;
@@ -55,7 +55,7 @@ PUBLIC char * HTStrip ARGS1(
 **	Any which are nonzero point to zero terminated strings.
 */
 PRIVATE void scan ARGS2(
-	char *, 		name,
+	char *,			name,
 	struct struct_parts *,	parts)
 {
     char * after_access;
@@ -178,7 +178,7 @@ PRIVATE void scan ARGS2(
 **	wanted		A mask for the bits which are wanted.
 **
 ** On exit,
-**	returns 	A pointer to a calloc'd string which MUST BE FREED
+**	returns		A pointer to a calloc'd string which MUST BE FREED
 */
 PUBLIC char * HTParse ARGS3(
 	CONST char *,	aName,
@@ -208,7 +208,7 @@ PUBLIC char * HTParse ARGS3(
     **	Allocate the output string.
     */
     len = strlen(aName) + strlen(relatedName) + 10;
-    result = (char *)calloc(1, len);	/* Lots of space: more than enough */
+    result = typecallocn(char, len);	/* Lots of space: more than enough */
     if (result == NULL) {
 	outofmem(__FILE__, "HTParse");
     }
@@ -292,7 +292,7 @@ PUBLIC char * HTParse ARGS3(
 		if ((p2 = strchr(result, '@')) != NULL)
 		   tail = (p2 + 1);
 		p2 = strchr(tail, ':');
-		if (p2 != NULL && !isdigit((unsigned char)p2[1]))
+		if (p2 != NULL && !isdigit(UCH(p2[1])))
 		    /*
 		    **	Colon not followed by a port number.
 		    */
@@ -484,7 +484,7 @@ PUBLIC char * HTParse ARGS3(
 **	or	../../albert.html
 */
 PUBLIC void HTSimplify ARGS1(
-	char *, 	filename)
+	char *,		filename)
 {
     char *p;
     char *q, *q1;
@@ -682,7 +682,7 @@ PUBLIC char * HTRelative ARGS2(
 	for (; *q && (*q != '#'); q++)
 	    if (*q == '/')
 		levels++;
-	result = (char *)calloc(1, (3*levels + strlen(last_slash) + 1));
+	result = typecallocn(char, 3*levels + strlen(last_slash) + 1);
 	if (result == NULL)
 	    outofmem(__FILE__, "HTRelative");
 	result[0] = '\0';
@@ -691,7 +691,7 @@ PUBLIC char * HTRelative ARGS2(
 	strcat(result, last_slash+1);
     }
     CTRACE((tfp,
-        "HTparse: `%s' expressed relative to\n   `%s' is\n   `%s'.\n",
+	"HTparse: `%s' expressed relative to\n	 `%s' is\n   `%s'.\n",
 		aName, relatedName, result));
     return result;
 }
@@ -709,7 +709,7 @@ PUBLIC char * HTRelative ARGS2(
 PRIVATE CONST unsigned char isAcceptable[96] =
 
 /*	Bit 0		xalpha		-- see HTFile.h
-**	Bit 1		xpalpha 	-- as xalpha but with plus.
+**	Bit 1		xpalpha		-- as xalpha but with plus.
 **	Bit 3 ...	path		-- as xpalphas but with /
 */
     /*	 0 1 2 3 4 5 6 7 8 9 A B C D E F */
@@ -732,9 +732,9 @@ PUBLIC char * HTEscape ARGS2(
     char * result;
     int unacceptable = 0;
     for (p = str; *p; p++)
-	if (!ACCEPTABLE((unsigned char)TOASCII(*p)))
+	if (!ACCEPTABLE(UCH(TOASCII(*p))))
 	    unacceptable++;
-    result = (char *)calloc(1, (p-str + unacceptable + unacceptable + 1));
+    result = typecallocn(char, p-str + unacceptable + unacceptable + 1);
     if (result == NULL)
 	outofmem(__FILE__, "HTEscape");
     for (q = result, p = str; *p; p++) {
@@ -770,9 +770,9 @@ PUBLIC char * HTEscapeSP ARGS2(
     char * result;
     int unacceptable = 0;
     for (p = str; *p; p++)
-	if (!(*p == ' ' || ACCEPTABLE((unsigned char)TOASCII(*p))))
+	if (!(*p == ' ' || ACCEPTABLE(UCH(TOASCII(*p)))))
 	    unacceptable++;
-    result = (char *)calloc(1, (p-str + unacceptable + unacceptable + 1));
+    result = typecallocn(char, p-str + unacceptable + unacceptable + 1);
     if (result == NULL)
 	outofmem(__FILE__, "HTEscape");
     for (q = result, p = str; *p; p++) {
@@ -808,7 +808,7 @@ PRIVATE char from_hex ARGS1(
 }
 
 PUBLIC char * HTUnEscape ARGS1(
-	char *, 	str)
+	char *,		str)
 {
     char * p = str;
     char * q = str;
@@ -822,8 +822,8 @@ PUBLIC char * HTUnEscape ARGS1(
 	     *	Tests shouldn't be needed, but better safe than sorry.
 	     */
 	    p[1] && p[2] &&
-	    isxdigit((unsigned char)p[1]) &&
-	    isxdigit((unsigned char)p[2])) {
+	    isxdigit(UCH(p[1])) &&
+	    isxdigit(UCH(p[2]))) {
 	    p++;
 	    if (*p)
 		*q = (char) (from_hex(*p++) * 16);
@@ -856,7 +856,7 @@ PUBLIC char * HTUnEscape ARGS1(
 **	The first string is converted in place, as it will never grow.
 */
 PUBLIC char * HTUnEscapeSome ARGS2(
-	char *, 	str,
+	char *,		str,
 	CONST char *,	do_trans)
 {
     char * p = str;
@@ -869,8 +869,8 @@ PUBLIC char * HTUnEscapeSome ARGS2(
     while (*p != '\0') {
 	if (*p == HEX_ESCAPE &&
 	    p[1] && p[2] &&	/* tests shouldn't be needed, but.. */
-	    isxdigit((unsigned char)p[1]) &&
-	    isxdigit((unsigned char)p[2]) &&
+	    isxdigit(UCH(p[1])) &&
+	    isxdigit(UCH(p[2])) &&
 	    (testcode = (char) FROMASCII(from_hex(p[1])*16 +
 		from_hex(p[2]))) && /* %00 no good*/
 	    strchr(do_trans, testcode)) { /* it's one of the ones we want */
@@ -889,7 +889,7 @@ PUBLIC char * HTUnEscapeSome ARGS2(
 PRIVATE CONST unsigned char crfc[96] =
 
 /*	Bit 0		xalpha		-- need "quoting"
-**	Bit 1		xpalpha 	-- need \escape if quoted
+**	Bit 1		xpalpha		-- need \escape if quoted
 */
     /*	 0 1 2 3 4 5 6 7 8 9 A B C D E F */
     {	 1,0,3,0,0,0,0,0,1,1,0,0,1,0,1,0,	/* 2x	!"#$%&'()*+,-./  */
@@ -930,7 +930,7 @@ PUBLIC void HTMake822Word ARGS1(
     }
     if (!added)
 	return;
-    result = (char *)calloc(1, (p-(*str) + added + 1));
+    result = typecallocn(char, p-(*str) + added + 1);
     if (result == NULL)
 	outofmem(__FILE__, "HTMake822Word");
     result[0] = '"';

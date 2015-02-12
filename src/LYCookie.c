@@ -132,7 +132,7 @@ PRIVATE void MemAllocCopy ARGS3(
 	return;
     }
 
-    temp = (char *)calloc(1, ((end - start) + 1));
+    temp = typecallocn(char, (end - start) + 1);
     if (temp == NULL)
 	outofmem(__FILE__, "MemAllocCopy");
     LYstrncpy(temp, start, (end - start));
@@ -241,22 +241,58 @@ PRIVATE BOOLEAN port_matches ARGS2(
 {
     CONST char *number = list;
 
-    if (!(number && isdigit(*number)))
+    if (!(number && isdigit(UCH(*number))))
 	return(FALSE);
 
     while (*number != '\0') {
 	if (atoi(number) == port) {
 	    return(TRUE);
 	}
-	while (isdigit(*number)) {
+	while (isdigit(UCH(*number))) {
 	    number++;
 	}
-	while (*number != '\0' && !isdigit(*number)) {
+	while (*number != '\0' && !isdigit(UCH(*number))) {
 	    number++;
 	}
     }
 
     return(FALSE);
+}
+
+/*
+ * Returns the length of the given path ignoring trailing slashes.
+ */
+PRIVATE int ignore_trailing_slash ARGS1(CONST char *, a)
+{
+    int len = strlen(a);
+    while (len > 1 && a[len-1] == '/')
+	--len;
+    return len;
+}
+
+/*
+ * Check if the path 'a' is a prefix of path 'b', ignoring trailing slashes
+ * in either, since they denote an empty component.
+ */
+PRIVATE BOOL is_prefix ARGS2(CONST char *, a, CONST char *, b)
+{
+    int len_a = ignore_trailing_slash(a);
+    int len_b = ignore_trailing_slash(b);
+
+    if (len_a > len_b) {
+	return FALSE;
+    } else {
+	if (strncmp(a, b, len_a) != 0) {
+	    return FALSE;
+	}
+	if (len_a < len_b && (len_a > 1 || a[0] != '/')) {
+	    if (b[len_a] != '\0'
+	     && b[len_a] != '/') {
+		return FALSE;
+	     }
+	}
+    }
+    return TRUE;
 }
 
 /*
@@ -321,7 +357,7 @@ PRIVATE void store_cookie ARGS3(
      * then we want to bypass this check.  The user should be queried
      * if set to INVCHECK_QUERY.
      */
-    if (strncmp(co->path, path, co->pathlen) != 0) {
+    if (!is_prefix(co->path, path)) {
 	invcheck_behaviour_t invcheck_bv = (de ? de->invcheck_bv
 	    				       : DEFAULT_INVCHECK_BV);
 	switch (invcheck_bv) {
@@ -642,7 +678,7 @@ PRIVATE char * scan_cookie_sublist ARGS6(
 			host_matches(hostname, co->domain),
 			path, co->path,
 			(co->pathlen > 0)
-			    ? strncmp(path, co->path, co->pathlen)
+			    ? !is_prefix(co->path, path)
 			    : 0,
 			(co->flags & COOKIE_FLAG_SECURE)
 			    ? " secure"
@@ -664,7 +700,7 @@ PRIVATE char * scan_cookie_sublist ARGS6(
 	 */
 	if (((co != NULL) &&
 	     host_matches(hostname, co->domain)) &&
-	    (co->pathlen == 0 || !strncmp(path, co->path, co->pathlen))) {
+	    (co->pathlen == 0 || is_prefix(co->path, path))) {
 	    /*
 	     *	Skip if the secure flag is set and we don't have
 	     *	a secure connection.  HTTP.c presently treats only
@@ -760,7 +796,7 @@ PRIVATE char * scan_cookie_sublist ARGS6(
 		    StrAllocCat(header, "\"");
 		    len += (strlen(co->path) + 10);
 		}
-		if (co->PortList && isdigit((unsigned char)*co->PortList)) {
+		if (co->PortList && isdigit(UCH(*co->PortList))) {
 		    /*
 		     *	Append the port attribute. - FM
 		     */
@@ -842,7 +878,7 @@ PRIVATE void LYProcessSetCookies ARGS6(
 	 *  Get the attribute name.
 	 */
 	attr_start = p;
-	while (*p != '\0' && !isspace((unsigned char)*p) &&
+	while (*p != '\0' && !isspace(UCH(*p)) &&
 	       *p != '=' && *p != ';' && *p != ',')
 	    p++;
 	attr_end = p;
@@ -881,7 +917,7 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		!strncasecomp(attr_start, "Expires", 7)) {
 		int spaces = 6;
 		value_start = p;
-		if (isdigit((unsigned char)*p)) {
+		if (isdigit(UCH(*p))) {
 		    /*
 		     *	No alphabetic day field. - FM
 		     */
@@ -890,18 +926,18 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		    /*
 		     *	Skip the alphabetic day field. - FM
 		     */
-		    while (*p != '\0' && isalpha((unsigned char)*p)) {
+		    while (*p != '\0' && isalpha(UCH(*p))) {
 			p++;
 		    }
-		    while (*p == ',' || isspace((unsigned char)*p)) {
+		    while (*p == ',' || isspace(UCH(*p))) {
 			p++;
 		    }
 		    spaces--;
 		}
 		while (*p != '\0' && *p != ';' && *p != ',' && spaces) {
 		    p++;
-		    if (isspace((unsigned char)*p)) {
-			while (isspace((unsigned char)*(p + 1)))
+		    if (isspace(UCH(*p))) {
+			while (isspace(UCH(*(p + 1))))
 			    p++;
 			spaces--;
 		    } else if (*p == '-') {
@@ -918,14 +954,14 @@ PRIVATE void LYProcessSetCookies ARGS6(
 	     */
 	    } else if ((attr_end - attr_start) == 4 &&
 		       !strncasecomp(attr_start, "port", 4) &&
-		       isdigit((unsigned char)*p)) {
+		       isdigit(UCH(*p))) {
 		/*
 		 *  The value starts as an unquoted number.
 		 */
 		CONST char *cp, *cp1;
 		value_start = p;
 		while (1) {
-		    while (isdigit((unsigned char)*p))
+		    while (isdigit(UCH(*p)))
 			p++;
 		    value_end = p;
 		    p = LYSkipCBlanks(p);
@@ -933,9 +969,9 @@ PRIVATE void LYProcessSetCookies ARGS6(
 			break;
 		    if (*p == ',') {
 			cp = LYSkipCBlanks(p + 1);
-			if (*cp != '\0' && isdigit((unsigned char)*cp)) {
+			if (*cp != '\0' && isdigit(UCH(*cp))) {
 			    cp1 = cp;
-			    while (isdigit((unsigned char)*cp1))
+			    while (isdigit(UCH(*cp1)))
 				cp1++;
 			    cp1 = LYSkipCBlanks(cp1);
 			    if (*cp1 == '\0' || *cp1 == ',' || *cp1 == ';') {
@@ -951,11 +987,11 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		     *	Trim trailing spaces.
 		     */
 		    if ((value_end > value_start) &&
-			isspace((unsigned char)*(value_end - 1))) {
+			isspace(UCH(*(value_end - 1)))) {
 			value_end--;
 			while ((value_end > (value_start + 1)) &&
-			       isspace((unsigned char)*value_end) &&
-			       isspace((unsigned char)*(value_end - 1))) {
+			       isspace(UCH(*value_end)) &&
+			       isspace(UCH(*(value_end - 1)))) {
 			    value_end--;
 			}
 		    }
@@ -995,11 +1031,11 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		 *  Trim trailing spaces.
 		 */
 		if ((value_end > value_start) &&
-		    isspace((unsigned char)*(value_end - 1))) {
+		    isspace(UCH(*(value_end - 1)))) {
 		    value_end--;
 		    while ((value_end > (value_start + 1)) &&
-			   isspace((unsigned char)*value_end) &&
-			   isspace((unsigned char)*(value_end - 1))) {
+			   isspace(UCH(*value_end)) &&
+			   isspace(UCH(*(value_end - 1)))) {
 			value_end--;
 		    }
 		}
@@ -1031,7 +1067,7 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		if (value_len > max_cookies_buffer) {
 		    value_len = max_cookies_buffer;
 		}
-		value = (char *)calloc(1, value_len + 1);
+		value = typecallocn(char, value_len + 1);
 		if (value == NULL)
 		    outofmem(__FILE__, "LYProcessSetCookies");
 		LYstrncpy(value, value_start, value_len);
@@ -1123,7 +1159,7 @@ PRIVATE void LYProcessSetCookies ARGS6(
 			if (ptr != NULL && ptr[1] != '\0') {
 			    ptr = value;
 			    while (*ptr == '.' ||
-				   isdigit((unsigned char)*ptr))
+				   isdigit(UCH(*ptr)))
 				ptr++;
 			    if (*ptr != '\0') {
 				CTRACE((tfp,
@@ -1163,7 +1199,7 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		    cur_cookie->PortList == NULL) {
 		    char *cp = value;
 		    while ((*cp != '\0') &&
-			   (isdigit((unsigned char)*cp) ||
+			   (isdigit(UCH(*cp)) ||
 			    *cp == ',' || *cp == ' ')) {
 			cp++;
 		    }
@@ -1366,7 +1402,7 @@ PRIVATE void LYProcessSetCookies ARGS6(
 	 *  Get the attribute name.
 	 */
 	attr_start = p;
-	while (*p != '\0' && !isspace((unsigned char)*p) &&
+	while (*p != '\0' && !isspace(UCH(*p)) &&
 	       *p != '=' && *p != ';' && *p != ',')
 	    p++;
 	attr_end = p;
@@ -1401,7 +1437,7 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		!strncasecomp(attr_start, "Expires", 7)) {
 		int spaces = 6;
 		value_start = p;
-		if (isdigit((unsigned char)*p)) {
+		if (isdigit(UCH(*p))) {
 		    /*
 		     *	No alphabetic day field. - FM
 		     */
@@ -1410,18 +1446,18 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		    /*
 		     *	Skip the alphabetic day field. - FM
 		     */
-		    while (*p != '\0' && isalpha((unsigned char)*p)) {
+		    while (*p != '\0' && isalpha(UCH(*p))) {
 			p++;
 		    }
-		    while (*p == ',' || isspace((unsigned char)*p)) {
+		    while (*p == ',' || isspace(UCH(*p))) {
 			p++;
 		    }
 		    spaces--;
 		}
 		while (*p != '\0' && *p != ';' && *p != ',' && spaces) {
 		    p++;
-		    if (isspace((unsigned char)*p)) {
-			while (isspace((unsigned char)*(p + 1)))
+		    if (isspace(UCH(*p))) {
+			while (isspace(UCH(*(p + 1))))
 			    p++;
 			spaces--;
 		    } else if (*p == '-') {
@@ -1438,14 +1474,14 @@ PRIVATE void LYProcessSetCookies ARGS6(
 	     */
 	    } else if ((attr_end - attr_start) == 4 &&
 		       !strncasecomp(attr_start, "port", 4) &&
-		       isdigit((unsigned char)*p)) {
+		       isdigit(UCH(*p))) {
 		/*
 		 *  The value starts as an unquoted number.
 		 */
 		CONST char *cp, *cp1;
 		value_start = p;
 		while (1) {
-		    while (isdigit((unsigned char)*p))
+		    while (isdigit(UCH(*p)))
 			p++;
 		    value_end = p;
 		    p = LYSkipCBlanks(p);
@@ -1453,9 +1489,9 @@ PRIVATE void LYProcessSetCookies ARGS6(
 			break;
 		    if (*p == ',') {
 			cp = LYSkipCBlanks(p + 1);
-			if (*cp != '\0' && isdigit((unsigned char)*cp)) {
+			if (*cp != '\0' && isdigit(UCH(*cp))) {
 			    cp1 = cp;
-			    while (isdigit((unsigned char)*cp1))
+			    while (isdigit(UCH(*cp1)))
 				cp1++;
 			    cp1 = LYSkipCBlanks(cp1);
 			    if (*cp1 == '\0' || *cp1 == ',' || *cp1 == ';') {
@@ -1471,11 +1507,11 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		     *	Trim trailing spaces.
 		     */
 		    if ((value_end > value_start) &&
-			isspace((unsigned char)*(value_end - 1))) {
+			isspace(UCH(*(value_end - 1)))) {
 			value_end--;
 			while ((value_end > (value_start + 1)) &&
-			       isspace((unsigned char)*value_end) &&
-			       isspace((unsigned char)*(value_end - 1))) {
+			       isspace(UCH(*value_end)) &&
+			       isspace(UCH(*(value_end - 1)))) {
 			    value_end--;
 			}
 		    }
@@ -1515,11 +1551,11 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		 *  Trim trailing spaces.
 		 */
 		if ((value_end > value_start) &&
-		    isspace((unsigned char)*(value_end - 1))) {
+		    isspace(UCH(*(value_end - 1)))) {
 		    value_end--;
 		    while ((value_end > (value_start + 1)) &&
-			   isspace((unsigned char)*value_end) &&
-			   isspace((unsigned char)*(value_end - 1))) {
+			   isspace(UCH(*value_end)) &&
+			   isspace(UCH(*(value_end - 1)))) {
 			value_end--;
 		    }
 		}
@@ -1551,7 +1587,7 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		if (value_len > max_cookies_buffer) {
 		    value_len = max_cookies_buffer;
 		}
-		value = (char *)calloc(1, value_len + 1);
+		value = typecallocn(char, value_len + 1);
 		if (value == NULL)
 		    outofmem(__FILE__, "LYProcessSetCookies");
 		LYstrncpy(value, value_start, value_len);
@@ -1643,7 +1679,7 @@ PRIVATE void LYProcessSetCookies ARGS6(
 			if (ptr != NULL && ptr[1] != '\0') {
 			    ptr = value;
 			    while (*ptr == '.' ||
-				   isdigit((unsigned char)*ptr))
+				   isdigit(UCH(*ptr)))
 				ptr++;
 			    if (*ptr != '\0') {
 				CTRACE((tfp,
@@ -1683,7 +1719,7 @@ PRIVATE void LYProcessSetCookies ARGS6(
 		    cur_cookie->PortList == NULL) {
 		    char *cp = value;
 		    while ((*cp != '\0') &&
-			   (isdigit((unsigned char)*cp) ||
+			   (isdigit(UCH(*cp)) ||
 			    *cp == ',' || *cp == ' ')) {
 			cp++;
 		    }
@@ -1896,15 +1932,7 @@ PUBLIC void LYSetCookie ARGS3(
     } else if (!strncasecomp(address, "https:", 6)) {
 	port = 443;
     }
-    if (((path = HTParse(address, "",
-			 PARSE_PATH|PARSE_PUNCTUATION)) != NULL) &&
-	(ptr = strrchr(path, '/')) != NULL) {
-	if (ptr == path) {
-	    *(ptr+1) = '\0';	/* Leave a single '/' alone */
-	} else {
-	    *ptr = '\0';
-	}
-    }
+    path = HTParse(address, "", PARSE_PATH|PARSE_PUNCTUATION);
     if (!(SetCookie && *SetCookie) &&
 	!(SetCookie2 && *SetCookie2)) {
 	/*
@@ -2166,16 +2194,13 @@ PUBLIC void LYLoadCookies ARGS1 (
 	 */
 	store_cookie(moo, domain, path);
     }
-    fclose (cookie_handle);
+    LYCloseInput (cookie_handle);
 }
 
 /* rjp - experimental persistent cookie support */
 PUBLIC void LYStoreCookies ARGS1 (
 	char *,		cookie_file)
 {
-#if 0
-    char *buf = NULL;
-#endif
     HTList *dl, *cl;
     domain_entry *de;
     cookie *co;
@@ -2209,24 +2234,6 @@ PUBLIC void LYStoreCookies ARGS1 (
 	     *	Fote says the first object is NULL.  Go with that.
 	     */
 	    continue;
-
-#if 0
-	switch (de->bv) {
-	case (ACCEPT_ALWAYS):
-	    HTSprintf0(&buf, COOKIES_ALWAYS_ALLOWED);
-	    break;
-	case (REJECT_ALWAYS):
-	    HTSprintf0(&buf, COOKIES_NEVER_ALLOWED);
-	    break;
-	case (QUERY_USER):
-	    HTSprintf0(&buf, COOKIES_ALLOWED_VIA_PROMPT);
-	    break;
-	case (FROM_FILE):	/* not used any more - kw */
-	    HTSprintf0(&buf, gettext("(From Cookie Jar)"));
-	    break;
-	}
-	/* FIXME: buf unused */
-#endif
 
 	/*
 	 *  Show the domain's cookies. - FM
@@ -2264,7 +2271,7 @@ PUBLIC void LYStoreCookies ARGS1 (
 	    CTRACE((tfp, "STORED\n"));
 	}
     }
-    fclose(cookie_handle);
+    LYCloseOutput(cookie_handle);
 
     HTSYS_purge(cookie_file);
 }
@@ -2417,14 +2424,14 @@ PRIVATE int LYHandleCookies ARGS4 (
 		    }
 		    HTNoDataOK = 1;
 		    while (1) {
-			ch = LYgetch_for(FOR_SINGLEKEY);
+			ch = LYgetch_single();
 #ifdef VMS
 			if (HadVMSInterrupt) {
 			    HadVMSInterrupt = FALSE;
 			    ch = 'C';
 			}
 #endif /* VMS */
-			switch(TOUPPER(ch)) {
+			switch(ch) {
 			    case 'A':
 				/*
 				 *  Set to accept all cookies
@@ -2436,11 +2443,10 @@ PRIVATE int LYHandleCookies ARGS4 (
 				return(HT_NO_DATA);
 
 			    case 'C':
-			    case 7:	/* Ctrl-G */
-			    case 3:	/* Ctrl-C */
 				/*
 				 *  Cancelled. - FM
 				 */
+			      reject:
 				HTUserMsg(CANCELLED);
 				return(HT_NO_DATA);
 
@@ -2524,6 +2530,8 @@ Delete_all_cookies_in_domain:
 				return(HT_NO_DATA);
 
 			    default:
+				if (LYCharIsINTERRUPT(ch))
+				    goto reject;
 				continue;
 			}
 			break;
@@ -2571,7 +2579,7 @@ Delete_all_cookies_in_domain:
 #define PUTS(buf)    (*target->isa->put_block)(target, buf, strlen(buf))
 
 
-    HTSprintf0(&buf, "<HEAD>\n<TITLE>%s</title>\n</HEAD>\n<BODY>\n",
+    HTSprintf0(&buf, "<html>\n<head>\n<title>%s</title>\n</head>\n<body>\n",
 		 COOKIE_JAR_TITLE);
     PUTS(buf);
     HTSprintf0(&buf, "<h1>%s (%s)%s<a href=\"%s%s\">%s</a></h1>\n",
@@ -2580,12 +2588,12 @@ Delete_all_cookies_in_domain:
 	helpfilepath, COOKIE_JAR_HELP, COOKIE_JAR_TITLE);
     PUTS(buf);
 
-    HTSprintf0(&buf, "<NOTE>%s\n", ACTIVATE_TO_GOBBLE);
+    HTSprintf0(&buf, "<note>%s\n", ACTIVATE_TO_GOBBLE);
     PUTS(buf);
-    HTSprintf0(&buf, "%s</NOTE>\n", OR_CHANGE_ALLOW);
+    HTSprintf0(&buf, "%s</note>\n", OR_CHANGE_ALLOW);
     PUTS(buf);
 
-    HTSprintf0(&buf, "<DL COMPACT>\n");
+    HTSprintf0(&buf, "<dl compact>\n");
     PUTS(buf);
     for (dl = domain_list; dl != NULL; dl = dl->next) {
 	de = dl->object;
@@ -2598,7 +2606,7 @@ Delete_all_cookies_in_domain:
 	/*
 	 *  Show the domain link and 'allow' setting. - FM
 	 */
-	HTSprintf0(&buf, "<DT>%s<DD><A HREF=\"LYNXCOOKIE://%s/\">Domain=%s</A>\n",
+	HTSprintf0(&buf, "<dt>%s<dd><a href=\"LYNXCOOKIE://%s/\">Domain=%s</a>\n",
 		      de->domain, de->domain, de->domain);
 	PUTS(buf);
 	switch (de->bv) {
@@ -2641,7 +2649,7 @@ Delete_all_cookies_in_domain:
 	    } else {
 		StrAllocCopy(value, NO_VALUE);
 	    }
-	    HTSprintf0(&buf, "<DD><A HREF=\"LYNXCOOKIE://%s/%s\">%s=%s</A>\n",
+	    HTSprintf0(&buf, "<dd><a href=\"LYNXCOOKIE://%s/%s\">%s=%s</a>\n",
 			 de->domain, co->lynxID, name, value);
 	    FREE(name);
 	    FREE(value);
@@ -2661,7 +2669,7 @@ Delete_all_cookies_in_domain:
 	    } else {
 		StrAllocCopy(path, "/");
 	    }
-	    HTSprintf0(&buf, "<DD>Path=%s\n<DD>Port: %d Secure: %s Discard: %s\n",
+	    HTSprintf0(&buf, "<dd>Path=%s\n<dd>Port: %d Secure: %s Discard: %s\n",
 			 path, co->port,
 			 ((co->flags & COOKIE_FLAG_SECURE) ? "YES" : "NO"),
 			 ((co->flags & COOKIE_FLAG_DISCARD) ? "YES" : "NO"));
@@ -2672,7 +2680,7 @@ Delete_all_cookies_in_domain:
 	     *	Show the list of acceptable ports, if present. - FM
 	     */
 	    if (co->PortList) {
-		HTSprintf0(&buf, "<DD>PortList=\"%s\"\n", co->PortList);
+		HTSprintf0(&buf, "<dD>PortList=\"%s\"\n", co->PortList);
 		PUTS(buf);
 	    }
 
@@ -2685,7 +2693,7 @@ Delete_all_cookies_in_domain:
 		StrAllocCopy(Title, co->commentURL);
 		LYEntify(&Title, TRUE);
 		HTSprintf0(&buf,
-			"<DD>CommentURL: <A href=\"%s\">%s</A>\n",
+			"<dd>CommentURL: <a href=\"%s\">%s</a>\n",
 			Address,
 			Title);
 		FREE(Address);
@@ -2699,7 +2707,7 @@ Delete_all_cookies_in_domain:
 	    if (co->comment) {
 		StrAllocCopy(comment, co->comment);
 		LYEntify(&comment, TRUE);
-		HTSprintf0(&buf, "<DD>Comment: %s\n", comment);
+		HTSprintf0(&buf, "<dd>Comment: %s\n", comment);
 		FREE(comment);
 		PUTS(buf);
 	    }
@@ -2707,7 +2715,7 @@ Delete_all_cookies_in_domain:
 	    /*
 	     *	Show the Maximum Gobble Date. - FM
 	     */
-	    HTSprintf0(&buf, "<DD><EM>%s</EM> %s%s",
+	    HTSprintf0(&buf, "<dd><em>%s</em> %s%s",
 	    		 gettext("Maximum Gobble Date:"),
 			 ((co->flags & COOKIE_FLAG_EXPIRES_SET)
 					    ?
@@ -2717,10 +2725,10 @@ Delete_all_cookies_in_domain:
 					 "" : "\n"));
 	    PUTS(buf);
 	}
-	HTSprintf0(&buf, "</DT>\n");
+	HTSprintf0(&buf, "</dt>\n");
 	PUTS(buf);
     }
-    HTSprintf0(&buf, "</DL>\n</BODY>\n");
+    HTSprintf0(&buf, "</dl>\n</body>\n</html>\n");
     PUTS(buf);
 
     /*
@@ -2742,7 +2750,7 @@ Delete_all_cookies_in_domain:
 
 PUBLIC void cookie_domain_flag_set ARGS2(
 	char *, 	domainstr,
-	int, 	flag)
+	int, 		flag)
 {
     domain_entry *de = NULL;
     domain_entry *de2 = NULL;
@@ -2755,7 +2763,7 @@ PUBLIC void cookie_domain_flag_set ARGS2(
     if (str == NULL) {
 	HTAlwaysAlert(gettext("Internal"),
 		      gettext("cookie_domain_flag_set error, aborting program"));
-	exit_immediately(-1);
+	exit_immediately(EXIT_FAILURE);
     }
 
     /*
@@ -2850,6 +2858,46 @@ PUBLIC void cookie_domain_flag_set ARGS2(
     FREE(strsmall);
     FREE(str);
     FREE(dstr);
+}
+
+/*
+ * If any COOKIE_{ACCEPT,REJECT}_DOMAINS have been defined, process them. 
+ * These are comma delimited lists of domains.  - BJP
+ *
+ * And for query/strict/loose invalid cookie checking.  - BJP
+ */
+PUBLIC void LYConfigCookies NOARGS
+{
+    static CONST struct {
+	char **domain;
+	int flag;
+	int once;
+    } table[] = {
+	{ &LYCookieSAcceptDomains,	FLAG_ACCEPT_ALWAYS,   TRUE },
+	{ &LYCookieSRejectDomains,	FLAG_REJECT_ALWAYS,   TRUE },
+	{ &LYCookieSStrictCheckDomains, FLAG_INVCHECK_STRICT, TRUE },
+	{ &LYCookieSLooseCheckDomains,	FLAG_INVCHECK_LOOSE,  TRUE },
+	{ &LYCookieSQueryCheckDomains,	FLAG_INVCHECK_QUERY,  TRUE },
+	{ &LYCookieAcceptDomains,	FLAG_ACCEPT_ALWAYS,   FALSE },
+	{ &LYCookieRejectDomains,	FLAG_REJECT_ALWAYS,   FALSE },
+	{ &LYCookieStrictCheckDomains,	FLAG_INVCHECK_STRICT, FALSE },
+	{ &LYCookieLooseCheckDomains,	FLAG_INVCHECK_LOOSE,  FALSE },
+	{ &LYCookieQueryCheckDomains,	FLAG_INVCHECK_QUERY,  FALSE },
+    };
+    unsigned n;
+
+    for (n = 0; n < TABLESIZE(table); n++) {
+	if (*(table[n].domain) != NULL) {
+	    cookie_domain_flag_set(*(table[n].domain), table[n].flag);
+	    /*
+	     * Discard the value for system settings after we've used them.
+	     * The local settings will be merged with the contents of .lynxrc
+	     */
+	    if (table[n].once) {
+		FREE(*(table[n].domain));
+	    }
+	}
+    }
 }
 
 #ifdef GLOBALDEF_IS_MACRO

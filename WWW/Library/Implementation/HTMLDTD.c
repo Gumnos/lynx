@@ -1365,6 +1365,9 @@ static attr ulist_attr[] = {		/* UL attributes */
 **
 **    Name*,	Attributes,	No. of attributes,     content,   extra info...
 */
+#undef P
+#undef P
+#undef P_
 #ifdef USE_COLOR_STYLE
 #define P_(x) x , (sizeof x) -1
 #define NULL_HTTag_ NULL, 0
@@ -1599,7 +1602,7 @@ static CONST HTTag tags_new[HTML_ALL_ELEMENTS] = {
  { P("Q")	, gen_attr,	HTML_GEN_ATTRIBUTES,	SGML_MIXED,T_Q},
  { P("S")	, gen_attr,	HTML_GEN_ATTRIBUTES,	SGML_MIXED,T_S},
  { P("SAMP")	, gen_attr,	HTML_GEN_ATTRIBUTES,	SGML_MIXED,T_SAMP},
- { P("SCRIPT")	, script_attr,	HTML_SCRIPT_ATTRIBUTES, SGML_CDATA,T_SCRIPT},
+ { P("SCRIPT")	, script_attr,	HTML_SCRIPT_ATTRIBUTES, SGML_SCRIPT,T_SCRIPT},
  { P("SELECT")	, select_attr,	HTML_SELECT_ATTRIBUTES, SGML_ELEMENT,T_SELECT},
  { P("SHY")	, gen_attr,	HTML_GEN_ATTRIBUTES,	SGML_EMPTY,T_SHY},
  { P("SMALL")	, gen_attr,	HTML_GEN_ATTRIBUTES,	SGML_MIXED,T_SMALL},
@@ -1657,14 +1660,14 @@ PUBLIC CONST SGML_dtd HTML_dtd = {
    is limited and I didn't want to list the whole tags_new table
    twice... - kw */
 PUBLIC void HTSwitchDTD ARGS1(
-    BOOL,		new)
+    int,		new_flag)
 {
     if (TRACE)
 	CTRACE((tfp,"HTMLDTD: Copying DTD element info of size %d, %d * %d\n",
-		(int) (new ? sizeof(tags_new) : sizeof(tags_old)),
+		(int) (new_flag ? sizeof(tags_new) : sizeof(tags_old)),
 		HTML_ALL_ELEMENTS,
 		(int) sizeof(HTTag)));
-    if (new)
+    if (new_flag)
 	memcpy(tags, tags_new, HTML_ALL_ELEMENTS * sizeof(HTTag));
     else
 	memcpy(tags, tags_old, HTML_ALL_ELEMENTS * sizeof(HTTag));

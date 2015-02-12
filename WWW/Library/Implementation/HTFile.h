@@ -72,6 +72,13 @@ extern BOOL HTDirTitles PARAMS((
         HTAnchor *      anchor,
 	BOOL		tildeIsTop));
 
+/*
+**	Check existence.
+*/
+extern int HTStat PARAMS((
+	CONST char *	filename,
+	struct stat *	data));
+
 /*	Load a document.
 **	----------------
 */
@@ -192,6 +199,21 @@ extern void LYGetFileInfo PARAMS((
 */
 extern float HTFileValue PARAMS((
 	CONST char *	filename));
+
+/*
+**  Determine compression type from file name, by looking at its suffix.
+*/
+typedef enum {
+    cftNone
+    , cftCompress
+    , cftGzip
+    , cftBzip2
+} CompressFileType;
+
+extern CompressFileType HTCompressFileType PARAMS((
+	char *			filename,
+	char *			dots,
+	char **			suffix));
 
 /*
 **  Determine write access to a file.

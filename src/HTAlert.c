@@ -24,6 +24,22 @@
 
 #include <HTParse.h>
 
+#undef timezone	/* U/Win defines this in time.h, hides implementation detail */
+
+#if defined(HAVE_FTIME) && defined(HAVE_SYS_TIMEB_H)
+#include <sys/timeb.h>
+#endif
+
+/*
+ * 'napms()' is preferable to 'sleep()' in any case because it does not
+ * interfere with output, but also because it can be less than a second.
+ */
+#ifdef HAVE_NAPMS
+#define LYSleep(n) napms(n)
+#else
+#define LYSleep(n) sleep(n)
+#endif
+
 /*	Issue a message about a problem.		HTAlert()
 **	--------------------------------
 */
@@ -76,7 +92,7 @@ PUBLIC void HTInfoMsg ARGS1(
     if (Msg && *Msg) {
 	CTRACE((tfp, "Info message: %s\n", Msg));
 	LYstore_message(Msg);
-	sleep(InfoSecs);
+	LYSleep(InfoSecs);
     }
 }
 
@@ -125,7 +141,6 @@ PUBLIC void HTProgress ARGS1(
 #endif
 }
 
-#ifdef EXP_READPROGRESS
 PRIVATE char *sprint_bytes ARGS3(
 	char *,		s,
 	long,		n,
@@ -142,9 +157,11 @@ PRIVATE char *sprint_bytes ARGS3(
     }
 
     u = kbunits;
-    if (LYshow_kb_rate && (n >= 10 * kb_units))
+    if ( (LYTransferRate == rateKB || LYTransferRate == rateEtaKB_maybe)
+	 && (n >= 10 * kb_units) )
 	sprintf(s, "%ld", n/kb_units);
-    else if (LYshow_kb_rate && (n >= kb_units))
+    else if ((LYTransferRate == rateKB || LYTransferRate == rateEtaKB_maybe)
+	     && (n > 999))	/* Avoid switching between 1016b/s and 1K/s */
 	sprintf(s, "%.2g", ((double)n)/kb_units);
     else {
 	sprintf(s, "%ld", n);
@@ -155,7 +172,6 @@ PRIVATE char *sprint_bytes ARGS3(
 	sprintf(s + strlen(s), " %s", u);
     return u;
 }
-#endif /* EXP_READPROGRESS */
 
 /*	Issue a read-progress message.			HTReadProgress()
 **	------------------------------
@@ -164,83 +180,33 @@ PUBLIC void HTReadProgress ARGS2(
 	long,		bytes,
 	long,		total)
 {
-#ifdef WIN_EX	/* 1998/07/08 (Wed) 16:09:47 */
-
-#include <sys/timeb.h>
-#define	kb_units 1024L
-    static double now, first, last;
-    static long bytes_last;
-
-    double transfer_rate;
-    char line[MAX_LINE];
-    struct timeb tb;
-    char *units = "bytes";
-
-    ftime(&tb);
-    now = tb.time + (double)tb.millitm / 1000;
-
-    if (bytes == 0) {
-	first = last = now;
-	bytes_last = bytes;
-    } else if ((bytes > 0) && (now > first)) {
-	transfer_rate = (double)bytes / (now - first);   /* bytes/sec */
-
-	if (now != last) {
-	    last = now;
-	    bytes_last = bytes;
-	}
-	if (LYshow_kb_rate && (total >= kb_units || bytes >= kb_units)) {
-	    if (total > 0)
-		total /= 1024;
-	    bytes /= 1024;
-	    units = "KB";
-	}
-
-	if (total >  0)
-	    sprintf (line, "Read %3d%%, %ld of %ld %s.",
-		(int) (bytes * 100 / total), bytes, total, units);
-	else
-	    sprintf (line, "Read %ld %s of data.", bytes, units);
-
-	if (transfer_rate > 0.0) {
-	    int n;
-	    n = strlen(line);
-	    if (LYshow_kb_rate) {
-		sprintf (line + n, " %6.2f KB/sec.", transfer_rate / 1024.0);
-	    } else {
-		int t_rate;
-
-		t_rate = (int)transfer_rate;
-		if (t_rate < 1000)
-		    sprintf (line + n, " %6d bytes/sec.", t_rate);
-		else
-		    sprintf (line + n, " %6d,%03d bytes/sec.",
-					t_rate / 1000, t_rate % 1000);
-	    }
-	}
-	if (total <  0) {
-	    if (total < -1)
-		strcat(line, " (Press 'z' to abort)");
-	}
-	statusline(line);
-    }
-#else /* !WIN_EX */
-#ifdef EXP_READPROGRESS
     static long bytes_last, total_last;
     static long transfer_rate = 0;
     static char *line = NULL;
     char bytesp[80], totalp[80], transferp[80];
     int renew = 0;
     char *was_units;
-#if HAVE_GETTIMEOFDAY
+
+#ifdef HAVE_GETTIMEOFDAY
     struct timeval tv;
     int dummy = gettimeofday(&tv, (struct timezone *)0);
     double now = tv.tv_sec + tv.tv_usec/1000000. ;
     static double first, last, last_active;
 #else
+#if defined(HAVE_FTIME) && defined(HAVE_SYS_TIMEB_H)
+    static double now, first, last, last_active;
+    struct timeb tb;
+
+    ftime(&tb);
+    now = tb.time + (double)tb.millitm / 1000;
+#else
     time_t now = time((time_t *)0);  /* once per second */
     static time_t first, last, last_active;
 #endif
+#endif
+
+    if (!LYShowTransferRate)
+	LYTransferRate = rateOFF;
 
     if (bytes == 0) {
 	first = last = last_active = now;
@@ -253,7 +219,7 @@ PUBLIC void HTReadProgress ARGS2(
 	       (now != first))
 		/* 1 sec delay for transfer_rate calculation without g-t-o-d */ {
 	if (transfer_rate <= 0)    /* the very first time */
-	    transfer_rate = (bytes) / (now - first);   /* bytes/sec */
+	    transfer_rate = (long)((bytes) / (now - first));   /* bytes/sec */
 	total_last = total;
 
 	/*
@@ -261,7 +227,7 @@ PUBLIC void HTReadProgress ARGS2(
 	 * rate is not constant when we have partial content in a proxy, so
 	 * interpolation lies - will check every second at least for sure.
 	 */
-#if HAVE_GETTIMEOFDAY
+#ifdef HAVE_GETTIMEOFDAY
 	if (now >= last + 0.2)
 	    renew = 1;
 #else
@@ -276,7 +242,7 @@ PUBLIC void HTReadProgress ARGS2(
 		if (bytes_last != bytes)
 		    last_active = now;
 		bytes_last = bytes;
-		transfer_rate = bytes / (now - first); /* more accurate here */
+		transfer_rate = (long)(bytes / (now - first)); /* more accurate here */
 	    }
 
 	    if (total > 0)
@@ -284,18 +250,28 @@ PUBLIC void HTReadProgress ARGS2(
 	    else
 		was_units = 0;
 	    sprint_bytes(bytesp, bytes, was_units);
-	    sprint_bytes(transferp, transfer_rate, 0);
 
 	    if (total > 0)
 		HTSprintf0 (&line, gettext("Read %s of %s of data"), bytesp, totalp);
 	    else
 		HTSprintf0 (&line, gettext("Read %s of data"), bytesp);
-	    if (transfer_rate > 0)
+
+	    if (LYTransferRate != rateOFF
+	     && transfer_rate > 0) {
+		sprint_bytes(transferp, transfer_rate, 0);
 		HTSprintf (&line, gettext(", %s/sec"), transferp);
-	    if (now - last_active >= 5)
-		HTSprintf (&line, gettext(" (stalled for %ld sec)"), (long)(now - last_active));
-	    if (total > 0 && transfer_rate)
-		HTSprintf (&line, gettext(", ETA %ld sec"), (long)((total - bytes)/transfer_rate));
+	    }
+
+#ifdef EXP_READPROGRESS
+	    if (LYTransferRate == rateEtaBYTES
+	     || LYTransferRate == rateEtaKB) {
+		if (now - last_active >= 5)
+		    HTSprintf (&line, gettext(" (stalled for %ld sec)"), (long)(now - last_active));
+		if (total > 0 && transfer_rate)
+		    HTSprintf (&line, gettext(", ETA %ld sec"), (long)((total - bytes)/transfer_rate));
+	    }
+#endif
+
 	    StrAllocCat (line, ".");
 	    if (total < -1)
 		StrAllocCat(line, gettext(" (Press 'z' to abort)"));
@@ -305,71 +281,9 @@ PUBLIC void HTReadProgress ARGS2(
 	    CTRACE((tfp, "%s\n", line));
 	}
     }
-#else /* !EXP_READPROGRESS */
-    static long kb_units = 1024;
-    static time_t first, last;
-    static long bytes_last;
-    static long transfer_rate = 0;
-    static char *line = NULL;
-    long divisor;
-    time_t now = time((time_t *)0);  /* once per second */
-    static char *units = "bytes";
-
-    if (bytes == 0) {
-	first = last = now;
-	bytes_last = bytes;
-    } else if ((bytes > 0) &&
-	       (now != first))
-		/* 1 sec delay for transfer_rate calculation :-( */ {
-	if (transfer_rate <= 0)    /* the very first time */
-	    transfer_rate = (bytes) / (now - first);   /* bytes/sec */
-
-	/*
-	 * Optimal refresh time:  every 0.2 sec, use interpolation.  Transfer
-	 * rate is not constant when we have partial content in a proxy, so
-	 * interpolation lies - will check every second at least for sure.
-	 */
-	if (((bytes - bytes_last) > (transfer_rate / 5)) || (now != last)) {
-
-	    bytes_last += (transfer_rate / 5);	/* until we got next second */
-
-	    if (now != last) {
-		last = now;
-		bytes_last = bytes;
-		transfer_rate = (bytes_last) / (last - first); /* more accurate here */
-	    }
-
-	    units = gettext("bytes");
-	    divisor = 1;
-	    if (LYshow_kb_rate
-	      && (total >= kb_units || bytes >= kb_units)) {
-		units = gettext("KB");
-		divisor = kb_units;
-		bytes /= divisor;
-		if (total > 0) total /= divisor;
-	    }
-
-	    if (total >  0)
-		HTSprintf0 (&line, gettext("Read %ld of %ld %s of data"), bytes, total, units);
-	    else
-		HTSprintf0 (&line, gettext("Read %ld %s of data"), bytes, units);
-	    if ((transfer_rate > 0)
-		  && (!LYshow_kb_rate || (bytes * divisor >= kb_units)))
-		HTSprintf (&line, gettext(", %ld %s/sec."), transfer_rate / divisor, units);
-	    else
-		HTSprintf (&line, ".");
-	    if (total <  0) {
-		if (total < -1)
-		    StrAllocCat(line, gettext(" (Press 'z' to abort)"));
-	    }
-
-	    /* do not store the message for history page. */
-	    statusline(line);
-	    CTRACE((tfp, "%s\n", line));
-	}
-    }
-#endif /* EXP_READPROGRESS */
-#endif /* WIN_EX */
+#ifdef LY_FIND_LEAKS
+    FREE(line);
+#endif
 }
 
 PRIVATE BOOL conf_cancelled = NO; /* used by HTConfirm only - kw */
@@ -457,23 +371,23 @@ PUBLIC int HTConfirmDefault ARGS2(CONST char *, Msg, int, Dft)
 	FREE(msg);
 
 	while (result < 0) {
-	    int c = LYgetch_for(FOR_SINGLEKEY);
+	    int c = LYgetch_single();
 #ifdef VMS
 	    if (HadVMSInterrupt) {
 		HadVMSInterrupt = FALSE;
-		c = *msg_no;
+		c = TOUPPER(*msg_no);
 	    }
 #endif /* VMS */
-	    if (c == 7 || c == 3) { /* remember we had ^G or ^C */
+	    if (c == TOUPPER(*msg_yes)) {
+		result = YES;
+	    } else if (c == TOUPPER(*msg_no)) {
+		result = NO;
+	    } else if (fallback_y && c == fallback_y) {
+		result = YES;
+	    } else if (fallback_n && c == fallback_n) {
+		result = NO;
+	    } else if (LYCharIsINTERRUPT(c)) { /* remember we had ^G or ^C */
 		conf_cancelled = YES;
-		result = NO;
-	    } else if (TOUPPER(c) == TOUPPER(*msg_yes)) {
-		result = YES;
-	    } else if (TOUPPER(c) == TOUPPER(*msg_no)) {
-		result = NO;
-	    } else if (fallback_y && TOLOWER(c) == fallback_y) {
-		result = YES;
-	    } else if (fallback_n && TOLOWER(c) == fallback_n) {
 		result = NO;
 	    } else if (Dft != DFT_CONFIRM) {
 		result = Dft;
@@ -858,8 +772,7 @@ PUBLIC BOOL HTConfirmCookie ARGS4(
 	if(LYAcceptAllCookies) {
 	    ch = 'A';
 	} else {
-	    ch = LYgetch_for(FOR_SINGLEKEY);
-	    ch = TOUPPER(ch);
+	    ch = LYgetch_single();
 #if defined(LOCALE) && defined(HAVE_GETTEXT) && !defined(gettext)
 	    /*
 	     * Special-purpose workaround for gettext support (we should do
@@ -868,7 +781,7 @@ PUBLIC BOOL HTConfirmCookie ARGS4(
 	     * NOTE TO TRANSLATORS:  If the prompt has been rendered into
 	     * another language, and if yes/no are distinct, assume the
 	     * translator can make an ordered list in parentheses with one
-	     * capital letter for each as we assumed in HTConfirmDefault(). 
+	     * capital letter for each as we assumed in HTConfirmDefault().
 	     * The list has to be in the same order as in the original message,
 	     * and the four capital letters chosen to not match those in the
 	     * original unless they have the same position.
@@ -887,12 +800,12 @@ PUBLIC BOOL HTConfirmCookie ARGS4(
 		 && isalpha(ch)
 		 && (p = strrchr(prompt, L_PAREN)) != 0) {
 
-		    while (*p != R_PAREN && *p != 0 && isalpha(*s)) {
+		    while (*p != R_PAREN && *p != 0 && isalpha(UCH(*s))) {
 			if (*p == ch) {
 			    ch = *s;
 			    break;
 			} else {
-			    if (isalpha(*p) && (*p == TOUPPER(*p)))
+			    if (isalpha(UCH(*p)) && (*p == TOUPPER(*p)))
 				s++;
 			    p++;
 			}
@@ -917,11 +830,10 @@ PUBLIC BOOL HTConfirmCookie ARGS4(
 		return TRUE;
 
 	    case 'N':
-	    case 7:	/* Ctrl-G */
-	    case 3:	/* Ctrl-C */
 		/*
 		**  Reject the cookie.
 		*/
+	      reject:
 		HTUserMsg(REJECTING_COOKIE);
 		return FALSE;
 
@@ -941,6 +853,8 @@ PUBLIC BOOL HTConfirmCookie ARGS4(
 		return TRUE;
 
 	    default:
+		if (LYCharIsINTERRUPT(ch))
+		    goto reject;
 		continue;
 	}
     }
@@ -999,15 +913,15 @@ PUBLIC int HTConfirmPostRedirect ARGS2(
 
     if (user_mode == NOVICE_MODE) {
 	on_screen = 2;
-	move(LYlines-2, 0);
+	LYmove(LYlines-2, 0);
 	HTSprintf0(&StatusInfo, SERVER_ASKED_FOR_REDIRECTION, server_status);
-	addstr(StatusInfo);
-	clrtoeol();
-	move(LYlines-1, 0);
+	LYaddstr(StatusInfo);
+	LYclrtoeol();
+	LYmove(LYlines-1, 0);
 	HTSprintf0(&url, "URL: %.*s",
 		    (LYcols < 250 ? LYcols-6 : 250), Redirecting_url);
-	addstr(url);
-	clrtoeol();
+	LYaddstr(url);
+	LYclrtoeol();
 	if (server_status == 301) {
 	    _statusline(PROCEED_GET_CANCEL);
 	} else {
@@ -1033,8 +947,8 @@ PUBLIC int HTConfirmPostRedirect ARGS2(
 	    case 1:
 		_statusline(show_POST_url);
 	}
-	c = LYgetch_for(FOR_SINGLEKEY);
-	switch (TOUPPER(c)) {
+	c = LYgetch_single();
+	switch (c) {
 	    case 'P':
 		/*
 		**  Proceed with 301 or 307 redirect of POST
@@ -1101,19 +1015,19 @@ PUBLIC int HTConfirmPostRedirect ARGS2(
 PUBLIC void LYSleepAlert NOARGS
 {
     if (okToSleep())
-	sleep(AlertSecs);
+	LYSleep(AlertSecs);
 }
 
 PUBLIC void LYSleepInfo NOARGS
 {
     if (okToSleep())
-	sleep(InfoSecs);
+	LYSleep(InfoSecs);
 }
 
 PUBLIC void LYSleepMsg NOARGS
 {
     if (okToSleep())
-	sleep(MessageSecs);
+	LYSleep(MessageSecs);
 }
 
 /*

@@ -25,7 +25,7 @@
 
 #ifdef NSL_FORK
 #include <signal.h>
-#include <sys/wait.h>
+#include <www_wait.h>
 #endif /* NSL_FORK */
 
 #ifdef HAVE_RESOLV_H
@@ -44,7 +44,7 @@ PUBLIC int BSDselect PARAMS((
 	fd_set *	 readfds,
 	fd_set *	 writefds,
 	fd_set *	 exceptfds,
-	struct timeval * timeout));
+	struct timeval * select_timeout));
 #ifdef select
 #undef select
 #endif /* select */
@@ -126,9 +126,7 @@ static unsigned long _fork_func (void *arglist)
 **  A routine to mimic the ioctl function for UCX.
 **  Bjorn S. Nilsson, 25-Nov-1993. Based on an example in the UCX manual.
 */
-#include <iodef.h>
-#define IOC_OUT (int)0x40000000
-extern int vaxc$get_sdc(), sys$qiow();
+#include <HTioctl.h>
 
 PUBLIC int HTioctl ARGS3(
 	int,		d,
@@ -188,6 +186,7 @@ PUBLIC int HTioctl ARGS3(
 PUBLIC int HTInetStatus ARGS1(
 	char *,		where)
 {
+    int status;
     int saved_errno = errno;
 #ifdef VMS
 #ifdef MULTINET
@@ -243,13 +242,14 @@ PUBLIC int HTInetStatus ARGS1(
     **	uerrno and errno happen to be zero if vmserrno <> 0
     */
 #ifdef MULTINET
-    return -vmserrno;
+    status = -vmserrno;
 #else
-    return -vaxc$errno;
+    status = -vaxc$errno;
 #endif /* MULTINET */
 #else
-    return -SOCKET_ERRNO;
+    status = -SOCKET_ERRNO;
 #endif /* VMS */
+    return status;
 }
 
 /*	Parse a cardinal value				       parse_cardinal()
@@ -299,13 +299,21 @@ PUBLIC unsigned int HTCardinal ARGS3(
 PUBLIC CONST char * HTInetString ARGS1(
 	SockA*,		soc_in)
 {
-    static char string[16];
+#ifdef INET6
+    static char hostbuf[MAXHOSTNAMELEN];
+    getnameinfo((struct sockaddr *)soc_in,
+	    SOCKADDR_LEN(soc_in),
+	    hostbuf, sizeof(hostbuf), NULL, 0, NI_NUMERICHOST);
+    return hostbuf;
+#else
+    static char string[20];
     sprintf(string, "%d.%d.%d.%d",
 	    (int)*((unsigned char *)(&soc_in->sin_addr)+0),
 	    (int)*((unsigned char *)(&soc_in->sin_addr)+1),
 	    (int)*((unsigned char *)(&soc_in->sin_addr)+2),
 	    (int)*((unsigned char *)(&soc_in->sin_addr)+3));
     return string;
+#endif /* INET6 */
 }
 #endif /* !DECNET */
 
@@ -349,7 +357,7 @@ PUBLIC BOOL valid_hostname ARGS1(
 	} else if (++iseg > 63) {
 	    return NO;
 	}
-	if (!isalnum((unsigned char)*cp) &&
+	if (!isalnum(UCH(*cp)) &&
 	    *cp != '-' && *cp != '_' &&
 	    *cp != '$' && *cp != '+') {
 	    return NO;
@@ -451,11 +459,20 @@ PRIVATE void dump_hostent ARGS2(
 **  See also description of LYGetHostByName.
 */
 #ifdef NSL_FORK
+
+#define REHOSTENT_SIZE 128		/* not bigger than pipe buffer! */
+
+typedef struct {
+	struct hostent	h;
+	char		rest[REHOSTENT_SIZE];
+    } AlignedHOSTENT;
+
 PRIVATE size_t fill_rehostent ARGS3(
     char *,			rehostent,
     size_t,			rehostentsize,
     CONST struct hostent *,	phost)
 {
+    AlignedHOSTENT *data = (AlignedHOSTENT *)rehostent;
     int num_addrs = 0;
     int num_aliases = 0;
     char **pcnt;
@@ -515,8 +532,8 @@ PRIVATE size_t fill_rehostent ARGS3(
 	}
     }
 
-    ((struct hostent *)rehostent)->h_addrtype = phost->h_addrtype;
-    ((struct hostent *)rehostent)->h_length = phost->h_length;
+    data->h.h_addrtype = phost->h_addrtype;
+    data->h.h_length = phost->h_length;
     p_next_charptr = (char **)(rehostent + curlen);
     p_next_char = rehostent + curlen;
     if (phost->h_addr_list)
@@ -525,7 +542,7 @@ PRIVATE size_t fill_rehostent ARGS3(
 	p_next_char += (num_aliases+1) * sizeof(phost->h_aliases[0]);
 
     if (phost->h_addr_list) {
-	((struct hostent *)rehostent)->h_addr_list = p_next_charptr;
+	data->h.h_addr_list = p_next_charptr;
 	for (pcnt=phost->h_addr_list, i_addr = 0;
 	     i_addr < num_addrs;
 	     pcnt++, i_addr++) {
@@ -535,11 +552,11 @@ PRIVATE size_t fill_rehostent ARGS3(
 	}
 	*p_next_charptr++ = NULL;
     } else {
-	((struct hostent *)rehostent)->h_addr_list = NULL;
+	data->h.h_addr_list = NULL;
     }
 
     if (phost->h_name) {
-	((struct hostent *)rehostent)->h_name = p_next_char;
+	data->h.h_name = p_next_char;
 	if (name_len) {
 	    strcpy(p_next_char, phost->h_name);
 	    p_next_char += name_len + 1;
@@ -547,11 +564,11 @@ PRIVATE size_t fill_rehostent ARGS3(
 	    *p_next_char++ = '\0';
 	}
     } else {
-	((struct hostent *)rehostent)->h_name = NULL;
+	data->h.h_name = NULL;
     }
 
     if (phost->h_aliases) {
-	((struct hostent *)rehostent)->h_aliases = p_next_charptr;
+	data->h.h_aliases = p_next_charptr;
 	for (pcnt=phost->h_aliases, i_alias = 0;
 	     (*pcnt && i_alias < num_addrs);
 	     pcnt++, i_alias++) {
@@ -569,14 +586,12 @@ PRIVATE size_t fill_rehostent ARGS3(
 	}
 	*p_next_charptr++ = NULL;
     } else {
-	((struct hostent *)rehostent)->h_aliases = NULL;
+	data->h.h_aliases = NULL;
     }
     curlen = p_next_char - (char *)rehostent;
     return curlen;
 }
 #endif /* NSL_FORK */
-
-#define REHOSTENT_SIZE 128		/* not bigger than pipe buffer! */
 
 #ifndef HAVE_H_ERRNO
 #undef  h_errno
@@ -630,10 +645,7 @@ PUBLIC struct hostent * LYGetHostByName ARGS1(
 #endif
 #ifdef NSL_FORK
     /* for transfer of result between from child to parent: */
-    static struct {
-	struct hostent	h;
-	char		rest[REHOSTENT_SIZE];
-    } aligned_full_rehostent;
+    static AlignedHOSTENT aligned_full_rehostent;
     /*
      * We could define rehosten directly as a
      * static char rehostent[REHOSTENT_SIZE],
@@ -679,7 +691,7 @@ PUBLIC struct hostent * LYGetHostByName ARGS1(
     }
 
 #ifdef _WINDOWS_NSL
-    strncpy(host, str, (size_t)512);
+    strncpy(host, str, sizeof(host));
 #endif /*  _WINDOWS_NSL */
 
     if (!valid_hostname(host)) {
@@ -719,10 +731,15 @@ PUBLIC struct hostent * LYGetHostByName ARGS1(
 	**	control variables.
 	*/
 	pid_t fpid, waitret;
-	int pfd[2], selret, readret, waitstat = 0;
+	int pfd[2], selret, readret;
+#ifdef HAVE_TYPE_UNIONWAIT
+	union wait waitstat;
+#else
+	int waitstat = 0;
+#endif
 	time_t start_time = time((time_t *)0);
 	fd_set readfds;
-	struct timeval timeout;
+	struct timeval one_second;
 	long dns_patience = 30; /* how many seconds will we wait for DNS? */
 	int child_exited = 0;
 
@@ -914,8 +931,8 @@ PUBLIC struct hostent * LYGetHostByName ARGS1(
 		}
 	    }
 
-	    timeout.tv_sec = 1;
-	    timeout.tv_usec = 0;
+	    one_second.tv_sec = 1;
+	    one_second.tv_usec = 0;
 	    FD_SET(pfd[0], &readfds);
 
 		/*
@@ -925,10 +942,10 @@ PUBLIC struct hostent * LYGetHostByName ARGS1(
 		*/
 #ifdef SOCKS
 	    if (socks_flag)
-		selret = Rselect(pfd[0] + 1, (void *)&readfds, NULL, NULL, &timeout);
+		selret = Rselect(pfd[0] + 1, (void *)&readfds, NULL, NULL, &one_second);
 	    else
 #endif /* SOCKS */
-		selret = select(pfd[0] + 1, (void *)&readfds, NULL, NULL, &timeout);
+		selret = select(pfd[0] + 1, (void *)&readfds, NULL, NULL, &one_second);
 
 	    if ((selret > 0) && FD_ISSET(pfd[0], &readfds)) {
 		/*
@@ -1047,10 +1064,10 @@ PUBLIC struct hostent * LYGetHostByName ARGS1(
 	if (waitret > 0) {
 	    if (WIFEXITED(waitstat)) {
 		CTRACE((tfp, "LYGetHostByName: NSL_FORK child %d exited, status 0x%x.\n",
-		       (int)waitret, waitstat));
+			(int)waitret, WEXITSTATUS(waitstat)));
 	    } else if (WIFSIGNALED(waitstat)) {
 		CTRACE((tfp, "LYGetHostByName: NSL_FORK child %d got signal, status 0x%x!\n",
-		       (int)waitret, waitstat));
+		       (int)waitret, WTERMSIG(waitstat)));
 #ifdef WCOREDUMP
 		if (WCOREDUMP(waitstat)) {
 		    CTRACE((tfp, "LYGetHostByName: NSL_FORK child %d dumped core!\n",
@@ -1059,7 +1076,7 @@ PUBLIC struct hostent * LYGetHostByName ARGS1(
 #endif /* WCOREDUMP */
 	    } else if (WIFSTOPPED(waitstat)) {
 		CTRACE((tfp, "LYGetHostByName: NSL_FORK child %d is stopped, status 0x%x!\n",
-		       (int)waitret, waitstat));
+			(int)waitret, WEXITSTATUS(waitstat)));
 	    }
 	}
 	if (!got_rehostent) {
@@ -1157,7 +1174,8 @@ failed:
 **	*soc_in is filled in.  If no port is specified in str, that
 **		field is left unchanged in *soc_in.
 */
-PUBLIC int HTParseInet ARGS2(
+#ifndef INET6
+PRIVATE int HTParseInet ARGS2(
 	SockA *,	soc_in,
 	CONST char *,	str)
 {
@@ -1178,7 +1196,7 @@ PUBLIC int HTParseInet ARGS2(
 	return -1;
     }
 #ifdef _WINDOWS_NSL
-    strncpy(host, str, (size_t)512);
+    strncpy(host, str, sizeof(host));
 #else
     StrAllocCopy(host, str);	/* Make a copy we can mutilate */
 #endif /*  _WINDOWS_NSL */
@@ -1190,15 +1208,15 @@ PUBLIC int HTParseInet ARGS2(
 	strptr = port;
 	if (port[0] >= '0' && port[0] <= '9') {
 #ifdef UNIX
-	    soc_in->sin_port = htons(strtol(port, &strptr, 10));
+	    soc_in->sin_port = (PortNumber)htons(strtol(port, &strptr, 10));
 #else /* VMS: */
 #ifdef DECNET
 	    soc_in->sdn_objnum = (unsigned char)(strtol(port, &strptr, 10));
 #else
-	    soc_in->sin_port = htons((unsigned short)strtol(port,&strptr,10));
+	    soc_in->sin_port = htons((PortNumber)strtol(port, &strptr, 10));
 #endif /* Decnet */
 #endif /* Unix vs. VMS */
-#ifdef SUPPRESS 	/* 1. crashes!?!.  2. URL syntax has number not name */
+#ifdef SUPPRESS		/* 1. crashes!?!.  2. URL syntax has number not name */
 	} else {
 	    struct servent * serv = getservbyname(port, (char*)0);
 	    if (serv) {
@@ -1233,7 +1251,7 @@ PUBLIC int HTParseInet ARGS2(
 	while (*strptr) {
 	    if (*strptr == '.') {
 		dotcount_ip++;
-	    } else if (!isdigit(*strptr)) {
+	    } else if (!isdigit(UCH(*strptr))) {
 		break;
 	    }
 	    strptr++;
@@ -1246,7 +1264,8 @@ PUBLIC int HTParseInet ARGS2(
     /*
     **	Parse host number if present.
     */
-    if (dotcount_ip == 3) {   /* Numeric node address: */
+    if (dotcount_ip == 3)   /* Numeric node address: */
+    {
 
 #if defined(__DJGPP__) && !defined(WATT32)
 	soc_in->sin_addr.s_addr = htonl(aton(host));
@@ -1274,7 +1293,8 @@ PUBLIC int HTParseInet ARGS2(
 #ifndef _WINDOWS_NSL
 	FREE(host);
 #endif /* _WINDOWS_NSL */
-    } else {		    /* Alphanumeric node name: */
+    } else
+    {			    /* Alphanumeric node name: */
 
 #ifdef MVS	/* Outstanding problem with crash in MVS gethostbyname */
 	CTRACE((tfp, "HTParseInet: Calling LYGetHostByName(%s)\n", host));
@@ -1343,13 +1363,58 @@ failed:
     FREE(host);
 #endif /* _WINDOWS_NSL */
     switch (lynx_nsl_status) {
-    case HT_NOT_ACCEPTABLE:
-    case HT_INTERRUPTED:
-	return lynx_nsl_status;
-    default:
-    return -1;
+	case HT_NOT_ACCEPTABLE:
+	case HT_INTERRUPTED:
+	    return lynx_nsl_status;
+	default:
+	return -1;
+    }
 }
+#endif /* !INET6 */
+
+#ifdef INET6
+PRIVATE struct addrinfo *
+HTGetAddrInfo ARGS2(
+    CONST char *, str,
+    CONST int, defport)
+{
+    struct addrinfo hints, *res;
+    int error;
+    char *p;
+    char *s;
+    char *host, *port;
+    char pbuf[10];
+
+    s = strdup(str);
+
+    if (s[0] == '[' && (p = strchr(s, ']')) != NULL) {
+	*p++ = '\0';
+	host = s + 1;
+    } else {
+	p = s;
+	host = &s[0];
+    }
+    port = strrchr(p, ':');
+    if (port) {
+	*port++ = '\0';
+    } else {
+	snprintf(pbuf, sizeof(pbuf), "%d", defport);
+	port = pbuf;
+    }
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = PF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    error = getaddrinfo(host, port, &hints, &res);
+    if (error || !res) {
+	CTRACE((tfp, "HTGetAddrInfo: getaddrinfo(%s, %s): %s\n", host, port,
+		gai_strerror(error)));
+	res = NULL;
+    }
+
+    return res;
 }
+#endif /* INET6 */
 
 #ifdef LY_FIND_LEAKS
 /*	Free our name for the host on which we are - FM
@@ -1377,7 +1442,12 @@ PRIVATE void get_host_details NOARGS
     char *domain_name;			/* The name of this host domain */
 #endif /* UCX */
 #ifdef NEED_HOST_ADDRESS		/* no -- needs name server! */
+#ifdef INET6
+    struct addrinfo hints, *res;
+    int error;
+#else
     struct hostent * phost;		/* Pointer to host -- See netdb.h */
+#endif /* INET6 */
 #endif /* NEED_HOST_ADDRESS */
     int namelength = sizeof(name);
 
@@ -1395,6 +1465,8 @@ PRIVATE void get_host_details NOARGS
     */
     if (strchr(hostname,'.') == NULL) {		  /* Not full address */
 	domain_name = getenv("UCX$BIND_DOMAIN");
+	if (domain_name == NULL)
+	    domain_name = getenv("TCPIP$BIND_DOMAIN");
 	if (domain_name != NULL) {
 	    StrAllocCat(hostname, ".");
 	    StrAllocCat(hostname, domain_name);
@@ -1405,6 +1477,22 @@ PRIVATE void get_host_details NOARGS
 
 #ifndef DECNET	/* Decnet ain't got no damn name server 8#OO */
 #ifdef NEED_HOST_ADDRESS		/* no -- needs name server! */
+#ifdef INET6
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = PF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_CANONNAME;
+    error = getaddrinfo(name, NULL, &hints, &res);
+    if (error || !res || !res->ai_canonname) {
+	CTRACE((tfp, "TCP: %s: `%s'\n", gai_strerror(error), name));
+	if (res)
+	    freeaddrinfo(res);
+	return;  /* Fail! */
+    }
+    StrAllocCopy(hostname, res->ai_canonname);
+    memcpy(&HTHostAddress, res->ai_addr, res->ai_addrlen);
+    freeaddrinfo(res);
+#else
     phost = gethostbyname(name);	/* See netdb.h */
     if (!OK_HOST(phost)) {
 	CTRACE((tfp, "TCP: Can't find my own internet node address for `%s'!!\n",
@@ -1413,6 +1501,7 @@ PRIVATE void get_host_details NOARGS
     }
     StrAllocCopy(hostname, phost->h_name);
     memcpy(&HTHostAddress, &phost->h_addr, phost->h_length);
+#endif /* INET6 */
     CTRACE((tfp, "     Name server says that I am `%s' = %s\n",
 		hostname, HTInetString(&HTHostAddress)));
 #endif /* NEED_HOST_ADDRESS */
@@ -1442,20 +1531,24 @@ PUBLIC int HTDoConnect ARGS4(
 	int,		default_port,
 	int *,		s)
 {
-    struct sockaddr_in soc_address;
-    struct sockaddr_in *soc_in = &soc_address;
-    int status;
+    int status = 0;
     char *line = NULL;
     char *p1 = NULL;
     char *at_sign = NULL;
     char *host = NULL;
+#ifdef INET6
+    struct addrinfo *res, *res0;
+#else
+    struct sockaddr_in soc_address;
+    struct sockaddr_in *soc_in = &soc_address;
 
     /*
     **	Set up defaults.
     */
     memset(soc_in, 0, sizeof(*soc_in));
     soc_in->sin_family = AF_INET;
-    soc_in->sin_port = htons((unsigned short) default_port);
+    soc_in->sin_port = htons((PortNumber) default_port);
+#endif /* INET6 */
 
     /*
     **	Get node name and optional port number.
@@ -1473,6 +1566,18 @@ PUBLIC int HTDoConnect ARGS4(
 
     HTSprintf0 (&line, "%s%s", WWW_FIND_MESSAGE, host);
     _HTProgress (line);
+#ifdef INET6
+    /* HTParseInet() is useless! */
+    _HTProgress(host);
+    res0 = HTGetAddrInfo(host, default_port);
+    if (res0 == NULL) {
+	HTSprintf0 (&line, gettext("Unable to locate remote host %s."), host);
+	_HTProgress(line);
+	FREE(host);
+	FREE(line);
+	return HT_NO_DATA;
+    }
+#else
     status = HTParseInet(soc_in, host);
     if (status) {
 	if (status != HT_INTERRUPTED) {
@@ -1493,6 +1598,7 @@ PUBLIC int HTDoConnect ARGS4(
 	FREE(line);
 	return status;
     }
+#endif /* INET6 */
 
     HTSprintf0 (&line, gettext("Making %s connection to %s"), protocol, host);
     _HTProgress (line);
@@ -1502,11 +1608,27 @@ PUBLIC int HTDoConnect ARGS4(
     /*
     **	Now, let's get a socket set up from the server for the data.
     */
+#ifdef INET6
+    for (res = res0; res; res = res->ai_next) {
+	*s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+	if (*s == -1) {
+	    char hostbuf[1024], portbuf[1024];
+	    getnameinfo(res->ai_addr, res->ai_addrlen,
+		    hostbuf, sizeof(hostbuf), portbuf, sizeof(portbuf),
+		    NI_NUMERICHOST|NI_NUMERICSERV);
+	    HTSprintf0 (&line, gettext("socket failed: family %d addr %s port %s."),
+		    res->ai_family, hostbuf, portbuf);
+	    _HTProgress (line);
+	    FREE(line);
+	    continue;
+	}
+#else
     *s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (*s == -1) {
 	HTAlert(gettext("socket failed."));
 	return HT_NO_DATA;
     }
+#endif /* INET6 */
 
 #ifndef DOSPATH
 #if !defined(NO_IOCTL) || defined(USE_FCNTL)
@@ -1535,15 +1657,23 @@ PUBLIC int HTDoConnect ARGS4(
     */
 #ifdef SOCKS
     if (socks_flag) {
+#ifdef INET6
+	status = Rconnect(*s, res->ai_addr, res->ai_addrlen);
+#else
 	status = Rconnect(*s, (struct sockaddr*)&soc_address,
 			  sizeof(soc_address));
+#endif /* INET6 */
 	/*
 	**  For long Rbind.
 	*/
 	socks_bind_remoteAddr = soc_address.sin_addr.s_addr;
     } else
 #endif /* SOCKS */
+#ifdef INET6
+    status = connect(*s, res->ai_addr, res->ai_addrlen);
+#else
     status = connect(*s, (struct sockaddr*)&soc_address, sizeof(soc_address));
+#endif /* INET6 */
 #ifndef __DJGPP__
     /*
     **	According to the Sun man page for connect:
@@ -1564,8 +1694,12 @@ PUBLIC int HTDoConnect ARGS4(
     **			       the normal case.
     */
     if ((status < 0) &&
-	(SOCKET_ERRNO == EINPROGRESS || SOCKET_ERRNO == EAGAIN)) {
-	struct timeval timeout;
+	(SOCKET_ERRNO == EINPROGRESS
+#ifdef EAGAIN
+	 || SOCKET_ERRNO == EAGAIN
+#endif
+	 )) {
+	struct timeval select_timeout;
 	int ret;
 	int tries=0;
 
@@ -1581,25 +1715,29 @@ PUBLIC int HTDoConnect ARGS4(
 	    */
 	    if ((tries++/10) >= connect_timeout) {
 		HTAlert(gettext("Connection failed (too many retries)."));
+#ifdef INET6
+		FREE(line);
+		freeaddrinfo(res0);
+#endif /* INET6 */
 		return HT_NO_DATA;
 	    }
 
 #ifdef _WINDOWS_NSL
-	    timeout.tv_sec = connect_timeout;
-	    timeout.tv_usec = 0;
+	    select_timeout.tv_sec = connect_timeout;
+	    select_timeout.tv_usec = 0;
 #else
-	    timeout.tv_sec = 0;
-	    timeout.tv_usec = 100000;
+	    select_timeout.tv_sec = 0;
+	    select_timeout.tv_usec = 100000;
 #endif /* _WINDOWS_NSL */
 	    FD_ZERO(&writefds);
 	    FD_SET((unsigned) *s, &writefds);
 #ifdef SOCKS
 	    if (socks_flag)
 		ret = Rselect(FD_SETSIZE, NULL,
-			      (void *)&writefds, NULL, &timeout);
+			      (void *)&writefds, NULL, &select_timeout);
 	    else
 #endif /* SOCKS */
-	    ret = select(FD_SETSIZE, NULL, (void *)&writefds, NULL, &timeout);
+	    ret = select(FD_SETSIZE, NULL, (void *)&writefds, NULL, &select_timeout);
 
 #ifdef SOCKET_DEBUG_TRACE
 	    if (tries == 1) {
@@ -1642,8 +1780,12 @@ PUBLIC int HTDoConnect ARGS4(
 		    status = 0;
 		} else {
 #endif /* SOCKS */
+#ifdef INET6
+		status = connect(*s, res->ai_addr, res->ai_addrlen);
+#else
 		status = connect(*s, (struct sockaddr*)&soc_address,
 				 sizeof(soc_address));
+#endif /* INET6 */
 #ifdef UCX
 		/*
 		**  A UCX feature: Instead of returning EISCONN
@@ -1691,10 +1833,18 @@ PUBLIC int HTDoConnect ARGS4(
 		**  For some reason, UCX pre 3 apparently returns
 		**  errno = 18242 instead the EALREADY or EISCONN.
 		*/
+#ifdef INET6
+		status = connect(*s, res->ai_addr, res->ai_addrlen);
+#else
 		status = connect(*s, (struct sockaddr*)&soc_address,
 				 sizeof(soc_address));
+#endif /* INET6 */
 		if ((status < 0) &&
-		    (SOCKET_ERRNO != EALREADY && SOCKET_ERRNO != EAGAIN) &&
+		    (SOCKET_ERRNO != EALREADY
+#ifdef EAGAIN
+		    && SOCKET_ERRNO != EAGAIN
+#endif
+		    ) &&
 #ifdef UCX
 		    (SOCKET_ERRNO != 18242) &&
 #endif /* UCX */
@@ -1722,8 +1872,22 @@ PUBLIC int HTDoConnect ARGS4(
 	HTInetStatus("this socket's first and only connect");
     }
 #endif /* SOCKET_DEBUG_TRACE */
+#ifdef INET6
+	if (status < 0) {
+		NETCLOSE(*s);
+		*s = -1;
+		continue;
+	}
+	break;
+    }
+#endif /* INET6 */
 #endif /* !__DJGPP__ */
-    if (status < 0) {
+#ifdef INET6
+    if (*s < 0)
+#else
+    if (status < 0)
+#endif /* INET6 */
+    {
 	/*
 	**  The connect attempt failed or was interrupted,
 	**  so close up the socket.
@@ -1748,6 +1912,10 @@ PUBLIC int HTDoConnect ARGS4(
 #endif /* !NO_IOCTL || USE_FCNTL */
 #endif /* !DOSPATH */
 
+#ifdef INET6
+    FREE(line);
+    freeaddrinfo(res0);
+#endif /* INET6 */
     return status;
 }
 
@@ -1761,7 +1929,7 @@ PUBLIC int HTDoRead ARGS3(
 {
     int ready, ret;
     fd_set readfds;
-    struct timeval timeout;
+    struct timeval select_timeout;
     int tries=0;
 #ifdef EXP_READPROGRESS
     int otries = 0;
@@ -1831,18 +1999,18 @@ PUBLIC int HTDoRead ARGS3(
 	**  interrupted.  Allow for this possibility. - JED
 	*/
 	do {
-	    timeout.tv_sec = 0;
-	    timeout.tv_usec = 100000;
+	    select_timeout.tv_sec = 0;
+	    select_timeout.tv_usec = 100000;
 	    FD_ZERO(&readfds);
 	    FD_SET((unsigned)fildes, &readfds);
 #ifdef SOCKS
 	    if (socks_flag)
 		ret = Rselect(FD_SETSIZE,
-			      (void *)&readfds, NULL, NULL, &timeout);
+			      (void *)&readfds, NULL, NULL, &select_timeout);
 	    else
 #endif /* SOCKS */
 		ret = select(FD_SETSIZE,
-			     (void *)&readfds, NULL, NULL, &timeout);
+			     (void *)&readfds, NULL, NULL, &select_timeout);
 	} while ((ret == -1) && (errno == EINTR));
 
 	if (ret < 0) {
@@ -1932,17 +2100,17 @@ PUBLIC int BSDselect ARGS5(
 	fd_set *,		readfds,
 	fd_set *,		writefds,
 	fd_set *,		exceptfds,
-	struct timeval *,	timeout)
+	struct timeval *,	select_timeout)
 {
     int rval,
     i;
 
 #ifdef SOCKS
     if (socks_flag)
-	rval = Rselect(nfds, readfds, writefds, exceptfds, timeout);
+	rval = Rselect(nfds, readfds, writefds, exceptfds, select_timeout);
     else
 #endif /* SOCKS */
-    rval = select(nfds, readfds, writefds, exceptfds, timeout);
+    rval = select(nfds, readfds, writefds, exceptfds, select_timeout);
 
     switch (rval) {
 	case -1:

@@ -6,6 +6,7 @@
 #include <LYHash.h>
 #include <LYPrettySrc.h>
 #include <LYStrings.h>
+#include <LYLeaks.h>
 
  /* This file creates too many "leak detected" entries in Lynx.leaks. */
 #define NO_MEMORY_TRACKING
@@ -76,8 +77,7 @@ PRIVATE int html_src_tag_index ARGS1(
     return (tag && tag != &HTTag_unrecognized ) ? tag - HTML_dtd.tags : -1;
 }
 
-typedef enum _html_src_check_state
-{
+typedef enum {
     HTSRC_CK_normal,
     HTSRC_CK_seen_excl,
     HTSRC_CK_after_tagname,
@@ -87,7 +87,7 @@ typedef enum _html_src_check_state
 PRIVATE void append_close_tag ARGS3(
 	    char*,	  tagname,
 	    HT_tagspec**, head,
-	    HT_tagspec**,  tail)
+	    HT_tagspec**, tail)
 {
     int idx, nattr;
     HTTag* tag;
@@ -100,13 +100,13 @@ PRIVATE void append_close_tag ARGS3(
     if (idx == -1) {
 	fprintf(stderr,
 	"internal error: previous check didn't find bad HTML tag %s", tagname);
-	exit_immediately(-1);
+	exit_immediately(EXIT_FAILURE);
     }
 
-    subj = (HT_tagspec*) calloc( sizeof(*subj), 1);
+    subj = typecalloc(HT_tagspec);
     subj->element = idx;
-    subj->present = (BOOL*)calloc( nattr*sizeof (BOOL), 1);
-    subj->value = (char**)calloc( nattr*sizeof (char*), 1);
+    subj->present = typecallocn(BOOL, nattr);
+    subj->value = typecallocn(char *, nattr);
     subj->start = FALSE;
 #ifdef USE_COLOR_STYLE
     subj->class_name = NULL;
@@ -125,7 +125,7 @@ PRIVATE void append_open_tag ARGS4(
 	    char*,	  tagname,
 	    char*,	  classname GCC_UNUSED,
 	    HT_tagspec**, head,
-	    HT_tagspec**,  tail)
+	    HT_tagspec**, tail)
 {
     HT_tagspec* subj;
     HTTag* tag;
@@ -137,7 +137,7 @@ PRIVATE void append_open_tag ARGS4(
     subj = *tail;
     subj->start = TRUE;
 
-    tag = HTML_dtd.tags+subj->element;
+    tag = HTML_dtd.tags + subj->element;
 
 #ifdef USE_COLOR_STYLE
     hcode = hash_code_lowercase_on_fly(tagname);
@@ -180,7 +180,7 @@ PUBLIC int html_src_parse_tagspec ARGS4(
     char stop = FALSE, after_excl = FALSE;
     html_src_check_state state = HTSRC_CK_normal;
     HT_tagspec* head = NULL, *tail = NULL;
-    HT_tagspec** slot = ( isstart ? lexeme_start : lexeme_end ) +lexeme;
+    HT_tagspec** slot = ( isstart ? lexeme_start : lexeme_end ) + lexeme;
 
     while (!stop) {
 	switch (state) {
@@ -196,9 +196,9 @@ PUBLIC int html_src_parse_tagspec ARGS4(
 			after_excl = TRUE;
 			break;
 		    default:
-			if (isalpha(*p) || *p == '_') {
+			if (isalpha(UCH(*p)) || *p == '_') {
 			    tagstart = p;
-			    while (*p && ( isalnum(*p) || *p == '_') )
+			    while (*p && ( isalnum(UCH(*p)) || *p == '_') )
 				 ++p;
 			    tagend = p;
 			    state = HTSRC_CK_after_tagname;
@@ -251,9 +251,9 @@ PUBLIC int html_src_parse_tagspec ARGS4(
 			return 1;
 		    default: {
 			char save, save1;
-			if ( isalpha(*p) || *p == '_' ) {
+			if ( isalpha(UCH(*p)) || *p == '_' ) {
 			    classstart = p;
-			    while (*p && ( isalnum(*p) || *p == '_') ) ++p;
+			    while (*p && ( isalnum(UCH(*p)) || *p == '_') ) ++p;
 			    classend = p;
 			    save = *classend;
 			    *classend = '\0';
@@ -289,10 +289,14 @@ PUBLIC void html_src_clean_item ARGS1(
 	HTlexeme, l)
 {
     int i;
+
     if (HTL_tagspecs[l])
 	FREE(HTL_tagspecs[l]);
     for(i = 0; i < 2; ++i) {
-	HT_tagspec* cur,** pts = ( i ? lexeme_start : lexeme_end)+l,*ts = *pts;
+	HT_tagspec*	cur;
+	HT_tagspec**	pts = ( i ?  lexeme_start :  lexeme_end) + l;
+	HT_tagspec*	ts = *pts;
+
 	*pts = NULL;
 	while (ts) {
 	    FREE(ts->present);
@@ -343,11 +347,11 @@ PUBLIC void HTMLSRC_init_caches ARGS1(
 	    *p = '\0';
 	if (html_src_parse_tagspec(buf, i, FALSE, TRUE) && !dont_exit ) {
 	    fprintf(stderr, "internal error while caching 1st tagspec of %d lexeme", i);
-	    exit_immediately(-1);
+	    exit_immediately(EXIT_FAILURE);
 	}
 	if (html_src_parse_tagspec( p ? p+1 : NULL , i, FALSE, FALSE) && !dont_exit) {
 	    fprintf(stderr, "internal error while caching 2nd tagspec of %d lexeme", i);
-	    exit_immediately(-1);
+	    exit_immediately(EXIT_FAILURE);
 	}
     }
 }

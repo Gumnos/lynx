@@ -47,20 +47,19 @@ PUBLIC int LYUpload ARGS1(
     char *the_upload = 0;
     char tmpbuf[LY_MAXPATH];
     char *filename = NULL;
-    lynx_html_item_type *upload_command = 0;
-    FILE *fp;
+    lynx_list_item_type *upload_command = 0;
     char *the_command = 0;
 
     /*
      *	Use configured upload commands.
      */
-    if((directory = (char *)strstr(line, "TO=")) == NULL)
+    if((directory = strstr(line, "TO=")) == NULL)
 	goto failed;
     *(directory - 1) = '\0';
     /* go past "Directory=" */
     directory += 3;
 
-    if((method = (char *)strstr(line, "UPLOAD=")) == NULL)
+    if((method = strstr(line, "UPLOAD=")) == NULL)
 	goto failed;
     /*
      *	Go past "Method=".
@@ -130,12 +129,7 @@ retry:
 	 */
 	CTRACE((tfp, "LYUpload: filename is %s", filename));
 
-	if ((fp = fopen(filename, "w")) != NULL) {
-	    fclose(fp);
-	    remove(filename);
-	} else {
-	    HTAlert(CANNOT_WRITE_TO_FILE);
-	    _statusline(NEW_FILENAME_PROMPT);
+	if (! LYCanWriteFile(filename)) {
 	    goto retry;
 	}
 
@@ -186,7 +180,7 @@ PUBLIC int LYUpload_options ARGS2(
 {
     static char tempfile[LY_MAXPATH];
     FILE *fp0;
-    lynx_html_item_type *cur_upload;
+    lynx_list_item_type *cur_upload;
     int count;
     static char curloc[LY_MAXPATH];
     char *cp;

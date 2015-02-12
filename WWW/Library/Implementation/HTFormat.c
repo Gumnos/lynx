@@ -95,7 +95,7 @@ PUBLIC void HTSetPresentation ARGS6(
 	double,		secs_per_byte,
 	long int,	maxbytes)
 {
-    HTPresentation * pres = (HTPresentation *)malloc(sizeof(HTPresentation));
+    HTPresentation * pres = typecalloc(HTPresentation);
     if (pres == NULL)
 	outofmem(__FILE__, "HTSetPresentation");
 
@@ -140,7 +140,7 @@ PUBLIC void HTSetConversion ARGS7(
 	float,		secs_per_byte,
 	long int,	maxbytes)
 {
-    HTPresentation * pres = (HTPresentation *)malloc(sizeof(HTPresentation));
+    HTPresentation * pres = typecalloc(HTPresentation);
     if (pres == NULL)
 	outofmem(__FILE__, "HTSetConversion");
 
@@ -256,15 +256,48 @@ PUBLIC int HTGetCharacter NOARGS
 	ch = *input_pointer++;
     } while (ch == (char) 13); /* Ignore ASCII carriage return */
 
-    return FROMASCII((unsigned char)ch);
+    return FROMASCII(UCH(ch));
 }
+
+#ifdef USE_SSL
+PUBLIC char HTGetSSLCharacter ARGS1(void *, handle)
+{
+    char ch;
+    interrupted_in_htgetcharacter = 0;
+    if(!handle)
+	return (char)EOF;
+    do {
+	if (input_pointer >= input_limit) {
+	    int status = SSL_read((SSL *)handle,
+				 input_buffer, INPUT_BUFFER_SIZE);
+	    if (status <= 0) {
+		if (status == 0)
+		    return (char)EOF;
+		if (status == HT_INTERRUPTED) {
+		    CTRACE((tfp, "HTFormat: Interrupted in HTGetSSLCharacter\n"));
+		    interrupted_in_htgetcharacter = 1;
+		    return (char)EOF;
+		}
+		CTRACE((tfp, "HTFormat: SSL_read error %d\n", status));
+		return (char)EOF; /* -1 is returned by UCX
+				     at end of HTTP link */
+	    }
+	    input_pointer = input_buffer;
+	    input_limit = input_buffer + status;
+	}
+	ch = *input_pointer++;
+    } while (ch == (char) 13); /* Ignore ASCII carriage return */
+
+    return FROMASCII(ch);
+}
+#endif /* USE_SSL */
 
 /*  Match maintype to any MIME type starting with maintype,
  *  for example:  image/gif should match image
  */
 PRIVATE int half_match ARGS2(char *,trial_type, char *,target)
 {
-    char *cp=strchr(trial_type,'/');
+    char *cp = strchr(trial_type, '/');
 
     /* if no '/' or no '*' */
     if (!cp || *(cp+1) != '*')
@@ -457,6 +490,56 @@ PUBLIC void HTReorderPresentation ARGS2(
 	HTList_addObject(HTPresentations, match);
     }
 }
+
+/*
+ * Setup 'get_accept' flag to denote presentations that are not redundant,
+ * and will be listed in "Accept:" header.
+ */
+PUBLIC void HTFilterPresentations NOARGS
+{
+    int i, j;
+    int n = HTList_count(HTPresentations);
+    HTPresentation *p, *q;
+    BOOL matched;
+    char *s, *t, *x, *y;
+
+    for (i = 0; i < n; i++) {
+	p = (HTPresentation *)HTList_objectAt(HTPresentations, i);
+	s = HTAtom_name(p->rep);
+
+	if (p->rep_out == WWW_PRESENT) {
+	    if (p->rep != WWW_SOURCE
+	     && strcasecomp(s, "www/mime")
+	     && strcasecomp(s, "www/compressed")
+	     && p->quality <= 1.0 && p->quality >= 0.0) {
+		for (j = 0, matched = FALSE; j < i; j++) {
+		    q = (HTPresentation *)HTList_objectAt(HTPresentations, j);
+		    t = HTAtom_name(q->rep);
+
+		    if (!strcasecomp(s, t)) {
+			matched = TRUE;
+			break;
+		    }
+		    if ((x = strchr(s, '/')) != 0
+		     && (y = strchr(t, '/')) != 0) {
+			int len1 = x++ - s;
+			int len2 = y++ - t;
+			int lens = (len1 > len2) ? len1 : len2;
+
+			if ((*t == '*' || !strncasecomp(s, t, lens))
+			 && (*y == '*' || !strcasecomp(x, y))) {
+			    matched = TRUE;
+			    break;
+			}
+		    }
+		}
+		if (!matched)
+		    p->get_accept = TRUE;
+	    }
+	}
+    }
+}
+
 /*		Find the cost of a filter stack
 **		-------------------------------
 **
@@ -641,7 +724,14 @@ PUBLIC int HTCopy ARGS4(
 	    goto finished;
 	}
 
+#ifdef USE_SSL
+	if (handle)
+	    status = SSL_read((SSL *)handle, input_buffer, INPUT_BUFFER_SIZE);
+	else
+	    status = NETREAD(file_number, input_buffer, INPUT_BUFFER_SIZE);
+#else
 	status = NETREAD(file_number, input_buffer, INPUT_BUFFER_SIZE);
+#endif /* USE_SSL */
 
 	if (status <= 0) {
 	    if (status == 0) {
@@ -1007,7 +1097,7 @@ PUBLIC void HTCopyNoCR ARGS3(
 	character = HTGetCharacter();
 	if (character == EOF)
 	    break;
-	(*targetClass.put_character)(sink, (unsigned char) character);
+	(*targetClass.put_character)(sink, UCH(character));
     }
 }
 
@@ -1363,7 +1453,7 @@ PRIVATE HTStreamClass NetToTextClass = {
 */
 PUBLIC HTStream * HTNetToText ARGS1(HTStream *, sink)
 {
-    HTStream* me = (HTStream*)malloc(sizeof(*me));
+    HTStream* me = typecalloc(HTStream);
 
     if (me == NULL)
 	outofmem(__FILE__, "NetToText");

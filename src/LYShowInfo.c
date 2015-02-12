@@ -30,13 +30,13 @@
  * the successive versions:
  *	{release}{status}{patch}
  * where
- *	{release} is the release that we are working on, e.g., 2.8.3
+ *	{release} is the release that we are working on, e.g., 2.8.4
  *	{status} is one of "dev", "pre" or "rel", and
  *	{patch} is a number assigned by PRCS.
  */
 PUBLIC BOOL LYVersionIsRelease NOARGS
 {
-    return strstr(LYNX_VERSION, "rel") != 0;
+    return (BOOL)(strstr(LYNX_VERSION, "rel") != 0);
 }
 
 PUBLIC char *LYVersionStatus NOARGS
@@ -56,11 +56,11 @@ PUBLIC char *LYVersionDate NOARGS
 }
 
 /*
- *  Showinfo prints a page of info about the current file and the link
+ *  LYShowInfo prints a page of info about the current file and the link
  *  that the cursor is on.
  */
 
-PUBLIC int showinfo ARGS4(
+PUBLIC int LYShowInfo ARGS4(
 	document *,	doc,
 	int,		size_of_file,
 	document *,	newdoc,
@@ -420,7 +420,7 @@ PUBLIC int showinfo ARGS4(
 #endif /* DIRED_SUPPORT */
     EndInternalPage(fp0);
 
-    refresh();
+    LYrefresh();
 
     LYCloseTemp(tempfile);
     FREE(Address);

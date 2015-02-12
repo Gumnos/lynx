@@ -33,8 +33,6 @@ PRIVATE int HTLoadExtensionsConfigFile PARAMS((char *fn));
 
 PUBLIC void HTFormatInit NOARGS
 {
- FILE *fp = NULL;
-
 #ifdef NeXT
   HTSetPresentation("application/postscript",   "open %s", 1.0, 2.0, 0.0, 0);
   HTSetPresentation("image/x-tiff",             "open %s", 2.0, 2.0, 0.0, 0);
@@ -159,8 +157,7 @@ PUBLIC void HTFormatInit NOARGS
  /*
   *  Load the local maps.
   */
- if ((fp = fopen(personal_type_map, TXT_R)) != NULL) {
-     fclose(fp);
+ if (LYCanReadFile(personal_type_map)) {
      /* These should override everything else. */
      HTLoadTypesConfigFile(personal_type_map);
  } else {
@@ -174,6 +171,12 @@ PUBLIC void HTFormatInit NOARGS
   */
  HTReorderPresentation(WWW_PLAINTEXT, WWW_PRESENT);
  HTReorderPresentation(WWW_HTML, WWW_PRESENT);
+
+ /*
+  * Analyze the list, and set 'get_accept' for those whose representations
+  * are not redundant.
+  */
+ HTFilterPresentations();
 }
 
 PUBLIC void HTPreparsedFormatInit NOARGS
@@ -234,6 +237,7 @@ PRIVATE char *GetCommand ARGS2(
     char *s2;
     int quoted = 0;
 
+    s = LYSkipBlanks(s);
     /* marca -- added + 1 for error case -- oct 24, 1993. */
     s2 = malloc(strlen(s)*2 + 1); /* absolute max, if all % signs */
     if (!s2)
@@ -309,7 +313,7 @@ PRIVATE int ProcessMailcapEntry ARGS2(
     }
     FREE(LineBuf);
 
-    s = LYSkipBlanks(rawentry);
+    t = s = LYSkipBlanks(rawentry);
     if (!*s) {
 	/* totally blank entry -- quietly ignore */
 	FREE(rawentry);
@@ -323,8 +327,8 @@ PRIVATE int ProcessMailcapEntry ARGS2(
 	return(0);
     }
     *s++ = '\0';
-    if (!strncasecomp(rawentry, "text/html", 9) ||
-	!strncasecomp(rawentry, "text/plain", 10)) {
+    if (!strncasecomp(t, "text/html", 9) ||
+	!strncasecomp(t, "text/plain", 10)) {
 	--s;
 	*s = ';';
 	CTRACE((tfp, "ProcessMailcapEntry: Ignoring mailcap entry: %s\n",
@@ -358,6 +362,7 @@ PRIVATE int ProcessMailcapEntry ARGS2(
 	eq = strchr(arg, '=');
 	if (eq) {
 	    *eq++ = '\0';
+	    eq = LYSkipBlanks(eq);
 	}
 	if (arg && *arg) {
 	    arg = Cleanse(arg);
@@ -635,7 +640,7 @@ PRIVATE int ProcessMailcapFile ARGS1(
     while (fp && !feof(fp)) {
 	ProcessMailcapEntry(fp, &mc);
     }
-    fclose(fp);
+    LYCloseInput(fp);
     RememberTestResult(RTR_forget, NULL, 0);
     return(0 == 0);
 }
@@ -645,14 +650,14 @@ PRIVATE int ExitWithError ARGS1(
 {
     if (txt)
 	fprintf(tfp, "Lynx: %s\n", txt);
-    exit_immediately(-1);
+    exit_immediately(EXIT_FAILURE);
     return(-1);
 }
 
 /* Reverse the entries from each mailcap after it has been read, so that
  * earlier entries have precedence.  Set to 0 to get traditional lynx
  * behavior, which means that the last match wins. - kw */
-#define reverse_mailcap 1
+static int reverse_mailcap = 1;
 
 PRIVATE int HTLoadTypesConfigFile ARGS1(
 	char *,		fn)
@@ -723,8 +728,6 @@ PRIVATE int HTLoadTypesConfigFile ARGS1(
  */
 PUBLIC void HTFileInit NOARGS
 {
-    FILE *fp;
-
 #ifdef BUILTIN_SUFFIX_MAPS
     if (LYUseBuiltinSuffixes)
     {
@@ -819,7 +822,7 @@ PUBLIC void HTFileInit NOARGS
 
     HTSetSuffix(".bz2",		"application/x-bzip2", "binary", 1.0);
 
-    HTSetSuffix(".bz2",		"application/x-bzip2", "binary", 1.0);
+    HTSetSuffix(".bz2",		"application/bzip2", "binary", 1.0);
 
 #ifdef TRADITIONAL_SUFFIXES
     HTSetSuffix(".uu",		"application/x-UUencoded", "8bit", 1.0);
@@ -1047,8 +1050,7 @@ PUBLIC void HTFileInit NOARGS
     /* These should override the default extensions as necessary. */
     HTLoadExtensionsConfigFile(global_extension_map);
 
-    if ((fp = fopen(personal_extension_map, TXT_R)) != NULL) {
-	fclose(fp);
+    if (LYCanReadFile(personal_extension_map)) {
 	/* These should override everything else. */
 	HTLoadExtensionsConfigFile(personal_extension_map);
     } else {
@@ -1088,7 +1090,7 @@ PRIVATE int HTGetLine ARGS3(
 	if (s[i] == CR) {
 	    r = fgetc(f);
 	    if (r == LF)
-		s[i] = r;
+		s[i] = (char) r;
 	    else if (r != EOF)
 		ungetc(r, f);
 	}
@@ -1173,7 +1175,7 @@ PRIVATE int HTLoadExtensionsConfigFile ARGS1(
 	}
 	FREE(ct);
     }
-    fclose(f);
+    LYCloseInput(f);
 
     return count;
 }

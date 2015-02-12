@@ -33,9 +33,8 @@
 #include <LYStyle.h>
 #endif
 
+#include <LYGlobalDefs.h>
 #include <LYLeaks.h>
-
-extern BOOLEAN LYPreparsedSource;	/* Show source as preparsed?	*/
 
 #define PUTC(c) (*me->targetClass.put_character)(me->target, c)
 /* #define PUTS(s) (*me->targetClass.put_string)(me->target, s) */
@@ -180,7 +179,7 @@ PRIVATE void HTMLGen_put_character ARGS2(
 	HTStructured *,		me,
 	char,			c)
 {
-    if (me->escape_specials && (unsigned char)c < 32) {
+    if (me->escape_specials && UCH(c) < 32) {
 	if (c == HT_NON_BREAK_SPACE || c == HT_EN_SPACE ||
 	    c == LY_SOFT_HYPHEN) { /* recursion... */
 	    HTMLGen_put_character(me, '&');
@@ -347,17 +346,17 @@ PRIVATE int HTMLGen_start_element ARGS6(
 	hcode = hash_code(myHash);
 	strtolower(Style_className);
 
-	if (TRACE)
+	if (TRACE_STYLE)
 	{
 	    fprintf(tfp, "CSSTRIM:%s -> %d", myHash, hcode);
 	    if (hashStyles[hcode].code!=hcode)
 	    {
-		char *rp=strrchr(myHash, '.');
+		char *rp = strrchr(myHash, '.');
 		fprintf(tfp, " (undefined) %s\n", myHash);
 		if (rp)
 		{
 		    int hcd;
-		    *rp='\0'; /* trim the class */
+		    *rp = '\0'; /* trim the class */
 		    hcd = hash_code(myHash);
 		    fprintf(tfp, "CSS:%s -> %d", myHash, hcd);
 		    if (hashStyles[hcd].code!=hcd)
@@ -372,8 +371,9 @@ PRIVATE int HTMLGen_start_element ARGS6(
 
 	if (displayStyles[element_number + STARTAT].color > -2) /* actually set */
 	{
-	    CTRACE((tfp, "CSSTRIM: start_element: top <%s>\n",
-		   HTML_dtd.tags[element_number].name));
+	    CTRACE2(TRACE_STYLE,
+		    (tfp, "CSSTRIM: start_element: top <%s>\n",
+			  HTML_dtd.tags[element_number].name));
 	    do_cstyle_flush(me);
 	    HText_characterStyle(me->text, hcode, 1);
 	}
@@ -412,7 +412,8 @@ PRIVATE int HTMLGen_start_element ARGS6(
 		    if (title && *title) {
 			HTSprintf0(&title_tmp, "link.%s.%s",
 				   value[HTML_LINK_CLASS], title);
-			CTRACE((tfp, "CSSTRIM:link=%s\n", title_tmp));
+			CTRACE2(TRACE_STYLE,
+				(tfp, "CSSTRIM:link=%s\n", title_tmp));
 
 			do_cstyle_flush(me);
 			HText_characterStyle(me->text, hash_code(title_tmp), 1);
@@ -486,17 +487,13 @@ PRIVATE int HTMLGen_start_element ARGS6(
      *  Same logic as in HTML_start_element, copied from there. - kw
      */
 
-/* end really empty tags straight away */
-
+    /* end really empty tags straight away */
     if (LYPreparsedSource && ReallyEmptyTagNum(element_number))
     {
-	CTRACE((tfp, "STYLE:begin_element:ending EMPTY element style\n"));
+	CTRACE2(TRACE_STYLE,
+		(tfp, "STYLE:begin_element:ending EMPTY element style\n"));
 	do_cstyle_flush(me);
-#if !defined(USE_HASH)
-	HText_characterStyle(me->text, element_number+STARTAT, STACK_OFF);
-#else
 	HText_characterStyle(me->text, hcode, STACK_OFF);
-#endif /* USE_HASH */
 	TrimColorClass(HTML_dtd.tags[element_number].name,
 		       Style_className, &hcode);
     }
@@ -560,15 +557,11 @@ PRIVATE int HTMLGen_end_element ARGS3(
     TrimColorClass(HTML_dtd.tags[element_number].name,
 		   Style_className, &hcode);
 
-    if (LYPreparsedSource && !ReallyEmptyTagNum(element_number))
-    {
-	CTRACE((tfp, "STYLE:end_element: ending non-EMPTY style\n"));
+    if (LYPreparsedSource && !ReallyEmptyTagNum(element_number)) {
+	CTRACE2(TRACE_STYLE,
+		(tfp, "STYLE:end_element: ending non-EMPTY style\n"));
 	do_cstyle_flush(me);
-#if !defined(USE_HASH)
-	HText_characterStyle(me->text, element_number+STARTAT, STACK_OFF);
-#else
 	HText_characterStyle(me->text, hcode, STACK_OFF);
-#endif /* USE_HASH */
     }
 #endif /* USE_COLOR_STYLE */
     return HT_OK;
@@ -649,8 +642,6 @@ PRIVATE CONST HTStructuredClass HTMLGeneration = /* As opposed to print etc */
 **	-------------------------
 */
 extern int LYcols;			/* LYCurses.h, set in LYMain.c	*/
-extern BOOL dump_output_immediately;	/* TRUE if no interactive user	*/
-extern int dump_output_width;		/* -width instead of 80		*/
 
 PUBLIC HTStructured * HTMLGenerator ARGS1(
 	HTStream *,		output)

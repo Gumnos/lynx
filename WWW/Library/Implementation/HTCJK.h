@@ -40,12 +40,6 @@
 #define IS_SJIS_2BYTE(hi,lo) (IS_SJIS_LO(lo)&&(IS_SJIS_HI1(hi)||IS_SJIS_HI2(hi)))
 #define IS_SJIS_X0201KANA(lo) ((0xA1<=lo)&&(lo<=0xDF))
 
-#if 0 /* IS_EUC_LOS isn't used because we are interested only in EUC-JP's
-       * code set 0 to 2 now. -- TH
-       * ref: http://www.isi.edu/in-notes/iana/assignments/character-sets
-       */
-#define IS_EUC_LOS(lo)	((0x21<=lo)&&(lo<=0x7E))	/* standard */
-#endif
 #define IS_EUC_LOX(lo)	((0xA1<=lo)&&(lo<=0xFE))	/* extended */
 #define IS_EUC_HI(hi)	((0xA1<=hi)&&(hi<=0xFE))
 #define IS_EUC_X0201KANA(hi,lo) ((hi==0x8E)&&(0xA1<=lo)&&(lo<=0xDF))
@@ -58,8 +52,8 @@
 #define IS_BIG5_HI(hi)	((0xA1<=hi)&&(hi<=0xFE))
 #define IS_BIG5(hi,lo) (IS_BIG5_HI(hi) && (IS_BIG5_LOS(lo) || IS_BIG5_LOX(lo)))
 
-typedef enum _HTkcode {NOKANJI, EUC, SJIS, JIS} HTkcode;
-typedef enum _HTCJKlang {NOCJK, JAPANESE, CHINESE, KOREAN, TAIPEI} HTCJKlang;
+typedef enum {NOKANJI, EUC, SJIS, JIS} HTkcode;
+typedef enum {NOCJK, JAPANESE, CHINESE, KOREAN, TAIPEI} HTCJKlang;
 
 extern HTCJKlang HTCJK;
 

@@ -13,8 +13,11 @@ ETC_LIB = lib
 
 # Uncomment the CS_DEFS and CS_OBJS lines if you wish to build the color-style
 # configuration.
-#CS_DEFS = /D "CHAR_BIT=8" /D "USE_HASH" /D "USE_COLOR_STYLE" /D "LINKEDSTYLES"
+#CS_DEFS = /D "CHAR_BIT=8" /D "USE_COLOR_STYLE"
 #CS_OBJS = "LYHash.obj" "LYStyle.obj"
+
+# Uncomment SOCK_DEFS if you wish to build with winsock2.
+#SOCK_DEFS = /D "USE_WINSOCK2_H" /D "_WIN32_WINNT=0x0400"
 
 INCLUDES = \
  /I "." \
@@ -22,7 +25,7 @@ INCLUDES = \
  /I "$(SRC_DIR)\chrtrans" \
  /I "$(WWW_DIR)" \
  /I "$(ETC_LIB)"
-DEFS = $(CS_DEFS) \
+DEFS = $(CS_DEFS) $(SOCK_DEFS) \
  /D "__WIN32__" \
  /D "_CONSOLE" \
  /D "_MBCS" \
@@ -34,7 +37,11 @@ DEFS = $(CS_DEFS) \
  /D "DISP_PARTIAL" \
  /D "DOSPATH" \
  /D "EXP_ALT_BINDINGS" \
+ /D "EXP_CMD_LOGGING" \
+ /D "EXP_JUSTIFY_ELTS" \
+ /D "EXP_NESTED_TABLES" \
  /D "EXP_PERSISTENT_COOKIES" \
+ /D "EXP_READPROGRESS" \
  /D "FANCY_CURSES" \
  /D "HAVE_KEYPAD" \
  /D "LONG_LIST" \
@@ -53,6 +60,7 @@ DEFS = $(CS_DEFS) \
  /D "USE_EXTERNALS" \
  /D "USE_MULTIBYTE_CURSES" \
  /D "USE_PRETTYSRC" \
+ /D "USE_SCROLLBAR" \
  /D "USE_ZLIB" \
  /D "WIN_EX" \
  /D "WIN32" \
@@ -69,7 +77,7 @@ LIBS     = kernel32.lib user32.lib wsock32.lib /NODEFAULTLIB:libc\
  $(ETC_LIB)\pdcurses.lib $(ETC_LIB)\zlib.lib dirent.obj
 
 COMPILE = $(CC) $(CFLAGS) $(INCLUDES) $(DEFS)
-LINK    = $(LD) $(LDFLAGS) /out:$@
+LINK    = $(LD) $(LDFLAGS) /map:lynx.map /out:$@
 
 OBJS = $(CS_OBJS) \
 	"DefaultStyle.obj" \
@@ -85,11 +93,11 @@ OBJS = $(CS_OBJS) \
 	"HTBTree.obj" \
 	"HTChunk.obj" \
 	"HTDOS.obj" \
+	"HTFTP.obj" \
+	"HTFWriter.obj" \
 	"HTFile.obj" \
 	"HTFinger.obj" \
 	"HTFormat.obj" \
-	"HTFTP.obj" \
-	"HTFWriter.obj" \
 	"HTGopher.obj" \
 	"HTGroup.obj" \
 	"HTInit.obj" \
@@ -106,8 +114,8 @@ OBJS = $(CS_OBJS) \
 	"HTString.obj" \
 	"HTStyle.obj" \
 	"HTTCP.obj" \
-	"HTTelnet.obj" \
 	"HTTP.obj" \
+	"HTTelnet.obj" \
 	"HTUU.obj" \
 	"HTWSRC.obj" \
 	"LYBookmark.obj" \
@@ -120,7 +128,6 @@ OBJS = $(CS_OBJS) \
 	"LYDownload.obj" \
 	"LYEdit.obj" \
 	"LYEditmap.obj" \
-	"LYexit.obj" \
 	"LYExtern.obj" \
 	"LYForms.obj" \
 	"LYGetFile.obj" \
@@ -138,7 +145,6 @@ OBJS = $(CS_OBJS) \
 	"LYOptions.obj" \
 	"LYPrettySrc.obj" \
 	"LYPrint.obj" \
-	"LYrcFile.obj" \
 	"LYReadCFG.obj" \
 	"LYSearch.obj" \
 	"LYShowInfo.obj" \
@@ -146,6 +152,8 @@ OBJS = $(CS_OBJS) \
 	"LYTraversal.obj" \
 	"LYUpload.obj" \
 	"LYUtils.obj" \
+	"LYexit.obj" \
+	"LYrcFile.obj" \
 	"SGML.obj" \
 	"TRSTable.obj" \
 	"UCAuto.obj" \
@@ -156,10 +164,16 @@ OBJS = $(CS_OBJS) \
 
 # Dependencies for building
 
+.SUFFIXES : .i
+.c.i :
+	$(CC) $(INCLUDES) $(DEFS) /P $<
+
 all : lynx.exe
 
 clean :
+	-del *.map
 	-del *.obj
+	-del/f/s/q *.i
 
 lynx.exe: $(OBJS) dirent.obj
 	$(LINK) $(OBJS) $(LIBS)

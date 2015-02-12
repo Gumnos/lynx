@@ -1,8 +1,7 @@
-
 #include <HTUtils.h>
 #include <LYUtils.h>
-#include <LYKeymap.h>
 #include <LYGlobalDefs.h>
+#include <LYKeymap.h>
 #include <LYCharSets.h>		/* for LYlowest_eightbit - kw */
 #include <HTAccess.h>
 #include <HTFormat.h>
@@ -105,7 +104,7 @@ LYK_LAST_LINK,          0,              0,          LYK_HISTORICAL,
 LYK_UP_HALF,      LYK_DOWN_HALF, LYK_IMAGE_TOGGLE,  LYK_NEXT_PAGE,
 /* ( */              /* ) */         /* * */        /* + */
 
-LYK_NEXT_PAGE,    LYK_PREV_PAGE, LYK_EXTERN,        LYK_WHEREIS,
+LYK_EXTERN_PAGE,  LYK_PREV_PAGE, LYK_EXTERN_LINK,   LYK_WHEREIS,
 /* , */              /* - */         /* . */        /* / */
 
 LYK_F_LINK_NUM,      LYK_1,          LYK_2,         LYK_3,
@@ -114,14 +113,19 @@ LYK_F_LINK_NUM,      LYK_1,          LYK_2,         LYK_3,
 LYK_4,               LYK_5,          LYK_6,         LYK_7,
 /* 4 */              /* 5 */         /* 6 */        /* 7 */
 
-LYK_8,               LYK_9,             0,          LYK_TRACE_LOG,
+LYK_8,               LYK_9,         LYK_COMMAND,    LYK_TRACE_LOG,
 /* 8 */              /* 9 */         /* : */        /* ; */
 
 LYK_UP_LINK,         LYK_INFO,     LYK_DOWN_LINK,   LYK_HELP,
 /* < */              /* = */         /* > */        /* ? */
 
+#ifndef SUPPORT_CHDIR
 LYK_RAW_TOGGLE,      LYK_ADDRLIST, LYK_PREV_PAGE,   LYK_COMMENT,
 /* @ */              /* A */         /* B */        /* C */
+#else
+LYK_RAW_TOGGLE,      LYK_ADDRLIST, LYK_PREV_PAGE,   LYK_CHDIR,
+/* @ */              /* A */         /* B */        /* C */
+#endif
 
 LYK_DOWNLOAD,        LYK_ELGOTO,  LYK_DIRED_MENU,   LYK_ECGOTO,
 /* D */              /* E */         /* F */        /* G */
@@ -129,7 +133,7 @@ LYK_DOWNLOAD,        LYK_ELGOTO,  LYK_DIRED_MENU,   LYK_ECGOTO,
 LYK_HELP,            LYK_INDEX,      LYK_JUMP,      LYK_KEYMAP,
 /* H */              /* I */         /* J */        /* K */
 
-LYK_LIST,          LYK_MAIN_MENU,    LYK_NEXT,      LYK_OPTIONS,
+LYK_LIST,          LYK_MAIN_MENU,    LYK_PREV,      LYK_OPTIONS,
 /* L */              /* M */         /* N */        /* O */
 
 LYK_PRINT,          LYK_ABORT,    LYK_DEL_BOOKMARK, LYK_INDEX_SEARCH,
@@ -162,10 +166,10 @@ LYK_PRINT,           LYK_QUIT,    LYK_DEL_BOOKMARK, LYK_INDEX_SEARCH,
 LYK_TAG_LINK,     LYK_PREV_DOC,   LYK_VIEW_BOOKMARK,   0,
 /* t */              /* u */         /* v */        /* w */
 
-LYK_NOCACHE,            0,          LYK_INTERRUPT,     0,
+LYK_NOCACHE,            0,          LYK_INTERRUPT, LYK_SHIFT_LEFT,
 /* x */              /* y */          /* z */       /* { */
 
-LYK_PIPE,               0,              0,          LYK_HISTORY,
+LYK_LINEWRAP_TOGGLE, LYK_SHIFT_RIGHT, LYK_NESTED_TABLES, LYK_HISTORY,
 /* | */               /* } */         /* ~ */       /* del */
 
 
@@ -411,9 +415,13 @@ LYKeymap_t key_override[KEYMAP_SIZE] = {
 
    0,                  0,              0,             0,
 /* < */             /* = */         /* > */        /* ? */
-
+#ifndef SUPPORT_CHDIR
    0,                  0,              0,         LYK_CREATE,
 /* @ */             /* A */         /* B */        /* C */
+#else
+   0,                  0,              0,         LYK_CHDIR,
+/* @ */             /* A */         /* B */        /* C */
+#endif
 
    0,                  0,        LYK_DIRED_MENU,       0,
 /* D */             /* E */         /* F */        /* G */
@@ -616,149 +624,392 @@ LYK_TAG_LINK,      LYK_UPLOAD,         0,             0,
 };
 #endif /* DIRED_SUPPORT && OK_OVERRIDE */
 
-struct rmap {
-	CONST char *name;
-	CONST char *doc;
-};
-
+#define DATA(code, name, doc) { code, name, doc }
 /* The order of this array must match the LYKeymapCode enum in LYKeymap.h */
-PRIVATE struct rmap revmap[] = {
-{ "UNMAPPED",		NULL },
-{ "1",			NULL },
-{ "2",			NULL },
-{ "3",			NULL },
-{ "4",			NULL },
-{ "5",			NULL },
-{ "6",			NULL },
-{ "7",			NULL },
-{ "8",			NULL },
-{ "9",			NULL },
-{ "SOURCE",		"toggle source/presentation for current document" },
-{ "RELOAD",		"reload the current document" },
-{ "PIPE",		"pipe the current document to an external command" },
-{ "QUIT",		"quit the browser" },
-{ "ABORT",		"quit the browser unconditionally" },
-{ "NEXT_PAGE",		"view the next page of the document" },
-{ "PREV_PAGE",		"view the previous page of the document" },
-{ "UP_TWO",		"go back two lines in the document" },
-{ "DOWN_TWO",		"go forward two lines in the document" },
-{ "UP_HALF",		"go back half a page in the document" },
-{ "DOWN_HALF",		"go forward half a page in the document" },
-{ "REFRESH",		"refresh the screen to clear garbled text" },
-{ "HOME",		"go to the beginning of the current document" },
-{ "END",		"go to the end of the current document" },
-{ "FIRST_LINK",		"make the first link on the line current" },
-{ "LAST_LINK",		"make the last link on the line current" },
-{ "PREV_LINK",		"make the previous link current" },
-{ "NEXT_LINK",		"make the next link current" },
-{ "LPOS_PREV_LINK",	"make previous link current, same column for input" },
-{ "LPOS_NEXT_LINK",	"make next link current, same column for input" },
-{ "FASTBACKW_LINK",	"previous link or text area, only stops on links" },
-{ "FASTFORW_LINK",	"next link or text area, only stops on links" },
-{ "UP_LINK",		"move up the page to a previous link" },
-{ "DOWN_LINK",		"move down the page to another link" },
-{ "RIGHT_LINK",		"move right to another link" },
-{ "LEFT_LINK",		"move left to a previous link" },
-{ "HISTORY",		"display stack of currently-suspended documents" },
-{ "PREV_DOC",		"go back to the previous document" },
-{ "ACTIVATE",		"go to the document given by the current link" },
-{ "MOUSE_SUBMIT",	"follow current link, submit" }, /* not mapped */
-{ "GOTO",		"go to a document given as a URL" },
-{ "ECGOTO",		"edit the current document's URL and go to it" },
-{ "HELP",		"display help on using the browser" },
-{ "DWIMHELP",		"display help page that may depend on context" },
-{ "INDEX",		"display an index of potentially useful documents" },
-{ "NOCACHE",		"force submission of form or link with no-cache" },
-{ "INTERRUPT",		"interrupt network connection or transmission" },
-{ "MAIN_MENU",		"return to the first screen (home page)" },
-{ "OPTIONS",		"display and change option settings" },
-{ "INDEX_SEARCH",	"allow searching of an index" },
-{ "WHEREIS",		"search within the current document" },
-{ "NEXT",		"search for the next occurence" },
-{ "COMMENT",		"send a comment to the author of the current document" },
-{ "EDIT",		"edit the current document or a form's textarea" },
-{ "INFO",		"display information on the current document and link" },
-{ "PRINT",		"display choices for printing the current document" },
-{ "ADD_BOOKMARK",	"add to your personal bookmark list" },
-{ "DEL_BOOKMARK",	"delete from your personal bookmark list" },
-{ "VIEW_BOOKMARK",	"view your personal bookmark list" },
-{ "VLINKS",		"list links visited during the current Lynx session" },
-{ "SHELL",		"escape from the browser to the system" },
-{ "DOWNLOAD",		"download the current link to your computer" },
-{ "TRACE_TOGGLE",	"toggle tracing of browser operations" },
-{ "TRACE_LOG",		"view trace log if started in the current session" },
-{ "IMAGE_TOGGLE",	"toggle handling of all images as links" },
-{ "INLINE_TOGGLE",	"toggle pseudo-ALTs for inlines with no ALT string" },
-{ "HEAD",		"send a HEAD request for the current document or link" },
-{ "DO_NOTHING",		NULL },
-{ "TOGGLE_HELP",	"show other commands in the novice help menu" },
-{ "JUMP",		"go directly to a target document or action" },
-{ "KEYMAP",		"display the current key map" },
-{ "LIST",		"list the references (links) in the current document" },
-{ "TOOLBAR",		"go to Toolbar or Banner in the current document" },
-{ "HISTORICAL",		"toggle historical vs. valid/minimal comment parsing" },
-{ "MINIMAL",		"toggle minimal vs. valid comment parsing" },
-{ "SOFT_DQUOTES",	"toggle valid vs. soft double-quote parsing" },
-{ "RAW_TOGGLE",		"toggle raw 8-bit translations or CJK mode ON or OFF" },
-{ "COOKIE_JAR",		"examine the Cookie Jar" },
-{ "F_LINK_NUM",		"invoke the 'Follow link (or page) number:' prompt" },
-{ "CLEAR_AUTH",		"clear all authorization info for this session" },
-{ "SWITCH_DTD",		"switch between two ways of parsing HTML" },
-{ "ELGOTO",		"edit the current link's URL or ACTION and go to it" },
-{ "CHANGE_LINK",	"force reset of the current link on the page" },
-{ "DWIMEDIT",		"use external editor for context-dependent purpose" },
-{ "EDITTEXTAREA",	"use an external editor to edit a form's textarea" },
-{ "GROWTEXTAREA",	"add 5 new blank lines to the bottom of a textarea" },
-{ "INSERTFILE",		"insert file into a textarea (just above cursorline)" },
+PRIVATE Kcmd revmap[] = {
+    DATA(
+	LYK_UNKNOWN, "UNMAPPED",
+	NULL ),
+    DATA(
+	LYK_COMMAND, "COMMAND",
+	"prompt for, execute a command" ),
+    DATA(
+	LYK_1, "1",
+	NULL ),
+    DATA(
+	LYK_2, "2",
+	NULL ),
+    DATA(
+	LYK_3, "3",
+	NULL ),
+    DATA(
+	LYK_4, "4",
+	NULL ),
+    DATA(
+	LYK_5, "5",
+	NULL ),
+    DATA(
+	LYK_6, "6",
+	NULL ),
+    DATA(
+	LYK_7, "7",
+	NULL ),
+    DATA(
+	LYK_8, "8",
+	NULL ),
+    DATA(
+	LYK_9, "9",
+	NULL ),
+    DATA(
+	LYK_SOURCE, "SOURCE",
+	"toggle source/presentation for current document" ),
+    DATA(
+	LYK_RELOAD, "RELOAD",
+	"reload the current document" ),
+    DATA(
+	LYK_QUIT, "QUIT",
+	"quit the browser" ),
+    DATA(
+	LYK_ABORT, "ABORT",
+	"quit the browser unconditionally" ),
+    DATA(
+	LYK_NEXT_PAGE, "NEXT_PAGE",
+	"view the next page of the document" ),
+    DATA(
+	LYK_PREV_PAGE, "PREV_PAGE",
+	"view the previous page of the document" ),
+    DATA(
+	LYK_UP_TWO, "UP_TWO",
+	"go back two lines in the document" ),
+    DATA(
+	LYK_DOWN_TWO, "DOWN_TWO",
+	"go forward two lines in the document" ),
+    DATA(
+	LYK_UP_HALF, "UP_HALF",
+	"go back half a page in the document" ),
+    DATA(
+	LYK_DOWN_HALF, "DOWN_HALF",
+	"go forward half a page in the document" ),
+    DATA(
+	LYK_REFRESH, "REFRESH",
+	"refresh the screen to clear garbled text" ),
+    DATA(
+	LYK_HOME, "HOME",
+	"go to the beginning of the current document" ),
+    DATA(
+	LYK_END, "END",
+	"go to the end of the current document" ),
+    DATA(
+	LYK_FIRST_LINK, "FIRST_LINK",
+	"make the first link on the line current" ),
+    DATA(
+	LYK_LAST_LINK, "LAST_LINK",
+	"make the last link on the line current" ),
+    DATA(
+	LYK_PREV_LINK, "PREV_LINK",
+	"make the previous link current" ),
+    DATA(
+	LYK_NEXT_LINK, "NEXT_LINK",
+	"make the next link current" ),
+    DATA(
+	LYK_LPOS_PREV_LINK, "LPOS_PREV_LINK",
+	"make previous link current, same column for input" ),
+    DATA(
+	LYK_LPOS_NEXT_LINK, "LPOS_NEXT_LINK",
+	"make next link current, same column for input" ),
+    DATA(
+	LYK_FASTBACKW_LINK, "FASTBACKW_LINK",
+	"previous link or text area, only stops on links" ),
+    DATA(
+	LYK_FASTFORW_LINK, "FASTFORW_LINK",
+	"next link or text area, only stops on links" ),
+    DATA(
+	LYK_UP_LINK, "UP_LINK",
+	"move up the page to a previous link" ),
+    DATA(
+	LYK_DOWN_LINK, "DOWN_LINK",
+	"move down the page to another link" ),
+    DATA(
+	LYK_RIGHT_LINK, "RIGHT_LINK",
+	"move right to another link" ),
+    DATA(
+	LYK_LEFT_LINK, "LEFT_LINK",
+	"move left to a previous link" ),
+    DATA(
+	LYK_HISTORY, "HISTORY",
+	"display stack of currently-suspended documents" ),
+    DATA(
+	LYK_PREV_DOC, "PREV_DOC",
+	"go back to the previous document" ),
+    DATA(
+	LYK_NEXT_DOC, "NEXT_DOC",
+	"undo going back to the previous document" ),
+    DATA(
+	LYK_ACTIVATE, "ACTIVATE",
+	"go to the document given by the current link" ),
+    DATA(
+	LYK_SUBMIT, "MOUSE_SUBMIT",
+	"DO NOT MAP:  follow current link, submit" ),
+    DATA(
+	LYK_GOTO, "GOTO",
+	"go to a document given as a URL" ),
+    DATA(
+	LYK_ECGOTO, "ECGOTO",
+	"edit the current document's URL and go to it" ),
+    DATA(
+	LYK_HELP, "HELP",
+	"display help on using the browser" ),
+    DATA(
+	LYK_DWIMHELP, "DWIMHELP",
+	"display help page that may depend on context" ),
+    DATA(
+	LYK_INDEX, "INDEX",
+	"display an index of potentially useful documents" ),
+    DATA(
+	LYK_NOCACHE, "NOCACHE",
+	"force submission of form or link with no-cache" ),
+    DATA(
+	LYK_INTERRUPT, "INTERRUPT",
+	"interrupt network connection or transmission" ),
+    DATA(
+	LYK_MAIN_MENU, "MAIN_MENU",
+	"return to the first screen (home page)" ),
+    DATA(
+	LYK_OPTIONS, "OPTIONS",
+	"display and change option settings" ),
+    DATA(
+	LYK_INDEX_SEARCH, "INDEX_SEARCH",
+	"allow searching of an index" ),
+    DATA(
+	LYK_WHEREIS, "WHEREIS",
+	"search within the current document" ),
+    DATA(
+	LYK_PREV, "PREV",
+	"search for the previous occurence" ),
+    DATA(
+	LYK_NEXT, "NEXT",
+	"search for the next occurence" ),
+    DATA(
+	LYK_COMMENT, "COMMENT",
+	"send a comment to the author of the current document" ),
+    DATA(
+	LYK_EDIT, "EDIT",
+	"edit the current document or a form's textarea" ),
+    DATA(
+	LYK_INFO, "INFO",
+	"display information on the current document and link" ),
+    DATA(
+	LYK_PRINT, "PRINT",
+	"display choices for printing the current document" ),
+    DATA(
+	LYK_ADD_BOOKMARK, "ADD_BOOKMARK",
+	"add to your personal bookmark list" ),
+    DATA(
+	LYK_DEL_BOOKMARK, "DEL_BOOKMARK",
+	"delete from your personal bookmark list" ),
+    DATA(
+	LYK_VIEW_BOOKMARK, "VIEW_BOOKMARK",
+	"view your personal bookmark list" ),
+    DATA(
+	LYK_VLINKS, "VLINKS",
+	"list links visited during the current Lynx session" ),
+    DATA(
+	LYK_SHELL, "SHELL",
+	"escape from the browser to the system" ),
+    DATA(
+	LYK_DOWNLOAD, "DOWNLOAD",
+	"download the current link to your computer" ),
+    DATA(
+	LYK_TRACE_TOGGLE, "TRACE_TOGGLE",
+	"toggle tracing of browser operations" ),
+    DATA(
+	LYK_TRACE_LOG, "TRACE_LOG",
+	"view trace log if started in the current session" ),
+    DATA(
+	LYK_IMAGE_TOGGLE, "IMAGE_TOGGLE",
+	"toggle handling of all images as links" ),
+    DATA(
+	LYK_INLINE_TOGGLE, "INLINE_TOGGLE",
+	"toggle pseudo-ALTs for inlines with no ALT string" ),
+    DATA(
+	LYK_HEAD, "HEAD",
+	"send a HEAD request for the current document or link" ),
+    DATA(
+	LYK_DO_NOTHING, "DO_NOTHING",
+	NULL ),
+    DATA(
+	LYK_TOGGLE_HELP, "TOGGLE_HELP",
+	"show other commands in the novice help menu" ),
+    DATA(
+	LYK_JUMP, "JUMP",
+	"go directly to a target document or action" ),
+    DATA(
+	LYK_KEYMAP, "KEYMAP",
+	"display the current key map" ),
+    DATA(
+	LYK_LIST, "LIST",
+	"list the references (links) in the current document" ),
+    DATA(
+	LYK_TOOLBAR, "TOOLBAR",
+	"go to Toolbar or Banner in the current document" ),
+    DATA(
+	LYK_HISTORICAL, "HISTORICAL",
+	"toggle historical vs.  valid/minimal comment parsing" ),
+    DATA(
+	LYK_MINIMAL, "MINIMAL",
+	"toggle minimal vs.  valid comment parsing" ),
+    DATA(
+	LYK_SOFT_DQUOTES, "SOFT_DQUOTES",
+	"toggle valid vs.  soft double-quote parsing" ),
+    DATA(
+	LYK_RAW_TOGGLE, "RAW_TOGGLE",
+	"toggle raw 8-bit translations or CJK mode ON or OFF" ),
+    DATA(
+	LYK_COOKIE_JAR, "COOKIE_JAR",
+	"examine the Cookie Jar" ),
+    DATA(
+	LYK_F_LINK_NUM, "F_LINK_NUM",
+	"invoke the 'Follow link (or page) number:' prompt" ),
+    DATA(
+	LYK_CLEAR_AUTH, "CLEAR_AUTH",
+	"clear all authorization info for this session" ),
+    DATA(
+	LYK_SWITCH_DTD, "SWITCH_DTD",
+	"switch between two ways of parsing HTML" ),
+    DATA(
+	LYK_ELGOTO, "ELGOTO",
+	"edit the current link's URL or ACTION and go to it" ),
+    DATA(
+	LYK_CHANGE_LINK, "CHANGE_LINK",
+	"force reset of the current link on the page" ),
+    DATA(
+	LYK_DWIMEDIT, "DWIMEDIT",
+	"use external editor for context-dependent purpose" ),
+    DATA(
+	LYK_EDIT_TEXTAREA, "EDITTEXTAREA",
+	"use an external editor to edit a form's textarea" ),
+    DATA(
+	LYK_GROW_TEXTAREA, "GROWTEXTAREA",
+	"add 5 new blank lines to the bottom of a textarea" ),
+    DATA(
+	LYK_INSERT_FILE, "INSERTFILE",
+	"insert file into a textarea (just above cursorline)" ),
 #ifdef EXP_ADDRLIST_PAGE
-{ "ADDRLIST",		"like LIST command, but always shows the links' URLs" },
+    DATA(
+	LYK_ADDRLIST, "ADDRLIST",
+	"like LIST command, but always shows the links' URLs" ),
 #endif
 #ifdef USE_EXTERNALS
-{ "EXTERN",		"run external program with url" },
+    DATA(
+	LYK_EXTERN_LINK, "EXTERN_LINK",
+	"run external program with current link" ),
+    DATA(
+	LYK_EXTERN_PAGE, "EXTERN_PAGE",
+	"run external program with current page" ),
 #endif
 #ifdef VMS
-{ "DIRED_MENU",		"invoke File/Directory Manager, if available" },
+    DATA(
+	LYK_DIRED_MENU, "DIRED_MENU",
+	"invoke File/Directory Manager, if available" ),
 #else
 #ifdef DIRED_SUPPORT
-{ "DIRED_MENU",		"display a full menu of file operations" },
-{ "CREATE",		"create a new file or directory" },
-{ "REMOVE",		"remove a file or directory" },
-{ "MODIFY",		"modify the name or location of a file or directory" },
-{ "TAG_LINK",		"tag a file or directory for later action" },
-{ "UPLOAD",		"upload from your computer to the current directory" },
-{ "INSTALL",		"install file or tagged files into a system area" },
+    DATA(
+	LYK_DIRED_MENU, "DIRED_MENU",
+	"display a full menu of file operations" ),
+    DATA(
+	LYK_CREATE, "CREATE",
+	"create a new file or directory" ),
+    DATA(
+	LYK_REMOVE, "REMOVE",
+	"remove a file or directory" ),
+    DATA(
+	LYK_MODIFY, "MODIFY",
+	"modify the name or location of a file or directory" ),
+    DATA(
+	LYK_TAG_LINK, "TAG_LINK",
+	"tag a file or directory for later action" ),
+    DATA(
+	LYK_UPLOAD, "UPLOAD",
+	"upload from your computer to the current directory" ),
+    DATA(
+	LYK_INSTALL, "INSTALL",
+	"install file or tagged files into a system area" ),
 #endif /* DIRED_SUPPORT */
-#ifdef SH_EX		/* 1999/01/01 (Fri) 01:18:12 */
-{ "CHANGE_CENTER",	"toggle center alignment in HTML TABLE" },
-{ "TO_CLIPBOARD",	"link's URL to Clip Board" },
-{ "CHANGE_KCODE",	"Change Kanji code" },
+#ifdef SH_EX /* 1999/01/01 (Fri) 01:18:12 */
+    DATA(
+	LYK_CHG_CENTER, "CHANGE_CENTER",
+	"toggle center alignment in HTML TABLE" ),
+#endif
+#ifdef KANJI_CODE_OVERRIDE
+    DATA(
+	LYK_CHG_KCODE, "CHANGE_KCODE",
+	"Change Kanji code" ),
 #endif
 #endif /* VMS */
-{ NULL,			"" }
+#ifdef SUPPORT_CHDIR
+    DATA(
+	LYK_CHDIR, "CHDIR",
+	"change current directory" ),
+#endif
+#ifdef USE_CURSES_PADS
+    DATA(
+	LYK_SHIFT_LEFT, "SHIFT_LEFT",
+	"shift the screen left" ),
+    DATA(
+	LYK_SHIFT_RIGHT, "SHIFT_RIGHT",
+	"shift the screen right" ),
+    DATA(
+	LYK_LINEWRAP_TOGGLE, "LINEWRAP_TOGGLE",
+	"toggle linewrap on/off" ),
+#endif
+#ifdef CAN_CUT_AND_PASTE
+    DATA(
+	LYK_PASTE_URL, "PASTE_URL",
+	"Goto the URL in the clipboard" ),
+    DATA(
+	LYK_TO_CLIPBOARD, "TO_CLIPBOARD",
+	"link's URL to Clip Board" ),
+#endif
+#ifdef EXP_NESTED_TABLES
+    DATA(
+	LYK_NESTED_TABLES, "NESTED_TABLES",
+	"toggle nested-table parsing on/off" ),
+#endif
+    DATA(
+	LYK_UNKNOWN, NULL,
+	"" )
 };
+#undef DATA
 
-PRIVATE CONST char *funckey[] = {
-  "Up Arrow",
-  "Down Arrow",
-  "Right Arrow",
-  "Left Arrow",
-  "Page Down",
-  "Page Up",
-  "Home",
-  "End",
-  "F1",
-  "Do key",
-  "Find key",
-  "Select key",
-  "Insert key",
-  "Remove key",
-  "(DO_NOTHING)",		/* should normally not appear in list */
-  "Back Tab",
-  0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0,
-  "mouse pseudo key",		/* normally not mapped to keymap[] action */
+PRIVATE CONST struct {
+    int key;
+    CONST char *name;
+} named_keys[] = {
+    { '\t',		"<tab>" },
+    { '\r',		"<return>" },
+    { CH_ESC,		"ESC" },
+    { ' ',		"<space>" },
+    { '<',		"<" },
+    { '>',		">" },
+    { 0177,		"<delete>" },
+    { UPARROW,		"Up Arrow" },
+    { DNARROW,		"Down Arrow" },
+    { RTARROW,		"Right Arrow" },
+    { LTARROW,		"Left Arrow" },
+    { PGDOWN,		"Page Down" },
+    { PGUP,		"Page Up" },
+    { HOME,		"Home" },
+    { END_KEY,		"End" },
+    { F1,		"F1" },
+    { DO_KEY,		"Do key" },
+    { FIND_KEY,		"Find key" },
+    { SELECT_KEY,	"Select key" },
+    { INSERT_KEY,	"Insert key" },
+    { REMOVE_KEY,	"Remove key" },
+    { DO_NOTHING,	"(DO_NOTHING)" },
+    { BACKTAB_KEY,	"Back Tab" },
+    { MOUSE_KEY,	"mouse pseudo key" },
 };
-
 
 struct emap {
 	CONST char *name;
@@ -771,6 +1022,7 @@ PRIVATE struct emap ekmap[] = {
   {"CHAR",	LYE_CHAR,	"Insert printable char"},
   {"ENTER",	LYE_ENTER,	"Input complete, return char/lynxkeycode"},
   {"TAB",	LYE_TAB,	"Input complete, return TAB"},
+  {"STOP",	LYE_STOP,	"Input deactivated"},
   {"ABORT",	LYE_ABORT,	"Input cancelled"},
 
   {"PASS",	LYE_FORM_PASS,  "In fields: input complete, or Do Nothing"},
@@ -785,7 +1037,9 @@ PRIVATE struct emap ekmap[] = {
   {"BOL",	LYE_BOL,	"Go to begin of line"},
   {"EOL",	LYE_EOL,	"Go to end   of line"},
   {"FORW",	LYE_FORW,	"Cursor forwards"},
+  {"FORW_RL",	LYE_FORW_RL,	"Cursor forwards or right link"},
   {"BACK",	LYE_BACK,	"Cursor backwards"},
+  {"BACK_LL",	LYE_BACK_LL,	"Cursor backwards or left link"},
   {"FORWW",	LYE_FORWW,	"Word forward"},
   {"BACKW",	LYE_BACKW,	"Word back"},
 
@@ -812,98 +1066,212 @@ PRIVATE struct emap ekmap[] = {
   {"SETMARK",	LYE_SETMARK,	"emacs-like set-mark-command"},
   {"XPMARK",	LYE_XPMARK,	"emacs-like exchange-point-and-mark"},
   {"KILLREG",	LYE_KILLREG,	"emacs-like kill-region"},
-  {"YANK",	LYE_YANK,	"emacs-like yank"}
-#if defined(WIN_EX)
-, {"PASTE",	LYE_PASTE,	"ClipBoard to Lynx"}
+  {"YANK",	LYE_YANK,	"emacs-like yank"},
+#ifdef CAN_CUT_AND_PASTE
+  {"PASTE",	LYE_PASTE,	"ClipBoard to Lynx"},
 #endif
 };
 
-PRIVATE char *pretty ARGS1 (int, c)
+/*
+ * Build a list of Lynx's commands, for use in the tab-completion in LYgetstr.
+ */
+PUBLIC HTList *LYcommandList NOARGS
 {
-	static char buf[30];
+    static HTList *myList = NULL;
 
-	if (c == '\t')
-		sprintf(buf, "<tab>");
-	else if (c == '\r')
-		sprintf(buf, "<return>");
-	else if (c == CH_ESC)
-		sprintf(buf, "ESC");
-	else if (c == ' ')
-		sprintf(buf, "<space>");
-	else if (c == '<')
-		sprintf(buf, "<");
-	else if (c == '>')
-		sprintf(buf, ">");
-	else if (c == 0177)
-		sprintf(buf, "<delete>");
-	else if (c > ' ' && c < 0177)
-		sprintf(buf, "%c", c);
-	else if (c > ' ' && c <= 0377 &&
-		 c <= LYlowest_eightbit[current_char_set])
-		sprintf(buf, "%c", c);
-	else if (c < ' ')
-		sprintf(buf, "^%c", c|0100);
-	else if (c >= 0400 && (c - 0400) < (int) TABLESIZE(funckey)
-		 && funckey[c-0400])
-		sprintf(buf, "%.*s", (int)(sizeof(buf) - 1), funckey[c-0400]);
-	else if (c >= 0400)
-		sprintf(buf, "key-%#x", c);
-	else
-		return 0;
-
-	return buf;
+    if (myList == NULL) {
+	unsigned j;
+	myList = HTList_new();
+	for (j = 0; revmap[j].name != 0; j++) {
+	    if (revmap[j].doc != 0)
+		HTList_addObject(myList, (char *)revmap[j].name);
+	}
+    }
+    return myList;
 }
+
+/*
+ * Find the given keycode.
+ */
+PUBLIC Kcmd * LYKeycodeToKcmd ARGS1(
+	LYKeymapCode,	code)
+{
+    unsigned j;
+    Kcmd *result = 0;
+
+    if (code > LYK_UNKNOWN) {
+	for (j = 0; revmap[j].name != 0; j++) {
+	    if (revmap[j].code == code) {
+		result = revmap + j;
+		break;
+	    }
+	}
+    }
+    return result;
+}
+
+/*
+ * Find the given command-name, accepting an abbreviation if it is unique.
+ */
+PUBLIC Kcmd * LYStringToKcmd ARGS1(
+	CONST char *,	name)
+{
+    unsigned need = strlen(name);
+    unsigned j;
+    BOOL exact = FALSE;
+    Kcmd *result = 0;
+    Kcmd *maybe = 0;
+
+    if (name != 0 && *name != 0) {
+	for (j = 0; revmap[j].name != 0; j++) {
+	    if (!strcasecomp(revmap[j].name, name)) {
+		result = revmap + j;
+		break;
+	    } else if (!exact
+		&& !strncasecomp(revmap[j].name, name, need)) {
+		if (maybe == 0) {
+		    maybe = revmap + j;
+		} else {
+		    if (revmap[j].name[need] != 0
+		     && maybe->name[need] != 0) {
+			maybe = 0;
+			exact = TRUE;
+		    }
+		}
+	    }
+	}
+    }
+    return (result != 0) ? result : maybe;
+}
+
+PUBLIC char *LYKeycodeToString ARGS2 (
+	int,		c,
+	BOOLEAN,	upper8)
+{
+    static char buf[30];
+    unsigned n;
+    BOOLEAN named = FALSE;
+
+    for (n = 0; n < TABLESIZE(named_keys); n++) {
+	if (named_keys[n].key == c) {
+	    named = TRUE;
+	    strcpy(buf, named_keys[n].name);
+	    break;
+	}
+    }
+
+    if (!named) {
+	if (c > ' '
+	 && c < 0177)
+	    sprintf(buf, "%c", c);
+	else if (upper8
+	 && c > ' '
+	 && c <= 0377
+	 && c <= LYlowest_eightbit[current_char_set])
+	    sprintf(buf, "%c", c);
+	else if (c < ' ')
+	    sprintf(buf, "^%c", c|0100);
+	else if (c >= 0400)
+	    sprintf(buf, "key-%#x", c);
+	else
+	    return 0;
+    }
+    return buf;
+}
+
+PUBLIC int LYStringToKeycode ARGS1 (
+	char *,		src)
+{
+    unsigned n;
+    int key = -1;
+    int len = strlen(src);
+
+    if (len == 1)
+	key = *src;
+    else if (len == 2 && *src == '^')
+	key = src[1] & 0x1f;
+    else if (len > 6 && !strncasecomp(src, "key-", 4)) {
+	char *dst = 0;
+	key = strtol(src + 4, &dst, 0);
+	if (dst == 0 || *dst != 0)
+	    key = -1;
+    }
+    if (key < 0) {
+	for (n = 0; n < TABLESIZE(named_keys); n++) {
+	    if (!strcasecomp(named_keys[n].name, src)) {
+		key = named_keys[n].key;
+		break;
+	    }
+	}
+    }
+    return key;
+}
+
+#define PRETTY_LEN 11
 
 PRIVATE char *pretty_html ARGS1 (int, c)
 {
+    char *src = LYKeycodeToString(c, TRUE);
+
+    if (src != 0) {
+	static CONST struct {
+	    int	code;
+	    CONST char *name;
+	} table[] = {
+	    { '<',	"&lt;" },
+	    { '>',	"&gt;" },
+	    { '"',	"&quot;" },
+	    { '&',	"&amp;" }
+	};
+
 	static char buf[30];
+	char *dst = buf;
+	int adj = 0;
+	unsigned n;
+	BOOLEAN found;
 
-	if (c == '\t')
-		sprintf(buf, "&lt;tab&gt;      ");
-	else if (c == '\r')
-		sprintf(buf, "&lt;return&gt;   ");
-	else if (c == ' ')
-		sprintf(buf, "&lt;space&gt;    ");
-	else if (c == '<')
-		sprintf(buf, "&lt;          ");
-	else if (c == '>')
-		sprintf(buf, "&gt;          ");
-	else if (c == 0177)
-		sprintf(buf, "&lt;delete&gt;   ");
-	else if (c > ' ' && c < 0177)
-		sprintf(buf, "%c", c);
-	else if (c > ' ' && c <= 0377 &&
-		 c <= LYlowest_eightbit[current_char_set])
-		sprintf(buf, "%c", c);
-	else if (c < ' ')
-		sprintf(buf, "^%c", c|0100);
-	else if (c >= 0400 && (c - 0400) < (int) TABLESIZE(funckey)
-		 && funckey[c-0400])
-		sprintf(buf, "%.*s", (int)(sizeof(buf) - 1), funckey[c-0400]);
-	else if (c >= 0400)
-		sprintf(buf, "%#x", c);
-	else
-		return 0;
-
+	while ((c = *src++) != 0) {
+	    found = FALSE;
+	    for (n = 0; n < TABLESIZE(table); n++) {
+		if (c == table[n].code) {
+		    found = TRUE;
+		    strcpy(dst, table[n].name);
+		    adj += strlen(dst) - 1;
+		    dst += strlen(dst);
+		    break;
+		}
+	    }
+	    if (!found) {
+		*dst++ = (char) c;
+	    }
+	}
+	adj -= (dst - buf) - PRETTY_LEN;
+	while (adj-- > 0)
+	    *dst++ = ' ';
+	*dst = 0;
 	return buf;
+    }
+
+    return 0;
 }
 
 PRIVATE char * format_binding ARGS2(
 	LYKeymap_t *,	table,
 	int,		i)
 {
-    unsigned the_key = table[i];
+    LYKeymap_t the_key = table[i];
     char *buf = 0;
     char *formatted;
+    Kcmd *rmap = LYKeycodeToKcmd(the_key);
 
-    if (the_key != 0
-     && the_key < TABLESIZE(revmap)
-     && revmap[the_key].name != 0
-     && revmap[the_key].doc != 0
+    if (rmap != 0
+     && rmap->name != 0
+     && rmap->doc != 0
      && (formatted = pretty_html(i-1)) != 0) {
-	HTSprintf0(&buf, "%-11s %-13s %s\n", formatted,
-		revmap[the_key].name,
-		revmap[the_key].doc);
+	HTSprintf0(&buf, "%-*s %-13s %s\n",
+		   PRETTY_LEN, formatted,
+		   rmap->name,
+		   rmap->doc);
 	return buf;
     }
     return 0;
@@ -955,23 +1323,14 @@ PRIVATE void print_binding ARGS3(
 
 /*
  *  Return lynxactioncode whose name is the string func.
- *  func must be present in the revmap table.
  *  returns -1 if not found. - kw
  */
 PUBLIC int lacname_to_lac ARGS1(
 	CONST char *,	func)
 {
-       int i;
-       struct rmap *mp;
+    Kcmd *mp = LYStringToKcmd(func);
 
-       if (func == NULL || *func == '\0')
-	       return (-1);
-       for (i = 0, mp = revmap; (*mp).name != NULL; mp++, i++) {
-               if (strcmp((*mp).name, func) == 0) {
-                       return i;
-               }
-       }
-       return (-1);
+    return (mp != 0) ? (int) mp->code : -1;
 }
 
 /*
@@ -982,17 +1341,17 @@ PUBLIC int lacname_to_lac ARGS1(
 PUBLIC int lecname_to_lec ARGS1(
 	CONST char *,	func)
 {
-       int i;
-       struct emap *mp;
+    int i;
+    struct emap *mp;
 
-       if (func == NULL || *func == '\0')
-	       return (-1);
-       for (i = 0, mp = ekmap; (*mp).name != NULL; mp++, i++) {
-               if (strcmp((*mp).name, func) == 0) {
-                       return (*mp).code;
-               }
-       }
-       return (-1);
+    if (func != NULL && *func != '\0') {
+	for (i = 0, mp = ekmap; (*mp).name != NULL; mp++, i++) {
+	    if (strcmp((*mp).name, func) == 0) {
+		return (*mp).code;
+	    }
+	}
+    }
+    return (-1);
 }
 
 /*
@@ -1011,7 +1370,7 @@ PUBLIC int lkcstring_to_lkc ARGS1(
 	c = *src;
     else if (strlen(src) == 2 && *src == '^')
 	c = src[1] & 037;
-    else if (strlen(src) >= 2 && isdigit(*src)) {
+    else if (strlen(src) >= 2 && isdigit(UCH(*src))) {
 	if (sscanf(src, "%i", &c) != 1)
 	    return (-1);
 #ifdef USE_KEYMAPS
@@ -1027,6 +1386,8 @@ PUBLIC int lkcstring_to_lkc ARGS1(
 #endif
 #endif
     }
+    if (c == CH_ESC)
+	escape_bound = 1;
     if (c < -1)
 	return (-1);
     else
@@ -1059,18 +1420,9 @@ PRIVATE int LYLoadKeymap ARGS4 (
 
 #define PUTS(buf)    (*target->isa->put_block)(target, buf, strlen(buf))
 
-    HTSprintf0(&buf, "<head>\n<title>%s</title>\n</head>\n<body>\n",
+    HTSprintf0(&buf, "<html>\n<head>\n<title>%s</title>\n</head>\n<body>\n",
 		     CURRENT_KEYMAP_TITLE);
     PUTS(buf);
-#if 0	/* There isn't really a help page *on* the current keymap.
-	   And we don't need a title and version info here, better
-	   make the page as compact as possible. - kw */
-    HTSprintf0(&buf, "<h1>%s (%s)%s<a href=\"%s%s\">%s</a></h1>\n",
-	LYNX_NAME, LYNX_VERSION,
-	HELP_ON_SEGMENT,
-	helpfilepath, CURRENT_KEYMAP_HELP, CURRENT_KEYMAP_TITLE);
-    PUTS(buf);
-#endif
     HTSprintf0(&buf, "<pre>\n");
     PUTS(buf);
 
@@ -1079,18 +1431,15 @@ PRIVATE int LYLoadKeymap ARGS4 (
     }
     for (i = 1; i < KEYMAP_SIZE; i++) {
 	/*
-	 *  LYK_PIPE not implemented yet.
-	 *
 	 *  Don't show CHANGE_LINK if mouse not enabled.
 	 */
 	if ((i >= 0200 || i <= ' ' || !isalpha(i-1)) &&
-	    strcmp(revmap[keymap[i]].name, "PIPE") &&
-	    (LYUseMouse || strcmp(revmap[keymap[i]].name, "CHANGE_LINK"))) {
+	    (LYUseMouse || (keymap[i] != LYK_CHANGE_LINK))) {
 	    print_binding(target, i, FALSE);
 	}
     }
 
-    HTSprintf0(&buf,"</pre>\n</body>\n");
+    HTSprintf0(&buf,"</pre>\n</body>\n</html>\n");
     PUTS(buf);
 
     (*target->isa->_free)(target);
@@ -1111,7 +1460,6 @@ GLOBALDEF PUBLIC HTProtocol LYLynxKeymap = {"LYNXKEYMAP", LYLoadKeymap, 0};
  * for Dired mode, otherwise in the general keymap[] table.
  * If DIRED_SUPPORT or OK_OVERRIDE is not defined, don't do anything
  * when for_dired is requested.
- * func must be present in the revmap table.
  * returns lynxkeycode value != 0 if the mapping was made, 0 if not.
  */
 PUBLIC int remap ARGS3(
@@ -1119,8 +1467,7 @@ PUBLIC int remap ARGS3(
 	char *,		func,
 	BOOLEAN,	for_dired)
 {
-    int i;
-    struct rmap *mp;
+    Kcmd *mp;
     int c;
 
 #if !defined(DIRED_SUPPORT) || !defined(OK_OVERRIDE)
@@ -1145,16 +1492,14 @@ PUBLIC int remap ARGS3(
     }
     if (c + 1 >= KEYMAP_SIZE)
 	return 0;
-    for (i = 0, mp = revmap; (*mp).name != NULL; mp++, i++) {
-	if (strcmp((*mp).name, func) == 0) {
+    if ((mp = LYStringToKcmd(func)) != 0) {
 #if defined(DIRED_SUPPORT) && defined(OK_OVERRIDE)
-	    if (for_dired)
-		key_override[c+1] = (char) i;
-	    else
+	if (for_dired)
+	    key_override[c+1] = mp->code;
+	else
 #endif
-		keymap[c+1] = (char) i;
-	    return (c ? c : LAC_TO_LKC0(i)); /* don't return 0, successful */
-	}
+	    keymap[c+1] = (LYKeymap_t) mp->code;
+	return (c ? c : (int) LAC_TO_LKC0(mp->code)); /* don't return 0, successful */
     }
     return 0;
 }
@@ -1280,19 +1625,6 @@ PUBLIC void reset_numbers_as_arrows NOARGS
     did_number_keys = FALSE;
 }
 
-PUBLIC int lookup_keymap ARGS1(
-	int,	func)
-{
-    size_t i;
-
-    for (i = 1; i < KEYMAP_SIZE; i++) {
-	if (LYisNonAlnumKeyname(i, func)) {
-	    return i;
-	}
-    }
-    return -1;
-}
-
 PUBLIC char *key_for_func ARGS1 (
 	int,	func)
 {
@@ -1301,7 +1633,7 @@ PUBLIC char *key_for_func ARGS1 (
     char *formatted;
 
     if ((i = LYReverseKeymap(func)) >= 0) {
-	formatted = pretty(i);
+	formatted = LYKeycodeToString(i, TRUE);
 	StrAllocCopy(buf, formatted != 0 ? formatted : "?");
     } else if (buf == 0) {
 	StrAllocCopy(buf, "");
@@ -1325,7 +1657,7 @@ PUBLIC char *fmt_keys ARGS2(
     char *fmt_second;
     if (lkc_first < 0)
 	return NULL;
-    fmt_first = pretty(lkc_first);
+    fmt_first = LYKeycodeToString(lkc_first, TRUE);
     if (fmt_first && strlen(fmt_first) == 1 && *fmt_first != '\'') {
 	quotes = TRUE;
     }
@@ -1340,7 +1672,7 @@ PUBLIC char *fmt_keys ARGS2(
 	StrAllocCopy(buf, fmt_first);
     }
     if (lkc_second >= 0) {
-	fmt_second = pretty(lkc_second);
+	fmt_second = LYKeycodeToString(lkc_second, TRUE);
 	if (!fmt_second) {
 	    FREE(buf);
 	    return NULL;
@@ -1437,9 +1769,12 @@ PUBLIC BOOL LYisNonAlnumKeyname ARGS2(
 	int,	ch,
 	int,	KeyName)
 {
-    if ((ch >= '0' && ch <= '9') ||
-        (ch >= 'A' && ch <= 'z') ||
-	ch < 0 || ch >= KEYMAP_SIZE)
+    if (ch < 0 || ch >= KEYMAP_SIZE)
+	return (FALSE);
+    if (ch > 0
+     && strchr("0123456789\
+ABCDEFGHIJKLMNOPQRSTUVWXYZ\
+abcdefghijklmnopqrstuvwxyz", ch) != NULL)
 	return (FALSE);
 
     return (BOOL) (keymap[ch+1] == KeyName);

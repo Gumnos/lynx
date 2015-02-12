@@ -357,7 +357,7 @@ PUBLIC BOOL override_proxy ARGS1(
 #ifdef CJK_EX	/* ASATAKU PROXY HACK */
 	if ((!templ_port || templ_port == port)	 &&
 	    (t_len > 0	&&  t_len <= h_len  &&
-	     isdigit(*no_proxy) && !strncmp(host, no_proxy, t_len))) {
+	     isdigit(UCH(*no_proxy)) && !strncmp(host, no_proxy, t_len))) {
 	    FREE(host);
 	    return YES;
 	}
@@ -823,7 +823,7 @@ PRIVATE BOOL HTLoadDocument ARGS4(
 	    NewDoc.bookmark = anchor->bookmark;
 	    NewDoc.isHEAD = anchor->isHEAD;
 	    NewDoc.safe = anchor->safe;
-	    anchor = (HTParentAnchor *)HTAnchor_findAddress(&NewDoc);
+	    anchor = HTAnchor_parent(HTAnchor_findAddress(&NewDoc));
 	}
     }
     /*
@@ -1057,7 +1057,7 @@ PRIVATE BOOL HTLoadDocument ARGS4(
 	fprintf(stderr,
  gettext("**** HTAccess: Internal software error.  Please mail lynx-dev@sig.net!\n"));
 	fprintf(stderr, gettext("**** HTAccess: Status returned was: %d\n"),status);
-	exit(-1);
+	exit(EXIT_FAILURE);
     }
 
     /* Failure in accessing a document */
@@ -1244,7 +1244,7 @@ PUBLIC BOOL HTSearch ARGS2(
     CONST char * p, *s, *e;		/* Pointers into keywords */
     char * address = NULL;
     BOOL result;
-    char * escaped = (char *)calloc(1, ((strlen(keywords)*3) + 1));
+    char * escaped = typecallocn(char, (strlen(keywords)*3) + 1);
     static CONST BOOL isAcceptable[96] =
 
     /*	 0 1 2 3 4 5 6 7 8 9 A B C D E F */
@@ -1268,12 +1268,12 @@ PUBLIC BOOL HTSearch ARGS2(
     for (e = s + strlen(s); e > s && WHITE(*(e-1)); e--) /* Scan */
 	;	/* Skip trailers */
     for (q = escaped, p = s; p < e; p++) {	/* Scan stripped field */
-	unsigned char c = (unsigned char)TOASCII(*p);
+	unsigned char c = UCH(TOASCII(*p));
 	if (WHITE(*p)) {
 	    *q++ = '+';
 	} else if (HTCJK != NOCJK) {
 	    *q++ = *p;
-	} else if (c>=32 && c<=(unsigned char)127 && isAcceptable[c-32]) {
+	} else if (c>=32 && c<=UCH(127) && isAcceptable[c-32]) {
 	    *q++ = *p;				/* 930706 TBL for MVS bug */
 	} else {
 	    *q++ = '%';
@@ -1363,7 +1363,7 @@ PUBLIC HTParentAnchor * HTHomeAnchor NOARGS
 	FILE * fp = fopen(REMOTE_POINTER, "r");
 	char * status;
 	if (fp) {
-	    my_home_document = (char*)calloc(1, MAX_FILE_NAME);
+	    my_home_document = typecallocn(char, MAX_FILE_NAME);
 	    if (my_home_document == NULL)
 		outofmem(__FILE__, "HTHomeAnchor");
 	    status = fgets(my_home_document, MAX_FILE_NAME, fp);

@@ -13,7 +13,10 @@
 #include <LYLeaks.h>
 #include <LYStrings.h>
 
-PUBLIC int WWW_TraceFlag = 0;	/* Global trace flag for ALL W3 code */
+#ifndef NO_LYNX_TRACE
+PUBLIC BOOLEAN WWW_TraceFlag = 0;	/* Global trace flag for ALL W3 code */
+PUBLIC int WWW_TraceMask = 0;		/* Global trace flag for ALL W3 code */
+#endif
 
 #ifndef VC
 #define VC "unknown"
@@ -215,7 +218,7 @@ PUBLIC int AS_casecomp ARGS2(
 
     for ( ; ; p++, q++) {
 	if (!(*p && *q))
-	    return ((unsigned char) *p - (unsigned char) *q);
+	    return (UCH(*p)  - UCH(*q));
 	diff = TOASCII(TOLOWER(*p))
 	     - TOASCII(TOLOWER(*q));
 	if (diff)
@@ -239,7 +242,7 @@ PUBLIC int AS_ncmp ARGS3(
 
     for ( ; (p-a) < n; p++, q++) {
 	if (!(*p && *q))
-	    return ((unsigned char) *p - (unsigned char) *q);
+	    return (UCH(*p) - UCH(*q));
 	diff = TOASCII(*p)
 	     - TOASCII(*q);
 	if (diff)
@@ -451,13 +454,6 @@ PUBLIC char * HTNextTok ARGS4(
 		    get_closing_char_too = (BOOL) (strchr(bracks,*p) != NULL);
 	    } else
 	    break;			    /* kr95-10-9: needs to stop here */
-#if 0
-	} else if (*p == '<') {				     /* quoted field */
-	    if (!start) start = ++p;
-	    for(;*p && *p!='>'; p++)
-		if (*p == '\\' && *(p+1)) p++;	       /* Skip escaped chars */
-	    break;			    /* kr95-10-9: needs to stop here */
-#endif
 	} else {					      /* Spool field */
 	    if (!start) start = p;
 	    while(*p && !skipWHITE(*p) && !strchr(bracks,*p) &&
@@ -501,7 +497,7 @@ PRIVATE char *HTAlloc ARGS2(char *, ptr, size_t, length)
  * in each invocation.  They only grow and never shrink, and won't be
  * cleaned up on exit. - kw
  */
-#if defined(_REENTRANT) || defined(_THREAD_SAFE)
+#if defined(_REENTRANT) || defined(_THREAD_SAFE) || defined(LY_FIND_LEAKS)
 #undef SAVE_TIME_NOT_SPACE
 #endif
 
@@ -599,7 +595,7 @@ PUBLIC_IF_FIND_LEAKS char * StrAllocVsprintf ARGS4(
 	    while (*++fmt != '\0' && !done) {
 		fmt_ptr[f++] = *fmt;
 
-		if (isdigit(*fmt)) {
+		if (isdigit(UCH(*fmt))) {
 		    int num = *fmt - '0';
 		    if (state == Flags && num != 0)
 			state = Width;
@@ -623,7 +619,7 @@ PUBLIC_IF_FIND_LEAKS char * StrAllocVsprintf ARGS4(
 		    }
 		    sprintf(&fmt_ptr[--f], "%d", ival);
 		    f = strlen(fmt_ptr);
-		} else if (isalpha(*fmt)) {
+		} else if (isalpha(UCH(*fmt))) {
 		    done = TRUE;
 		    switch (*fmt) {
 		    case 'Z': /* FALLTHRU */
@@ -847,7 +843,7 @@ PUBLIC char *HTQuoteParameter ARGS1(
 
     for (i=0; i < last; ++i)
 	if (strchr("\\&#$^*?(){}<>\"';`|", parameter[i]) != 0
-	 || isspace(parameter[i]))
+	 || isspace(UCH(parameter[i])))
 	    ++quoted;
 
     result = (char *)malloc(last + 5*quoted + 3);
@@ -864,10 +860,14 @@ PUBLIC char *HTQuoteParameter ARGS1(
 	    result[n++] = parameter[i];
 	    result[n++] = D_QUOTE;
 	    result[n++] = S_QUOTE;
-	} else if (parameter[i] == '\\') {
-	    result[n++] = parameter[i];
-	    result[n++] = parameter[i];
 	} else {
+	    /* Note:  No special handling of other characters, including
+	       backslash, since we are constructing a single-quoted string!
+	       Backslash has no special escape meaning within those for sh
+	       and compatible shells, so trying to escape a backslash by
+	       doubling it is unnecessary and would be interpreted by the
+	       shell as an additional data character. - kw 2000-05-02
+	       */
 	    result[n++] = parameter[i];
 	}
     }
@@ -1080,7 +1080,7 @@ PUBLIC void HTSABCat ARGS3(
 	    int length = t->len;
 	    t->str = (char *)realloc(t->str, length + len);
 	} else {
-	    t = (bstring *)calloc(1, sizeof(*t));
+	    t = typecalloc(bstring);
 	    if (t == NULL)
 		outofmem(__FILE__, "HTSACat");
 	    t->str = (char *)malloc(len);

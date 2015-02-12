@@ -38,6 +38,8 @@ PRIVATE VisitedLink *Latest_tree;
 PRIVATE VisitedLink *First_tree;
 PRIVATE VisitedLink *Last_by_first;
 
+int nhist_extra;
+
 #ifdef LY_FIND_LEAKS
 /*
  *  Utility for freeing the list of visited links. - FM
@@ -65,6 +67,20 @@ PRIVATE void Visited_Links_free NOARGS
     return;
 }
 #endif /* LY_FIND_LEAKS */
+
+#ifdef DEBUG
+PRIVATE void trace_history ARGS1(
+	CONST char *,	tag)
+{
+    if (TRACE) {
+	CTRACE((tfp, "HISTORY %s %d/%d (%d extra)\n",
+		     tag, nhist, MAXHIST, nhist_extra));
+	CTRACE_FLUSH(tfp);
+    }
+}
+#else
+#define trace_history(tag) /* nothing */
+#endif /* DEBUG */
 
 /*
  *  Utility for listing visited links, making any repeated
@@ -210,6 +226,8 @@ PUBLIC BOOLEAN LYwouldPush ARGS2(
 	CONST char *,	title,
 	CONST char *,	docurl)
 {
+    BOOLEAN rc = FALSE;
+
     /*
      *  All non-pushable generated pages have URLs that begin with
      *  "file://localhost/" and end with HTML_SUFFIX. - kw
@@ -218,16 +236,18 @@ PUBLIC BOOLEAN LYwouldPush ARGS2(
 	size_t ulen;
 	if (strncmp(docurl, "file://localhost/", 17) != 0 ||
 	    (ulen = strlen(docurl)) <= strlen(HTML_SUFFIX) ||
-	    strcmp(docurl + ulen - strlen(HTML_SUFFIX), HTML_SUFFIX) != 0)
+	    strcmp(docurl + ulen - strlen(HTML_SUFFIX), HTML_SUFFIX) != 0) {
 	    /*
 	     *  If it is not a local HTML file, it may be a Web page that
 	     *  accidentally has the same title.  So return TRUE now. - kw
 	     */
 	    return TRUE;
+	}
     }
 
     if (docurl) {
-	return (LYIsUIPage(docurl, UIP_HISTORY)
+	rc = (BOOLEAN)
+		! (LYIsUIPage(docurl, UIP_HISTORY)
 		|| LYIsUIPage(docurl, UIP_PRINT_OPTIONS)
 		|| LYIsUIPage(docurl, UIP_DOWNLOAD_OPTIONS)
 #ifdef DIRED_SUPPORT
@@ -235,11 +255,10 @@ PUBLIC BOOLEAN LYwouldPush ARGS2(
 		|| LYIsUIPage(docurl, UIP_UPLOAD_OPTIONS)
 		|| LYIsUIPage(docurl, UIP_PERMIT_OPTIONS)
 #endif /* DIRED_SUPPORT */
-	    )
-	    ? FALSE
-	    : TRUE;
+	    );
     } else {
-	return (!strcmp(title, HISTORY_PAGE_TITLE)
+	rc = (BOOLEAN)
+		! (!strcmp(title, HISTORY_PAGE_TITLE)
 		|| !strcmp(title, PRINT_OPTIONS_TITLE)
 		|| !strcmp(title, DOWNLOAD_OPTIONS_TITLE)
 #ifdef DIRED_SUPPORT
@@ -247,16 +266,47 @@ PUBLIC BOOLEAN LYwouldPush ARGS2(
 		|| !strcmp(title, UPLOAD_OPTIONS_TITLE)
 		|| !strcmp(title, PERMIT_OPTIONS_TITLE)
 #endif /* DIRED_SUPPORT */
-	    )
-	    ? FALSE
-	    : TRUE;
+	    );
     }
+    return rc;
+}
+
+/*
+ *  Free the information in the last history entry.
+ */
+PRIVATE void clean_extra NOARGS
+{
+    trace_history("clean_extra");
+    nhist += nhist_extra;
+    while (nhist_extra > 0) {
+	nhist--;
+	FREE(history[nhist].title);
+	FREE(history[nhist].address);
+	FREE(history[nhist].post_data);
+	FREE(history[nhist].post_content_type);
+	FREE(history[nhist].bookmark);
+	nhist_extra--;
+    }
+    trace_history("...clean_extra");
+}
+
+/* What is the relationship to are_different() from the mainloop?! */
+PRIVATE int are_identical ARGS2(
+	histstruct *,	doc,
+	document *,	doc1)
+{
+     return (	STREQ(doc1->address, doc->address)
+		&& !strcmp(doc1->post_data ? doc1->post_data : "",
+			   doc->post_data ?  doc->post_data : "")
+		&& !strcmp(doc1->bookmark ? doc1->bookmark : "",
+			   doc->bookmark ?  doc->bookmark : "")
+		&& doc1->isHEAD == doc->isHEAD );
 }
 
 /*
  *  Push the current filename, link and line number onto the history list.
  */
-PUBLIC void LYpush ARGS2(
+PUBLIC int LYpush ARGS2(
 	document *,	doc,
 	BOOLEAN,	force_push)
 {
@@ -264,7 +314,7 @@ PUBLIC void LYpush ARGS2(
      *	Don't push NULL file names.
      */
     if (*doc->address == '\0')
-	return;
+	return 0;
 
     /*
      *	Check whether this is a document we
@@ -277,48 +327,59 @@ PUBLIC void LYpush ARGS2(
 	if (!LYwouldPush(doc->title, doc->address)) {
 	    if (!LYforce_no_cache)
 		LYoverride_no_cache = TRUE;
-	    return;
+	    return 0;
 	}
     }
 
     /*
      *	If file is identical to one before it, don't push it.
      */
-    if (nhist> 1 &&
-	STREQ(history[nhist-1].address, doc->address) &&
-	!strcmp(history[nhist-1].post_data ?
-		history[nhist-1].post_data : "",
-		doc->post_data ?
-		doc->post_data : "") &&
-	!strcmp(history[nhist-1].bookmark ?
-		history[nhist-1].bookmark : "",
-		doc->bookmark ?
-		doc->bookmark : "") &&
-	history[nhist-1].isHEAD == doc->isHEAD) {
+    if ( nhist > 1 && are_identical(&(history[nhist-1]), doc)) {
 	if (history[nhist-1].internal_link == doc->internal_link) {
 	    /* But it is nice to have the last position remembered!
 	       - kw */
 	    history[nhist-1].link = doc->link;
 	    history[nhist-1].line = doc->line;
-	    return;
+	    return 0;
 	}
     }
+
+    /*
+     *	If file is identical to the current document, just move the pointer.
+     */
+    if ( nhist_extra >= 1 && are_identical(&(history[nhist]), doc)) {
+	history[nhist].link = doc->link;
+	history[nhist].line = doc->line;
+	nhist_extra--;
+	nhist++;
+	trace_history("LYpush: just move the cursor");
+	return 1;
+    }
+
+    clean_extra();
+
     /*
      *	OK, push it if we have stack space.
      */
     if (nhist < MAXHIST)  {
 	history[nhist].link = doc->link;
 	history[nhist].line = doc->line;
+
 	history[nhist].title = NULL;
 	LYformTitle(&(history[nhist].title), doc->title);
+
 	history[nhist].address = NULL;
 	StrAllocCopy(history[nhist].address, doc->address);
+
 	history[nhist].post_data = NULL;
 	StrAllocCopy(history[nhist].post_data, doc->post_data);
+
 	history[nhist].post_content_type = NULL;
 	StrAllocCopy(history[nhist].post_content_type, doc->post_content_type);
+
 	history[nhist].bookmark = NULL;
 	StrAllocCopy(history[nhist].bookmark, doc->bookmark);
+
 	history[nhist].isHEAD = doc->isHEAD;
 	history[nhist].safe = doc->safe;
 
@@ -417,6 +478,7 @@ PUBLIC void LYpush ARGS2(
 	CTRACE((tfp, "\nLYpush: MAXHIST reached for:\n        address:%s\n        title:%s\n",
 		    doc->address, doc->title));
     }
+    return 1;
 }
 
 /*
@@ -426,6 +488,7 @@ PUBLIC void LYpop ARGS1(
 	document *,	doc)
 {
     if (nhist > 0) {
+	clean_extra();
 	nhist--;
 	doc->link = history[nhist].link;
 	doc->line = history[nhist].line;
@@ -452,6 +515,61 @@ PUBLIC void LYpop ARGS1(
 }
 
 /*
+ *  Move to the previous filename, link and line number from the history list.
+ */
+PUBLIC void LYhist_prev ARGS1(
+	document *,	doc)
+{
+    trace_history("LYhist_prev");
+    if (nhist > 0 && (nhist_extra || nhist < MAXHIST)) {
+	nhist--;
+	nhist_extra++;
+	LYpop_num(nhist, doc);
+	trace_history("...LYhist_prev");
+    }
+}
+
+/*
+ *  Called before calling LYhist_prev().
+ */
+PUBLIC void LYhist_prev_register ARGS1(
+	document *,	doc)
+{
+    trace_history("LYhist_prev_register");
+    if (nhist > 1) {
+	if (nhist_extra) {	/* Make something to return back */
+	    /* Store the new position */
+	    history[nhist].link = doc->link;
+	    history[nhist].line = doc->line;
+	} else if (nhist < MAXHIST) { /* push will fail */
+	    if (LYpush(doc, 0)) {
+		nhist--;
+		nhist_extra++;
+	    }
+	}
+	trace_history("...LYhist_prev_register");
+    }
+}
+
+/*
+ *  Move to the next filename, link and line number from the history list.
+ */
+PUBLIC int LYhist_next ARGS2(
+	document *,	doc,
+	document *,	newdoc)
+{
+    if (nhist_extra <= 1)	/* == 1 when we are the last one */
+	return 0;
+    /* Store the new position */
+    history[nhist].link = doc->link;
+    history[nhist].line = doc->line;
+    nhist++;
+    nhist_extra--;
+    LYpop_num(nhist, newdoc);
+    return 1;
+}
+
+/*
  *  Pop the specified hist entry, link and line number from the history
  *  list but don't actually remove the entry, just return it.
  *  (This procedure is badly named :)
@@ -460,7 +578,7 @@ PUBLIC void LYpop_num ARGS2(
 	int,		number,
 	document *,	doc)
 {
-    if (number >= 0 && nhist > number) {
+    if (number >= 0 && nhist + nhist_extra > number) {
 	doc->link = history[number].link;
 	doc->line = history[number].line;
 	StrAllocCopy(doc->title, history[number].title);
@@ -513,7 +631,7 @@ PUBLIC int showhistory ARGS1(
     fprintf(fp0, "<pre>\n");
 
     fprintf(fp0, "<em>%s</em>\n", gettext("You selected:"));
-    for (x = nhist-1; x >= 0; x--) {
+    for (x = nhist + nhist_extra - 1; x >= 0; x--) {
 	/*
 	 *  The number of the document in the hist stack,
 	 *  its title in a link, and its address. - FM
@@ -570,10 +688,10 @@ PUBLIC BOOLEAN historytarget ARGS1(
     BOOLEAN treat_as_intern = FALSE;
 
     if ((!newdoc || !newdoc->address) ||
-	strlen(newdoc->address) < 10 || !isdigit(*(newdoc->address+9)))
+	strlen(newdoc->address) < 10 || !isdigit(UCH(*(newdoc->address+9))))
 	return(FALSE);
 
-    if ((number = atoi(newdoc->address+9)) > nhist || number < 0)
+    if ((number = atoi(newdoc->address+9)) > nhist + nhist_extra || number < 0)
 	return(FALSE);
 
     /*

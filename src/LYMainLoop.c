@@ -38,6 +38,7 @@
 #include <LYCookie.h>
 #include <LYMainLoop.h>
 #include <LYPrettySrc.h>
+#include <GridText.h>
 
 #ifdef KANJI_CODE_OVERRIDE
 #include <HTCJK.h>
@@ -235,7 +236,7 @@ PRIVATE void free_mainloop_variables NOARGS
     FREE(curdoc.post_data);
     FREE(curdoc.post_content_type);
     FREE(curdoc.bookmark);
-#ifdef USE_HASH
+#ifdef USE_COLOR_STYLE
     FREE(curdoc.style);
     FREE(newdoc.style);
 #endif
@@ -254,14 +255,7 @@ PRIVATE void free_mainloop_variables NOARGS
 }
 #endif /* LY_FIND_LEAKS */
 
-PUBLIC FILE *TraceFP NOARGS
-{
-    if (LYTraceLogFP != 0) {
-	return LYTraceLogFP;
-    }
-    return stderr;
-}
-
+#ifndef NO_LYNX_TRACE
 PRIVATE void TracelogOpenFailed NOARGS
 {
     WWW_TraceFlag = FALSE;
@@ -269,12 +263,51 @@ PRIVATE void TracelogOpenFailed NOARGS
 	HTUserMsg(TRACELOG_OPEN_FAILED);
     } else {
 	fprintf(stderr, "%s\n", TRACELOG_OPEN_FAILED);
-	exit(-1);
+	exit(EXIT_FAILURE);
     }
+}
+
+PRIVATE BOOLEAN LYReopenTracelog ARGS1(BOOLEAN *, trace_flag_ptr)
+{
+    CTRACE((tfp, "\nTurning off TRACE for fetch of log.\n"));
+    LYCloseTracelog();
+    if ((LYTraceLogFP = LYAppendToTxtFile(LYTraceLogPath)) == NULL) {
+	TracelogOpenFailed();
+	return FALSE;
+    }
+    if (TRACE) {
+	WWW_TraceFlag = FALSE;
+	*trace_flag_ptr = TRUE;
+    }
+    return TRUE;
+}
+
+PRIVATE void turn_trace_back_on ARGS1(BOOLEAN *, trace_flag_ptr)
+{
+    if (*trace_flag_ptr == TRUE) {
+	WWW_TraceFlag = TRUE;
+	*trace_flag_ptr = FALSE;
+	fprintf(tfp, "Turning TRACE back on.\n\n");
+    }
+}
+#else
+#define LYReopenTracelog(flag) TRUE
+#define turn_trace_back_on(flag) /*nothing*/
+#endif /* NO_LYNX_TRACE */
+
+PUBLIC FILE *TraceFP NOARGS
+{
+#ifndef NO_LYNX_TRACE
+    if (LYTraceLogFP != 0) {
+	return LYTraceLogFP;
+    }
+#endif /* NO_LYNX_TRACE */
+    return stderr;
 }
 
 PUBLIC BOOLEAN LYOpenTraceLog NOARGS
 {
+#ifndef NO_LYNX_TRACE
     if (TRACE && LYUseTraceLog && LYTraceLogFP == NULL) {
 	/*
 	 * If we can't open it for writing, give up.  Otherwise, on VMS close
@@ -330,32 +363,31 @@ PUBLIC BOOLEAN LYOpenTraceLog NOARGS
 	    CTRACE((tfp, "\"all\" restrictions are set.\n"));
 	}
     }
+#endif /* NO_LYNX_TRACE */
     return TRUE;
 }
 
 PUBLIC void LYCloseTracelog NOARGS
 {
+#ifndef NO_LYNX_TRACE
     if (LYTraceLogFP != 0) {
 	fflush(stdout);
 	fflush(stderr);
 	fclose(LYTraceLogFP);
 	LYTraceLogFP = 0;
     }
+#endif /* NO_LYNX_TRACE */
 }
 
-PRIVATE BOOLEAN LYReopenTracelog ARGS1(BOOLEAN *, trace_flag_ptr)
+PUBLIC void handle_LYK_TRACE_TOGGLE NOARGS
 {
-    CTRACE((tfp, "\nTurning off TRACE for fetch of log.\n"));
-    LYCloseTracelog();
-    if ((LYTraceLogFP = LYAppendToTxtFile(LYTraceLogPath)) == NULL) {
-	TracelogOpenFailed();
-	return FALSE;
-    }
-    if (TRACE) {
-	WWW_TraceFlag = FALSE;
-	*trace_flag_ptr = TRUE;
-    }
-    return TRUE;
+#ifndef NO_LYNX_TRACE
+    WWW_TraceFlag = ! WWW_TraceFlag;
+    if (LYOpenTraceLog())
+	HTUserMsg(WWW_TraceFlag ? TRACE_ON : TRACE_OFF);
+#else
+    HTUserMsg(TRACE_DISABLED);
+#endif /* NO_LYNX_TRACE */
 }
 
 PUBLIC void LYSetNewline ARGS1(
@@ -394,6 +426,23 @@ PRIVATE BOOLEAN reparse_document NOARGS
     return ok;
 }
 #endif /* SOURCE_CACHE */
+
+/*
+ * Prefer reparsing if we can, but reload if we must - to force regeneration
+ * of the display.
+ */
+PRIVATE BOOLEAN reparse_or_reload ARGS1(
+    int *,	cmd)
+{
+#ifdef SOURCE_CACHE
+    if (HTcan_reparse_document()) {
+	reparse_document();
+	return FALSE;
+    }
+#endif
+    *cmd = LYK_RELOAD;
+    return TRUE;
+}
 
 /*
  * This is for traversal call from within partial mode in LYUtils.c
@@ -484,6 +533,50 @@ PRIVATE void do_check_goto_URL ARGS3(
     char **,	old_user_input,
     BOOLEAN *,	force_load)
 {
+    static BOOLEAN always = TRUE;
+    static struct {
+	CONST char *name;
+	BOOLEAN *flag;
+    } table[] = {
+	{ "file:",		&no_file_url },
+	{ "file:",		&no_goto_file },
+	{ "lynxexec:",		&no_goto_lynxexec },
+	{ "lynxprog:",		&no_goto_lynxprog },
+	{ "lynxcgi:",		&no_goto_lynxcgi },
+	{ "cso:",		&no_goto_cso },
+	{ "finger:",		&no_goto_finger },
+	{ "ftp:",		&no_goto_ftp },
+	{ "gopher:",		&no_goto_gopher },
+	{ "http:",		&no_goto_http },
+	{ "https:",		&no_goto_https },
+	{ "mailto:",		&no_goto_mailto },
+	{ "rlogin:",		&no_goto_rlogin },
+	{ "telnet:",		&no_goto_telnet },
+	{ "tn3270:",		&no_goto_tn3270 },
+	{ "wais:",		&no_goto_wais },
+#ifndef DISABLE_BIBP
+	{ "bibp:",		&no_goto_bibp },
+#endif
+#ifndef DISABLE_NEWS
+	{ "news:",		&no_goto_news },
+	{ "nntp:",		&no_goto_nntp },
+	{ "snews:",		&no_goto_snews },
+#endif
+#ifdef EXEC_LINKS
+	{ "lynxexec:",		&local_exec_on_local_files },
+	{ "lynxprog:",		&local_exec_on_local_files },
+#endif /* EXEC_LINKS */
+	{ "LYNXCFG:",		&no_goto_configinfo },
+	{ "LYNXCOMPILEOPTS:",	&no_goto_configinfo },
+	{ "LYNXCOOKIE:",	&always },
+	{ "LYNXDIRED:",		&always },
+	{ "LYNXDOWNLOAD:",	&always },
+	{ "LYNXOPTIONS:",	&always },
+	{ "LYNXPRINT:",		&always },
+    };
+    unsigned n;
+    BOOLEAN found = FALSE;
+
     /* allow going to anchors*/
     if (*user_input_buffer == '#' ) {
 	if ( user_input_buffer[1] &&
@@ -503,106 +596,20 @@ PRIVATE void do_check_goto_URL ARGS3(
 		(int)(MAX_LINE - 1), *old_user_input);
 	FREE(*old_user_input);
 
-	if ((no_file_url || no_goto_file) &&
-	    !strncmp(user_input_buffer,"file:",5)) {
-	    HTUserMsg(GOTO_FILE_DISALLOWED);
-
-	} else if ((no_shell || no_goto_lynxexec
-#ifdef EXEC_LINKS
-		    || local_exec_on_local_files
-#endif /* EXEC_LINKS */
-		    ) &&
-		   !strncmp(user_input_buffer, "lynxexec:",9)) {
-	    HTUserMsg(GOTO_EXEC_DISALLOWED);
-
-	} else if ((no_shell || no_goto_lynxprog
-#ifdef EXEC_LINKS
-		    || local_exec_on_local_files
-#endif /* EXEC_LINKS */
-		    ) &&
-		   !strncmp(user_input_buffer, "lynxprog:",9)) {
-	    HTUserMsg(GOTO_PROG_DISALLOWED);
-
-	} else if ((no_shell || no_goto_lynxcgi) &&
-		   !strncmp(user_input_buffer, "lynxcgi:", 8)) {
-	    HTUserMsg(GOTO_CGI_DISALLOWED);
-
+	for (n = 0; n < TABLESIZE(table); n++) {
+	    if (*(table[n].flag)
+	     && !strncmp(user_input_buffer, table[n].name, strlen(table[n].name))) {
+		found = TRUE;
+		HTUserMsg2(GOTO_XXXX_DISALLOWED, table[n].name);
+		break;
+	    }
+	}
+	if (found) {
+	    ;
 	} else if (LYValidate &&
 		   strncmp(user_input_buffer, "http:", 5) &&
 		   strncmp(user_input_buffer, "https:", 6)) {
 	    HTUserMsg(GOTO_NON_HTTP_DISALLOWED);
-
-	} else if (no_goto_cso &&
-		   !strncmp(user_input_buffer, "cso:", 4)) {
-	    HTUserMsg(GOTO_CSO_DISALLOWED);
-
-	} else if (no_goto_finger &&
-		   !strncmp(user_input_buffer, "finger:", 7)) {
-	    HTUserMsg(GOTO_FINGER_DISALLOWED);
-
-	} else if (no_goto_ftp &&
-		   !strncmp(user_input_buffer, "ftp:", 4)) {
-	    HTUserMsg(GOTO_FTP_DISALLOWED);
-
-	} else if (no_goto_gopher &&
-		   !strncmp(user_input_buffer, "gopher:", 7)) {
-	    HTUserMsg(GOTO_GOPHER_DISALLOWED);
-
-	} else if (no_goto_http &&
-		   !strncmp(user_input_buffer, "http:", 5)) {
-	    HTUserMsg(GOTO_HTTP_DISALLOWED);
-
-	} else if (no_goto_https &&
-		   !strncmp(user_input_buffer, "https:", 6)) {
-	    HTUserMsg(GOTO_HTTPS_DISALLOWED);
-
-	} else if (no_goto_mailto &&
-		   !strncmp(user_input_buffer, "mailto:", 7)) {
-	    HTUserMsg(GOTO_MAILTO_DISALLOWED);
-
-#ifndef DISABLE_NEWS
-	} else if (no_goto_news &&
-		   !strncmp(user_input_buffer, "news:", 5)) {
-	    HTUserMsg(GOTO_NEWS_DISALLOWED);
-
-	} else if (no_goto_nntp &&
-		   !strncmp(user_input_buffer, "nntp:", 5)) {
-	    HTUserMsg(GOTO_NNTP_DISALLOWED);
-#endif
-
-	} else if (no_goto_rlogin &&
-		   !strncmp(user_input_buffer, "rlogin:", 7)) {
-	    HTUserMsg(GOTO_RLOGIN_DISALLOWED);
-
-#ifndef DISABLE_NEWS
-	} else if (no_goto_snews &&
-		   !strncmp(user_input_buffer, "snews:", 6)) {
-	    HTUserMsg(GOTO_SNEWS_DISALLOWED);
-#endif
-
-	} else if (no_goto_telnet &&
-		   !strncmp(user_input_buffer, "telnet:", 7)) {
-	    HTUserMsg(GOTO_TELNET_DISALLOWED);
-
-	} else if (no_goto_tn3270 &&
-		   !strncmp(user_input_buffer, "tn3270:", 7)) {
-	    HTUserMsg(GOTO_TN3270_DISALLOWED);
-
-	} else if (no_goto_wais &&
-		   !strncmp(user_input_buffer, "wais:", 5)) {
-	    HTUserMsg(GOTO_WAIS_DISALLOWED);
-
-	} else if (no_goto_configinfo &&
-		   (!strncmp(user_input_buffer, "LYNXCFG:", 8) ||
-		    !strncmp(user_input_buffer, "LYNXCOMPILEOPTS:", 16))) {
-	    HTUserMsg(GOTO_SPECIAL_DISALLOWED);
-
-	} else if (!strncmp(user_input_buffer, "LYNXCOOKIE:", 11) ||
-		   !strncmp(user_input_buffer, "LYNXDIRED:", 10) ||
-		   !strncmp(user_input_buffer, "LYNXDOWNLOAD:", 13) ||
-		   !strncmp(user_input_buffer, "LYNXOPTIONS:", 12) ||
-		   !strncmp(user_input_buffer, "LYNXPRINT:", 10)) {
-	    HTUserMsg(GOTO_SPECIAL_DISALLOWED);
 
 	} else {
 	    StrAllocCopy(newdoc.address, user_input_buffer);
@@ -668,7 +675,7 @@ PRIVATE BOOL do_check_recall ARGS7(
 		LYAddHtmlSep0(user_input_buffer);
 
 	} else if (len == 2 && user_input_buffer[1] == ':') {
-	    if (isalpha(user_input_buffer[0])) {
+	    if (isalpha(UCH(user_input_buffer[0]))) {
 		LYAddHtmlSep0(user_input_buffer);
 	    } else {
 		HTUserMsg2(WWW_ILLEGAL_URL_MESSAGE, user_input_buffer);
@@ -885,7 +892,7 @@ PRIVATE int DoTraversal ARGS2(
 		    (nhist <= 0 )) {
 		    if (!dump_output_immediately) {
 			cleanup();
-			exit_immediately(-1);
+			exit_immediately(EXIT_FAILURE);
 		    }
 		    return(-1);
 		}
@@ -914,7 +921,7 @@ PRIVATE int DoTraversal ARGS2(
 		(nhist <= 0 )) {
 		if (!dump_output_immediately) {
 		    cleanup();
-		    exit_immediately(-1);
+		    exit_immediately(EXIT_FAILURE);
 		}
 		return(-1);
 	    }
@@ -982,8 +989,9 @@ PRIVATE int handle_LYK_ACTIVATE ARGS6(
 		F_TEXTLIKE(links[curdoc.link].form->type)) {
 
 		textinput_activated = TRUE;
-		if (textfields_need_activation)
-		    show_main_statusline(links[curdoc.link], FOR_INPUT);
+		show_main_statusline(links[curdoc.link], FOR_INPUT);
+		textfields_need_activation = textfields_activation_option;
+
 		return 0;
 	    }
 #endif
@@ -1151,7 +1159,7 @@ gettext("Enctype multipart/form-data not yet supported!  Cannot submit."));
 				 links[curdoc.link].form->name,
 				 links[curdoc.link].form->value,
 				 FALSE,
-				 (real_cmd==LYK_SUBMIT ||
+				 (BOOLEAN)(real_cmd==LYK_SUBMIT ||
 				  real_cmd==LYK_NOCACHE ||
 				  real_cmd==LYK_DOWNLOAD ||
 				  real_cmd==LYK_HEAD));
@@ -1223,13 +1231,6 @@ gettext("Enctype multipart/form-data not yet supported!  Cannot submit."));
 		switch (LKC_TO_C(*c)) {
 		case '\n':
 		case '\r':
-#if 0
-		    if (peek_mouse_link() == curdoc.link) {
-			*c = DO_NOTHING;
-			break;
-		    }
-		    /* FALLTHRU */
-#endif
 		default:
 		    if ((real_cmd == LYK_ACTIVATE || real_cmd == LYK_SUBMIT) &&
 			F_TEXTLIKE(links[curdoc.link].form->type) &&
@@ -1300,6 +1301,15 @@ gettext("Enctype multipart/form-data not yet supported!  Cannot submit."));
 		    reloading = FALSE;
 		    return 0;
 		}
+
+#ifdef USE_EXTERNALS
+	    if (run_external(links[curdoc.link].lname, TRUE))
+	    {
+		*refresh_screen = TRUE;
+		return 0;
+	    }
+#endif /* USE_EXTERNALS */
+
 	    /*
 	     *	Follow a normal link or anchor.
 	     */
@@ -1530,14 +1540,13 @@ PRIVATE void handle_LYK_ADD_BOOKMARK ARGS3(
 		 *  save either that or the link. - FM
 		 */
 		_statusline(BOOK_D_L_OR_CANCEL);
-		c = LYgetch_for(FOR_SINGLEKEY);
-		if (TOUPPER(c) == 'D') {
+		if ((c = LYgetch_single()) == 'D') {
 		    save_bookmark_link(curdoc.address, curdoc.title);
 		    *refresh_screen = TRUE; /* MultiBookmark support */
 		    goto check_add_bookmark_to_self;
 		}
 	    } else {
-		if (LYMultiBookmarks == FALSE &&
+		if (LYMultiBookmarks == MBM_OFF &&
 		    curdoc.bookmark != NULL &&
 		    strstr(curdoc.address,
 			   (*bookmark_page == '.'
@@ -1566,9 +1575,9 @@ PRIVATE void handle_LYK_ADD_BOOKMARK ARGS3(
 		     */
 		    _statusline(BOOK_L_OR_CANCEL);
 		}
-		c = LYgetch_for(FOR_SINGLEKEY);
+		c = LYgetch_single();
 	    }
-	    if (TOUPPER(c) == 'L') {
+	    if (c == 'L') {
 		if (curdoc.post_data != NULL &&
 		    links[curdoc.link].type == WWW_INTERN_LINK_TYPE) {
 		    /*
@@ -1606,8 +1615,7 @@ PRIVATE void handle_LYK_ADD_BOOKMARK ARGS3(
 	    return;
 	} else {
 	    _statusline(BOOK_D_OR_CANCEL);
-	    c = LYgetch_for(FOR_SINGLEKEY);
-	    if (TOUPPER(c) == 'D') {
+	    if (LYgetch_single() == 'D') {
 		save_bookmark_link(curdoc.address, curdoc.title);
 		*refresh_screen = TRUE; /* MultiBookmark support */
 	    } else {
@@ -1656,6 +1664,30 @@ PRIVATE void handle_LYK_CLEAR_AUTH ARGS2(
 	    HTUserMsg(CANCELLED);
 	}
     }
+}
+
+PRIVATE int handle_LYK_COMMAND ARGS1(
+    char *,	user_input_buffer)
+{
+    int ch;
+    Kcmd *mp;
+    char *src, *tmp;
+
+    *user_input_buffer = 0;
+    _statusline(": ");
+    if (LYgetstr(user_input_buffer, VISIBLE, MAX_LINE, RECALL_CMD) >= 0) {
+	src = LYSkipBlanks(user_input_buffer);
+	tmp = LYSkipNonBlanks(src);
+	*tmp = 0;
+	ch = ((mp = LYStringToKcmd(src)) != 0) ? mp->code : 0;
+	CTRACE((tfp, "LYK_COMMAND(%s.%s) = %d\n", src, tmp, ch));
+	if (ch == 0) {
+	    return *src ? -1 : 0;
+	}
+	/* FIXME: reuse the rest of the buffer for parameters */
+	return ch;
+    }
+    return 0;
 }
 
 PRIVATE void handle_LYK_COMMENT ARGS4(
@@ -1794,7 +1826,7 @@ PRIVATE BOOLEAN handle_LYK_COOKIE_JAR ARGS1(
 PRIVATE void handle_LYK_CREATE NOARGS
 {
     if (lynx_edit_mode && !no_dired_support) {
-	if (local_create(&curdoc)) {
+	if (local_create(&curdoc) > 0) {
 	    DIRED_UNCACHE_1;
 	    StrAllocCopy(newdoc.address, curdoc.address);
 	    FREE(curdoc.address);
@@ -1805,7 +1837,7 @@ PRIVATE void handle_LYK_CREATE NOARGS
 	    newdoc.safe = FALSE;
 	    newdoc.line = curdoc.line;
 	    newdoc.link = curdoc.link > -1 ? curdoc.link : 0;
-	    clear();
+	    LYclear();
 	}
     }
 }
@@ -1900,7 +1932,7 @@ PRIVATE void handle_LYK_DIRED_MENU ARGS3(
 		FREE(cp);
 	    } else {
 		/*
-		 *  We're viewing a local file.  Make it's
+		 *  We're viewing a local file.  Make its
 		 *  directory the CSwing argument. - FM
 		 */
 		StrAllocCopy(VMSdir, HTVMS_name("", cp));
@@ -2270,7 +2302,8 @@ PRIVATE int handle_LYK_DWIMEDIT ARGS3(
      *  contents, rather than attempting to edit the html source
      *  document.  KED
      */
-    if (links[curdoc.link].type       == WWW_FORM_LINK_TYPE &&
+    if (nlinks > 0  &&
+	links[curdoc.link].type       == WWW_FORM_LINK_TYPE &&
 	links[curdoc.link].form->type == F_TEXTAREA_TYPE)   {
 	*cmd = LYK_EDIT_TEXTAREA;
 	return 2;
@@ -2287,7 +2320,8 @@ PRIVATE int handle_LYK_DWIMEDIT ARGS3(
      *   auto invocation of the editor on the TEXTAREA's contents
      *   via the above if() statement.]
      */
-    if (links[curdoc.link].type       == WWW_FORM_LINK_TYPE &&
+    if (nlinks > 0 &&
+	links[curdoc.link].type       == WWW_FORM_LINK_TYPE &&
 	links[curdoc.link].form->type == F_TEXT_TYPE)       {
 	HTUserMsg (CANNOT_EDIT_FIELD);
 	return 1;
@@ -2357,7 +2391,7 @@ PRIVATE int handle_LYK_ECGOTO ARGS5(
      */
     _statusline(EDIT_CURDOC_URL);
     if (((*ch = LYgetstr(user_input_buffer, VISIBLE,
-			MAX_LINE, RECALL)) >= 0) &&
+			MAX_LINE, RECALL_URL)) >= 0) &&
 	user_input_buffer[0] != '\0' &&
 	strcmp(user_input_buffer, curdoc.address)) {
 	if (!LYTrimStartfile(user_input_buffer)) {
@@ -2414,8 +2448,7 @@ PRIVATE void handle_LYK_EDIT ARGS2(
 		    if (S_ISREG(dir_info.st_mode)) {
 			StrAllocCopy(tp, links[curdoc.link].lname);
 			HTUnEscapeSome(tp, "/");
-			if (edit_current_file(tp,
-					      curdoc.link, Newline)) {
+			if (edit_current_file(tp, curdoc.link, Newline)) {
 			    DIRED_UNCACHE_1;
 			    StrAllocCopy(newdoc.address,
 					 curdoc.address);
@@ -2434,7 +2467,7 @@ PRIVATE void handle_LYK_EDIT ARGS2(
 			    newdoc.line = curdoc.line;
 			    newdoc.link = curdoc.link;
 #endif /* NO_SEEK_OLD_POSITION */
-			    clear();  /* clear the screen */
+			    LYclear();  /* clear the screen */
 			}
 		    }
 		}
@@ -2461,7 +2494,7 @@ PRIVATE void handle_LYK_EDIT ARGS2(
 	    newdoc.line = curdoc.line;
 	    newdoc.link = curdoc.link;
 #endif /* NO_SEEK_OLD_POSITION */
-	    clear();  /* clear the screen */
+	    LYclear();  /* clear the screen */
 	}
 
     } else {
@@ -2618,7 +2651,7 @@ PRIVATE int handle_LYK_ELGOTO ARGS5(
      */
     _statusline(EDIT_CURLINK_URL);
     if (((*ch = LYgetstr(user_input_buffer, VISIBLE,
-			MAX_LINE, RECALL)) >= 0) &&
+			MAX_LINE, RECALL_URL)) >= 0) &&
 	user_input_buffer[0] != '\0' &&
 	strcmp(user_input_buffer,
 	       ((links[curdoc.link].type == WWW_FORM_LINK_TYPE)
@@ -2642,12 +2675,22 @@ PRIVATE int handle_LYK_ELGOTO ARGS5(
 }
 
 #ifdef USE_EXTERNALS
-PRIVATE void handle_LYK_EXTERN ARGS1(
+PRIVATE void handle_LYK_EXTERN_LINK ARGS1(
     BOOLEAN *,	refresh_screen)
 {
     if ((nlinks > 0) && (links[curdoc.link].lname != NULL))
     {
-	run_external(links[curdoc.link].lname);
+	run_external(links[curdoc.link].lname, FALSE);
+	*refresh_screen = TRUE;
+    }
+}
+
+PRIVATE void handle_LYK_EXTERN_PAGE ARGS1(
+    BOOLEAN *,	refresh_screen)
+{
+    if (curdoc.address != NULL)
+    {
+	run_external(curdoc.address, FALSE);
 	*refresh_screen = TRUE;
     }
 }
@@ -2830,10 +2873,11 @@ PRIVATE void handle_LYK_FASTFORW_LINK ARGS2(
 
 PRIVATE void handle_LYK_FIRST_LINK NOARGS
 {
-    int i;
+    int i = curdoc.link;
 
-    for (i = curdoc.link - 1; i >= 0; i--) {
-	if (links[i].ly != links[curdoc.link].ly) {
+    for (;;) {
+	if (--i < 0
+	 || links[i].ly != links[curdoc.link].ly) {
 	    set_curdoc_link(i + 1);
 	    break;
 	}
@@ -2866,11 +2910,11 @@ PRIVATE BOOLEAN handle_LYK_GOTO ARGS9(
 
     *URLTotal = (Goto_URLs ? HTList_count(Goto_URLs) : 0);
     if (goto_buffer && *user_input_buffer) {
-	*recall = ((*URLTotal > 1) ? RECALL : NORECALL);
+	*recall = ((*URLTotal > 1) ? RECALL_URL : NORECALL);
 	*URLNum = 0;
 	*FirstURLRecall = FALSE;
     } else {
-	*recall = ((*URLTotal >= 1) ? RECALL : NORECALL);
+	*recall = ((*URLTotal >= 1) ? RECALL_URL : NORECALL);
 	*URLNum = *URLTotal;
 	*FirstURLRecall = TRUE;
     }
@@ -2927,8 +2971,8 @@ PRIVATE BOOLEAN handle_LYK_HEAD ARGS1(
 	 * submit button.  - FM
 	 */
 	_statusline(HEAD_D_L_OR_CANCEL);
-	c = LYgetch_for(FOR_SINGLEKEY);
-	if (TOUPPER(c) == 'D') {
+	c = LYgetch_single();
+	if (c == 'D') {
 	    char *scheme = strncmp(curdoc.address, "LYNXIMGMAP:", 11) ?
 		curdoc.address : curdoc.address + 11;
 	    if (LYCanDoHEAD(scheme) != TRUE) {
@@ -2954,7 +2998,7 @@ PRIVATE BOOLEAN handle_LYK_HEAD ARGS1(
 		    }
 		}
 	    }
-	} else if (TOUPPER(c) == 'L') {
+	} else if (c == 'L') {
 	    if (links[curdoc.link].type != WWW_FORM_LINK_TYPE &&
 		strncmp(links[curdoc.link].lname, "http", 4) &&
 		strncmp(links[curdoc.link].lname,
@@ -3003,7 +3047,7 @@ PRIVATE BOOLEAN handle_LYK_HEAD ARGS1(
 		 * the current document, not the form link.  - FM
 		 */
 		_statusline(HEAD_D_OR_CANCEL);
-		c = LYgetch_for(FOR_SINGLEKEY);
+		c = LYgetch_single();
 	    } else {
 		/*
 		 * No links, so we can just assume that the user wants a HEAD
@@ -3011,7 +3055,7 @@ PRIVATE BOOLEAN handle_LYK_HEAD ARGS1(
 		 */
 		c = 'D';
 	    }
-	    if (TOUPPER(c) == 'D') {
+	    if (c == 'D') {
 		char *scheme = strncmp(curdoc.address, "LYNXIMGMAP:", 11) ?
 		    curdoc.address : curdoc.address + 11;
 		/*
@@ -3117,9 +3161,9 @@ PRIVATE BOOLEAN handle_LYK_HISTORY ARGS1(
 	if (TRACE && !LYUseTraceLog && LYCursesON) {
 	    LYHideCursor();	/* make sure cursor is down */
 #ifdef USE_SLANG
-	    addstr("\n");
+	    LYaddstr("\n");
 #endif /* USE_SLANG */
-	    refresh();
+	    LYrefresh();
 	}
 	LYpush(&curdoc, ForcePush);
 
@@ -3159,14 +3203,7 @@ PRIVATE BOOLEAN handle_LYK_IMAGE_TOGGLE ARGS1(
 
     HTUserMsg(clickable_images ?
 	     CLICKABLE_IMAGES_ON : CLICKABLE_IMAGES_OFF);
-#ifdef SOURCE_CACHE
-    if (HTcan_reparse_document()) {
-	reparse_document();
-	return FALSE;
-    }
-#endif
-    *cmd = LYK_RELOAD;
-    return TRUE;
+    return reparse_or_reload(cmd);
 }
 
 PRIVATE void handle_LYK_INDEX ARGS2(
@@ -3228,9 +3265,9 @@ PRIVATE void handle_LYK_INDEX_SEARCH ARGS4(
 		 */
 		LYHideCursor();
 #ifdef USE_SLANG
-		addstr("\n");
+		LYaddstr("\n");
 #endif /* USE_SLANG */
-		refresh();
+		LYrefresh();
 	    }
 	    LYpush(&curdoc, ForcePush);
 	    /*
@@ -3290,8 +3327,8 @@ PRIVATE BOOLEAN handle_LYK_INFO ARGS1(
      */
     if (!LYIsUIPage(curdoc.address, UIP_SHOWINFO)) {
 	if (do_change_link() != -1
-	 && showinfo(&curdoc, HText_getNumOfLines(),
-		     &newdoc, owner_address) >= 0) {
+	 && LYShowInfo(&curdoc, HText_getNumOfLines(),
+		       &newdoc, owner_address) >= 0) {
 	    LYRegisterUIPage(newdoc.address, UIP_SHOWINFO);
 	    StrAllocCopy(newdoc.title, SHOWINFO_TITLE);
 	    FREE(newdoc.post_data);
@@ -3324,14 +3361,7 @@ PRIVATE BOOLEAN handle_LYK_INLINE_TOGGLE ARGS1(
 
     HTUserMsg(pseudo_inline_alts ?
 	      PSEUDO_INLINE_ALTS_ON : PSEUDO_INLINE_ALTS_OFF);
-#ifdef SOURCE_CACHE
-    if (HTcan_reparse_document()) {
-	reparse_document();
-	return FALSE;
-    }
-#endif
-    *cmd = LYK_RELOAD;
-    return TRUE;
+    return reparse_or_reload(cmd);
 }
 
 PRIVATE void handle_LYK_INSERT_FILE ARGS3(
@@ -3363,7 +3393,7 @@ PRIVATE void handle_LYK_INSERT_FILE ARGS3(
 	    if (*old_c != real_c) {
 		*old_c = real_c;
 		if (no_goto_file)
-		    HTUserMsg(GOTO_FILE_DISALLOWED);
+		    HTUserMsg2(GOTO_XXXX_DISALLOWED, "file:");
 		else
 		    HTUserMsg(NOAUTH_TO_ACCESS_FILES);
 		HTInfoMsg(FILE_INSERT_CANCELLED);
@@ -3432,7 +3462,7 @@ PRIVATE BOOLEAN handle_LYK_JUMP ARGS10(
 		LYJumpFileURL = FALSE;
 		StrAllocCopy(*old_user_input, user_input_buffer);
 		*URLTotal = (Goto_URLs ? HTList_count(Goto_URLs) : 0);
-		*recall = ((*URLTotal >= 1) ? RECALL : NORECALL);
+		*recall = ((*URLTotal >= 1) ? RECALL_URL : NORECALL);
 		*URLNum = *URLTotal;
 		*FirstURLRecall = TRUE;
 		if (!strcasecomp(ret, "Go :")) {
@@ -3512,10 +3542,11 @@ PRIVATE void handle_LYK_KEYMAP ARGS4(
 
 PRIVATE void handle_LYK_LAST_LINK NOARGS
 {
-    int i;
+    int i = curdoc.link;
 
-    for (i = curdoc.link; i < nlinks; i++) {
-	if (links[i].ly != links[curdoc.link].ly) {
+    for (;;) {
+	if (++i >= nlinks
+	 || links[i].ly != links[curdoc.link].ly) {
 	    set_curdoc_link(i - 1);
 	    break;
 	}
@@ -3665,11 +3696,21 @@ PRIVATE void handle_LYK_MODIFY ARGS1(
 	    newdoc.internal_link = FALSE;
 	    newdoc.line = curdoc.line;
 	    newdoc.link = curdoc.link;
-	    clear();
+	    LYclear();
 	}
     }
 }
 #endif /* DIRED_SUPPORT */
+
+#ifdef EXP_NESTED_TABLES
+PRIVATE BOOLEAN handle_LYK_NESTED_TABLES ARGS1(
+    int *,	cmd)
+{
+    nested_tables = !nested_tables;
+    HTUserMsg(nested_tables ? NESTED_TABLES_ON : NESTED_TABLES_OFF);
+    return reparse_or_reload(cmd);
+}
+#endif
 
 PRIVATE BOOLEAN handle_LYK_OPTIONS ARGS2(
     int *,	cmd,
@@ -3845,6 +3886,15 @@ PRIVATE BOOLEAN handle_LYK_OPTIONS ARGS2(
     }
 #endif /* !NO_OPTION_FORMS */
     return FALSE;
+}
+
+PRIVATE void handle_NEXT_DOC NOARGS
+{
+    if (LYhist_next(&curdoc, &newdoc)) {
+	FREE(curdoc.address);		/* avoid push */
+	return;
+    }
+    HTUserMsg(gettext("No next document present"));
 }
 
 PRIVATE void handle_LYK_NEXT_LINK ARGS3(
@@ -4036,8 +4086,8 @@ PRIVATE int handle_PREV_DOC ARGS3(
 		    return 2;
 		} else {
 		    HTUserMsg2(WWW_SKIP_MESSAGE, WWWDoc.address);
-		    do {
-			LYpop(&curdoc);
+		    do {	/* Should be LYhist_prev when _next supports */
+			LYpop(&curdoc);		/* skipping of forms */
 		    } while (nhist > 1 && !are_different(
 			(document *)&history[(nhist - 1)],
 			&curdoc));
@@ -4063,6 +4113,7 @@ PRIVATE int handle_PREV_DOC ARGS3(
 	/*
 	 *  Set newdoc.address to empty to pop a file.
 	 */
+	LYhist_prev_register(&curdoc);	/* Why not call _prev instead of zeroing address?  */
 	FREE(newdoc.address);
 #ifdef DIRED_SUPPORT
 	if (lynx_edit_mode) {
@@ -4158,14 +4209,7 @@ PRIVATE BOOLEAN handle_LYK_RAW_TOGGLE ARGS1(
 	LYUseDefaultRawMode = (BOOL) !LYUseDefaultRawMode;
 	HTUserMsg(LYRawMode ? RAWMODE_OFF : RAWMODE_ON);
 	HTMLSetCharacterHandling(current_char_set);
-#ifdef SOURCE_CACHE
-	if (HTcan_reparse_document()) {
-	    reparse_document();
-	    return FALSE;
-	}
-#endif
-	*cmd = LYK_RELOAD;
-	return TRUE;
+	return reparse_or_reload(cmd);
     }
 }
 
@@ -4521,6 +4565,7 @@ PRIVATE void handle_LYK_TOOLBAR ARGS4(
 PRIVATE void handle_LYK_TRACE_LOG ARGS1(
     BOOLEAN *,	trace_flag_ptr)
 {
+#ifndef NO_LYNX_TRACE
     /*
      *	Check whether we've started a TRACE log
      *	in this session. - FM
@@ -4563,13 +4608,9 @@ PRIVATE void handle_LYK_TRACE_LOG ARGS1(
 	LYPermitURL = TRUE;
     }
     LYforce_no_cache = TRUE;
-}
-
-PUBLIC void handle_LYK_TRACE_TOGGLE NOARGS
-{
-    WWW_TraceFlag = ! WWW_TraceFlag;
-    if (LYOpenTraceLog())
-	HTUserMsg(WWW_TraceFlag ? TRACE_ON : TRACE_OFF);
+#else
+    HTUserMsg(TRACE_DISABLED);
+#endif /* NO_LYNX_TRACE */
 }
 
 #ifdef DIRED_SUPPORT
@@ -4715,12 +4756,12 @@ PRIVATE void handle_LYK_VIEW_BOOKMARK ARGS3(
 
     /*
      *	See if a bookmark exists.
-     *	If it does replace newdoc.address with it's name.
+     *	If it does replace newdoc.address with its name.
      */
     if ((cp = get_bookmark_filename(&newdoc.address)) != NULL) {
 	if (*cp == '\0' || !strcmp(cp, " ") ||
 	    !strcmp(curdoc.address, newdoc.address)) {
-	    if (LYMultiBookmarks == TRUE)
+	    if (LYMultiBookmarks != MBM_OFF)
 		*refresh_screen = TRUE;
 	    return;
 	}
@@ -4742,7 +4783,7 @@ PRIVATE void handle_LYK_VIEW_BOOKMARK ARGS3(
 	    *old_c = real_c;
 	    LYMBM_statusline(BOOKMARKS_NOT_OPEN);
 	    LYSleepAlert();
-	    if (LYMultiBookmarks == TRUE) {
+	    if (LYMultiBookmarks != MBM_OFF) {
 		*refresh_screen = TRUE;
 	    }
 	}
@@ -4794,7 +4835,7 @@ PUBLIC void handle_LYK_WHEREIS ARGS2(
     int,	cmd,
     BOOLEAN *,	refresh_screen)
 {
-    BOOLEAN have_target_onscreen = (*prev_target != '\0' &&
+    BOOLEAN have_target_onscreen = (BOOLEAN) (*prev_target != '\0' &&
 				    HText_pageHasPrevTarget());
     BOOL found;
     int oldcur = curdoc.link; /* temporarily remember */
@@ -4804,7 +4845,7 @@ PUBLIC void handle_LYK_WHEREIS ARGS2(
     else
 	StrAllocCopy(remember_old_target, "");
 
-    if (cmd != LYK_NEXT) {
+    if (cmd == LYK_WHEREIS) {
 	/*
 	 *  Reset prev_target to force prompting
 	 *  for a new search string and to turn
@@ -4812,20 +4853,13 @@ PUBLIC void handle_LYK_WHEREIS ARGS2(
 	 *  is entered by the user.
 	 */
 	*prev_target = '\0';
-	found = textsearch(&curdoc, prev_target, sizeof(prev_target)-1, FALSE);
-    } else {
-	/*
-	 *  When the third argument is TRUE, the previous
-	 *  search string, if any, will be recalled from
-	 *  a buffer, loaded into prev_target, and used
-	 *  for the search without prompting for a new
-	 *  search string.  This allows the LYK_NEXT
-	 *  command to repeat a search in a new document,
-	 *  after prev_target was reset on fetch of that
-	 *  document.
-	 */
-	found = textsearch(&curdoc, prev_target, sizeof(prev_target)-1, TRUE);
     }
+    found = textsearch(&curdoc, prev_target, sizeof(prev_target)-1,
+		       (cmd == LYK_WHEREIS)
+		       ? 0
+		       : ((cmd == LYK_NEXT)
+			 ? 1
+			 : -1));
 
     /*
      *	Force a redraw to ensure highlighting of hits
@@ -5043,6 +5077,189 @@ PRIVATE void handle_LYK_digit ARGS6(
     return;
 }
 
+#ifdef SUPPORT_CHDIR
+
+/* original implementation by VH */
+PUBLIC void handle_LYK_CHDIR NOARGS
+{
+    static char buf[LY_MAXPATH];
+    char *p = NULL;
+
+    if (no_chdir) {
+	HTUserMsg(CHDIR_DISABLED);
+	return;
+    }
+
+    _statusline(gettext("cd to:"));
+    /* some people may prefer automatic clearing of the previous user input,
+       here, to do this, just uncomment next line - VH */
+    /* buf[0]='\0'; */
+    if (LYgetstr(buf, VISIBLE, sizeof(buf)-1, 0) < 0 || !*buf) {
+	HTInfoMsg(CANCELLED);
+	return;
+    }
+
+    if (*buf == '~' && !buf[1]) {
+	StrAllocCopy(p, Home_Dir());
+    } else if (*buf == '~') {
+	HTSprintf0(&p, "%s%s", Home_Dir(), buf+1);
+    } else {
+	StrAllocCopy(p, buf);
+    }
+
+    CTRACE((tfp, "changing directory to '%s'\n", p));
+    if (chdir(p)) {
+	switch (errno) {
+	case EACCES:
+	    HTInfoMsg(COULD_NOT_ACCESS_DIR);
+	    break;
+	case ENOENT:
+	    HTInfoMsg(gettext("No such directory"));
+	    break;
+	case ENOTDIR:
+	    HTInfoMsg(gettext("A component of path is not a directory"));
+	    break;
+	default:
+	    HTInfoMsg(gettext("failed to change directory"));
+	    break;
+	}
+    } else {
+#ifdef DIRED_SUPPORT
+	/*if in dired, load content of other directory*/
+	if (!no_dired_support
+	 && (lynx_edit_mode || (LYIsUIPage(curdoc.address, UIP_DIRED_MENU)))) {
+	    char buf2[LY_MAXPATH];
+	    char* addr = NULL;
+
+	    Current_Dir(buf2);
+	    LYLocalFileToURL(&addr, buf2);
+
+	    newdoc.address = addr;
+	    newdoc.isHEAD = FALSE;
+	    StrAllocCopy(newdoc.title, gettext("A URL specified by the user"));
+	    FREE(newdoc.post_data);
+	    FREE(newdoc.post_content_type);
+	    FREE(newdoc.bookmark);
+	    newdoc.safe = FALSE;
+	    newdoc.internal_link = FALSE;
+	    /**force_load = TRUE;*/
+	    if (lynx_edit_mode) {
+		DIRED_UNCACHE_2;
+	    }
+	} else
+#endif
+	    HTInfoMsg(OPERATION_DONE);
+    }
+    FREE(p);
+}
+#endif
+
+#ifdef USE_CURSES_PADS
+/*
+ * Having jumps larger than this is counter-productive.  Indeed, it is natural
+ * to expect that when the relevant text appears, one would "overshoot" and
+ * would scroll 3-4 extra full screens.  When going back, the "accumulation"
+ * logic would again start moving in full screens, so one would overshoot
+ * again, etc.
+ * 
+ * Going back, one can fix it in 28 keypresses. The relevant text will appear
+ * on the screen soon enough for the key-repeat to become not that important,
+ * and we are still moving in smaller steps than when we overshot.  Since key
+ * repeat is not important, even if we overshoot again, it is going to be by 30
+ * steps, which is easy to fix by reversing the direction again.
+ */
+PRIVATE int repeat_to_delta ARGS1(int, n)
+{
+    int threshold = LYcols / 3;
+
+    while (threshold > 0) {
+	if (n >= threshold) {
+	    n = threshold;
+	    break;
+	}
+	threshold = (threshold * 2) / 3;
+    }
+    return n;
+}
+
+PRIVATE void handle_LYK_SHIFT_LEFT ARGS2(BOOLEAN *, flag, int, count)
+{
+    if (!LYwideLines) {
+	HTAlert(SHIFT_VS_LINEWRAP);
+	return;
+    }
+    if (LYshiftWin > 0) {
+	LYshiftWin -= repeat_to_delta(count);
+	*flag = TRUE;
+    }
+    if (LYshiftWin < 0)
+	LYshiftWin = 0;
+}
+
+PRIVATE void handle_LYK_SHIFT_RIGHT ARGS2(BOOLEAN *, flag, int, count)
+{
+    if (!LYwideLines) {
+	HTAlert(SHIFT_VS_LINEWRAP);
+	return;
+    }
+    LYshiftWin += repeat_to_delta(count);
+    *flag = TRUE;
+}
+
+PRIVATE BOOLEAN handle_LYK_LINEWRAP_TOGGLE ARGS2(
+    int *,	cmd,
+    BOOLEAN *,	flag)
+{
+    static char *choices[] = {
+	"Try to fit screen width",
+	"No line wrap in columns",
+	"Wrap columns at screen width",
+	"Wrap columns at 3/4 screen width",
+	"Wrap columns at 2/3 screen width",
+	"Wrap columns at 1/2 screen width",
+	"Wrap columns at 1/3 screen width",
+	"Wrap columns at 1/4 screen width",
+	NULL
+    };
+    static int wrap[] = {
+	0,
+	0,
+	12,				/* In units of 1/12 */
+	9,
+	8,
+	6,
+	4,
+	3
+    };
+    int c;
+
+    if (LYwin == stdscr)
+	return FALSE;
+
+    /* Somehow the mouse is over the number instead of being over the
+       name, so we decrease x. */
+    c = LYChoosePopup(!LYwideLines, LYlines /2 - 2, LYcols/2-6,
+		      choices, TABLESIZE(choices) - 1, FALSE, TRUE);
+    /*
+     *  LYhandlePopupList() wasn't really meant to be used
+     *  outside of old-style Options menu processing.  One result of
+     *  mis-using it here is that we have to deal with side-effects
+     *  regarding SIGINT signal handler and the term_options global
+     *  variable. - kw
+     */
+    if (term_options)
+	return FALSE;
+    LYwideLines = c;
+    LYtableCols = wrap[c];
+
+    if (LYwideLines == 0)
+	LYshiftWin = 0;
+    *flag = TRUE;
+    HTUserMsg(LYwideLines ? LINEWRAP_OFF : LINEWRAP_ON);
+    return reparse_or_reload(cmd);
+}
+#endif
+
 /*
  *  Here's where we do all the work.
  *  mainloop is basically just a big switch dependent on the users input.
@@ -5093,7 +5310,7 @@ int mainloop NOARGS
     BOOLEAN use_last_tfpos;
     unsigned int len;
     int i;
-    int follow_col = -1;
+    int follow_col = -1, key_count = 0, last_key = 0;
 
 /*
  *  curdoc.address contains the name of the file that is currently open.
@@ -5116,7 +5333,7 @@ int mainloop NOARGS
     curdoc.post_content_type = NULL;
     curdoc.bookmark = NULL;
     curdoc.internal_link = FALSE;
-#ifdef USE_HASH
+#ifdef USE_COLOR_STYLE
     curdoc.style = NULL;
     newdoc.style = NULL;
 #endif
@@ -5138,11 +5355,11 @@ initialize:
 
 #ifdef USE_SLANG
     if (TRACE && LYCursesON) {
-	addstr("\n");
-	refresh();
+	LYaddstr("\n");
+	LYrefresh();
     }
 #endif /* USE_SLANG */
-    CTRACE((tfp,"Entering mainloop, startfile=%s\n",startfile));
+    CTRACE((tfp, "Entering mainloop, startfile=%s\n", startfile));
 
     if (form_post_data) {
 	StrAllocCopy(newdoc.post_data, form_post_data);
@@ -5166,7 +5383,7 @@ initialize:
 	} else {
 	    /*
 	     *	See if a bookmark page exists.	If it does,
-	     *	replace newdoc.address with it's name
+	     *	replace newdoc.address with its name
 	     */
 	    if ((cp = get_bookmark_filename(&newdoc.address)) != NULL &&
 		 *cp != '\0' && strcmp(cp, " ")) {
@@ -5195,7 +5412,7 @@ initialize:
 	display_lines = LYlines-2;
 
     while (TRUE) {
-#ifdef USE_HASH
+#ifdef USE_COLOR_STYLE
 	if (curdoc.style != NULL) force_load = TRUE;
 #endif
 	/*
@@ -5209,9 +5426,9 @@ initialize:
 		if (TRACE && LYCursesON) {
 		    LYHideCursor();	/* make sure cursor is down */
 #ifdef USE_SLANG
-		    addstr("\n");
+		    LYaddstr("\n");
 #endif /* USE_SLANG */
-		    refresh();
+		    LYrefresh();
 		}
 try_again:
 		/*
@@ -5236,7 +5453,7 @@ try_again:
 		     *	If newdoc.address is empty then pop a file
 		     *	and load it.  - FM
 		     */
-		    LYpop(&newdoc);
+		    LYhist_prev(&newdoc);
 		    popped_doc = TRUE;
 
 
@@ -5351,6 +5568,9 @@ try_again:
 #ifdef USE_PRETTYSRC
 		psrc_first_tag = TRUE;
 #endif
+#ifdef TEXTFIELDS_MAY_NEED_ACTIVATION
+		textfields_need_activation = textfields_activation_option;
+#endif
 		FREE(LYRequestReferer);
 		/*
 		 *  Don't send Referer if we have to load a document again
@@ -5426,11 +5646,7 @@ try_again:
 		     */
 		    LYoverride_no_cache = FALSE; /* Was TRUE if popped. - FM */
 		    LYinternal_flag = FALSE;	 /* Reset to default. - kw */
-		    if (trace_mode_flag == TRUE) {
-			WWW_TraceFlag = TRUE;
-			trace_mode_flag = FALSE;
-			fprintf(tfp, "Turning TRACE back on.\n\n");
-		    }
+		    turn_trace_back_on(&trace_mode_flag);
 		    if (!first_file && !LYCancelledFetch) {
 			/*
 			 *  Do error mail sending and/or traversal
@@ -5474,7 +5690,7 @@ try_again:
 			    if ((ofp = LYAppendToTxtFile(TRAVERSE_ERRORS)) == NULL) {
 				if ((ofp = LYNewTxtFile(TRAVERSE_ERRORS)) == NULL) {
 				    perror(NOOPEN_TRAV_ERR_FILE);
-				    exit_immediately(-1);
+				    exit_immediately(EXIT_FAILURE);
 				}
 			    }
 			    if (nhist > 0) {
@@ -5491,7 +5707,7 @@ try_again:
 					newdoc.address : links[curdoc.link].lname,
 					links[curdoc.link].target);
 			    }
-			    fclose(ofp);
+			    LYCloseOutput(ofp);
 			}
 		    }
 
@@ -5505,7 +5721,7 @@ try_again:
 			 *  If nhist = 0 then it must be the first file.
 			 */
 			exit_immediately_with_error_message(NOT_FOUND, first_file);
-			return(-1);
+			return(EXIT_FAILURE);
 		    }
 		    /* FALLTHRU */
 
@@ -5516,11 +5732,7 @@ try_again:
 		    LYoverride_no_cache = FALSE; /* Was TRUE if popped. - FM */
 		    popped_doc = FALSE;		 /* Was TRUE if popped. - FM */
 		    LYinternal_flag = FALSE;	 /* Reset to default. - kw */
-		    if (trace_mode_flag == TRUE) {
-			WWW_TraceFlag = TRUE;
-			trace_mode_flag = FALSE;
-			fprintf(tfp, "Turning TRACE back on.\n\n");
-		    }
+		    turn_trace_back_on(&trace_mode_flag);
 		    FREE(newdoc.address); /* to pop last doc */
 		    FREE(newdoc.bookmark);
 		    LYJumpFileURL = FALSE;
@@ -5580,7 +5792,7 @@ try_again:
 			   goto try_again;
 			} else {
 			   exit_immediately_with_error_message(NULLFILE, first_file);
-			   return(-1);
+			   return(EXIT_FAILURE);
 			}
 		    }
 
@@ -5649,11 +5861,7 @@ try_again:
 		     */
 		    LYoverride_no_cache = FALSE; /* Was TRUE if popped. - FM */
 		    LYinternal_flag = FALSE;	 /* Reset to default. - kw */
-		    if (trace_mode_flag == TRUE) {
-			WWW_TraceFlag = TRUE;
-			trace_mode_flag = FALSE;
-			fprintf(tfp, "Turning TRACE back on.\n\n");
-		    }
+		    turn_trace_back_on(&trace_mode_flag);
 
 		    /*
 		     *	If it's the first file and we're interactive,
@@ -5714,7 +5922,7 @@ try_again:
 				FREE(temp);
 				if (LYValidate) {
 				    HTAlert(BOOKMARKS_DISABLED);
-				    return(-1);
+				    return(EXIT_FAILURE);
 				}
 				if ((temp = HTParse(newdoc.address, "",
 				 PARSE_ACCESS+PARSE_HOST+PARSE_PUNCTUATION))) {
@@ -5730,7 +5938,7 @@ try_again:
 							(BookmarkPage + 2)));
 				    StrAllocCopy(newdoc.title, BOOKMARK_TITLE);
 				    StrAllocCopy(newdoc.bookmark, BookmarkPage);
-#ifdef USE_HASH
+#ifdef USE_COLOR_STYLE
 				    if (curdoc.style)
 					StrAllocCopy(newdoc.style, curdoc.style);
 #endif
@@ -5845,7 +6053,7 @@ try_again:
 	    StrAllocCopy(curdoc.post_data, newdoc.post_data);
 	    StrAllocCopy(curdoc.post_content_type, newdoc.post_content_type);
 	    StrAllocCopy(curdoc.bookmark, newdoc.bookmark);
-#ifdef USE_HASH
+#ifdef USE_COLOR_STYLE
 	    StrAllocCopy(curdoc.style, HText_getStyle());
 	    if (curdoc.style != NULL)
 		style_readFromFile (curdoc.style);
@@ -5911,9 +6119,9 @@ try_again:
 	    if (crawl) {
 		print_crawl_to_fd(stdout, curdoc.address, curdoc.title);
 	    } else {
-		print_wwwfile_to_fd(stdout,0);
+		print_wwwfile_to_fd(stdout, FALSE);
 	    }
-	    return(0);
+	    return(EXIT_SUCCESS);
 	}
 
 	/*
@@ -5935,12 +6143,13 @@ try_again:
 	     *  WINDOW structures are already filled based on the old size.
 	     *  So we notify the ncurses library directly here. - kw
 	     */
-#if defined(HAVE_RESIZETERM)
+#if defined(NCURSES) && defined(HAVE_RESIZETERM)
 	    resizeterm(LYlines, LYcols);
+	    wresize(LYwin, LYlines, LYcols);
 #else
 	    stop_curses();
 	    start_curses();
-	    clear();
+	    LYclear();
 #endif
 	    refresh_screen = TRUE; /* to force a redraw */
 	    if (HTMainText)	/* to REALLY force it... - kw */
@@ -6190,12 +6399,12 @@ try_again:
 	if (refresh_screen) {
 #if defined(FANCY_CURSES) || defined (USE_SLANG)
 	    if (enable_scrollback) {
-		clear();
+		LYclear();
 	    } else {
-		erase();
+		LYerase();
 	    }
 #else
-	    clear();
+	    LYclear();
 #endif /* FANCY_CURSES || USE_SLANG */
 	   HText_pageDisplay(Newline, prev_target);
 
@@ -6300,7 +6509,7 @@ try_again:
 			HTUnEscape(temp_buff);
 		    }
 		    str_sjis(sjis_buff, temp_buff);
-		    set_ws_title(string_short(sjis_buff, 10));
+		    set_ws_title(LYElideString(sjis_buff, 10));
 		}
 	    }
 	} else {
@@ -6363,7 +6572,7 @@ try_again:
 		ccount = ccount + 1;
 		if ((cfp = LYNewTxtFile(cfile))  != NULL) {
 		    print_crawl_to_fd(cfp,curdoc.address,curdoc.title);
-		    fclose(cfp);
+		    LYCloseOutput(cfp);
 		} else {
 		    if (!dump_output_immediately)
 			cleanup();
@@ -6376,9 +6585,9 @@ try_again:
 			printf(
 			gettext("Fatal error - could not open output file %s\n"),cfile);
 		    if (!dump_output_immediately) {
-			exit_immediately(-1);
+			exit_immediately(EXIT_FAILURE);
 		    }
-		    return(-1);
+		    return(EXIT_FAILURE);
 		}
 	    }
 	} else {
@@ -6485,10 +6694,7 @@ try_again:
 		     *   Caveat emptor to anyone trying to change it.]
 		     */
 		    if ((links[curdoc.link].type       == WWW_FORM_LINK_TYPE &&
-			 links[curdoc.link].form->type == F_TEXTAREA_TYPE)
-/*			&&
-			 (peek_mouse_link() == -1) */
-			&&
+			 links[curdoc.link].form->type == F_TEXTAREA_TYPE) &&
 			((curdoc.link == nlinks-1 &&
 			  !(more && HText_TAHasMoreLines(curdoc.link, 1)))
 			 ||
@@ -6524,6 +6730,7 @@ try_again:
 #ifdef TEXTFIELDS_MAY_NEED_ACTIVATION
 			if (textfields_need_activation) {
 			    textinput_activated = TRUE;
+			    textfields_need_activation = textfields_activation_option;
 #ifdef INACTIVE_INPUT_STYLE_VH
 			    textinput_redrawn = TRUE;
 #endif
@@ -6546,19 +6753,6 @@ try_again:
 		    if (old_c != c && old_c != real_c && c != real_c)
 			real_c = c;
 		}
-#if 0
-#ifdef INACTIVE_INPUT_STYLE_VH
-	    } else if (curlink_is_editable && !textinput_redrawn) {
-		/*draw the text entry, but don't activate it*/
-		change_form_link_ex(&links[curdoc.link],
-				    &newdoc, &refresh_screen,
-				    links[curdoc.link].form->name,
-				    links[curdoc.link].form->value,
-				    use_last_tfpos, FALSE, TRUE);
-		c = DO_NOTHING;
-		textinput_redrawn = TRUE;
-#endif /* INACTIVE_INPUT_STYLE_VH */
-#endif
 	    } else {
 #if defined(TEXTFIELDS_MAY_NEED_ACTIVATION) && defined(INACTIVE_INPUT_STYLE_VH)
 		if (curlink_is_editable && !textinput_redrawn) {
@@ -6570,7 +6764,7 @@ try_again:
 				    links[curdoc.link].form->value,
 				    use_last_tfpos, FALSE, TRUE);
 		    if (LYShowCursor) {
-			move(links[curdoc.link].ly,
+			LYmove(links[curdoc.link].ly,
 			     ((links[curdoc.link].lx > 0) ?
 			      (links[curdoc.link].lx - 1) : 0));
 		    } else {
@@ -6585,6 +6779,10 @@ try_again:
 		 */
 		real_c = c = LYgetch(); /* get user input */
 
+		if (c != last_key)
+		    key_count = 0;
+		key_count++;
+		last_key = c;
 #ifndef VMS
 		if (c == 3) {		/* ^C */
 		    /*
@@ -6635,7 +6833,7 @@ new_keyboard_input:
 	 */
 	if (traversal) {
 	    if ((c = DoTraversal(c, &crawl_ok)) < 0)
-		return (-1);
+		return (EXIT_FAILURE);
 	} /* traversal */
 
 #ifdef WIN_EX
@@ -6664,6 +6862,9 @@ new_cmd:  /*
 	    follow_col = -1;
 
 	switch(cmd) {
+	case -1:
+	    HTUserMsg(COMMAND_UNKNOWN);
+	    break;
 	case 0: /* unmapped character */
 	default:
 	    if (curdoc.link >= 0 && curdoc.link < nlinks &&
@@ -6679,18 +6880,23 @@ new_cmd:  /*
 		} else
 #endif
 		    show_main_statusline(links[curdoc.link], FOR_INPUT);
-	    } else if (more)
+	    } else if (more) {
 		HTInfoMsg(MOREHELP);
-	    else
+	    } else {
 		HTInfoMsg(HELP);
+	    }
 	    show_help = TRUE;
 
 	    if (TRACE) {
 		sprintf(cfile, "%d", c);
-		addstr(cfile);	/* show the user input */
+		LYaddstr(cfile);	/* show the user input */
 		cfile[0] = '\0';
 	    }
 	    break;
+
+	case LYK_COMMAND:
+	    cmd = handle_LYK_COMMAND(user_input_buffer);
+	    goto new_cmd;
 
 	case LYK_INTERRUPT:
 	    /*
@@ -6750,19 +6956,13 @@ new_cmd:  /*
 	    handle_LYK_SWITCH_DTD();
 	    break;
 
-#ifdef NOT_DONE_YET
-	case LYK_PIPE:
-	    /* ignore for now */
-	    break;
-#endif /* NOT_DONE_YET */
-
 	case LYK_QUIT:		/* quit */
 	    if (handle_LYK_QUIT())
-		return(0);
+		return(EXIT_SUCCESS);
 	    break;
 
 	case LYK_ABORT:		/* don't ask the user about quitting */
-	    return(0);
+	    return(EXIT_SUCCESS);
 
 	case LYK_NEXT_PAGE:	/* next page */
 	    handle_LYK_NEXT_PAGE(&old_c, real_c);
@@ -6788,14 +6988,86 @@ new_cmd:  /*
 	    handle_LYK_DOWN_HALF(&old_c, real_c);
 	    break;
 
-#if defined(WIN_EX) && defined(SH_EX)	/*1997/12/22 (Mon) 09:28:56 */
+#ifdef CAN_CUT_AND_PASTE
 	case LYK_TO_CLIPBOARD:	/* ^S */
 	    {
-		if (put_clip(links[curdoc.link].lname) == 0) {
-		    HTInfoMsg("URL to Clip Board.");
-		} else {
+		char *s;
+		int c;
+
+		/* The logic resembles one of ADD_BOOKMARK */
+		if (nlinks > 0 && links[curdoc.link].lname
+		    && links[curdoc.link].type != WWW_FORM_LINK_TYPE) {
+		    /* Makes sense to copy a link */
+		    _statusline("Copy D)ocument's or L)ink's URL to clipboard or C)ancel?");
+		    c = LYgetch_single();
+		    if (c == 'D')
+			s = curdoc.address;
+		    else if (c == 'C')
+			break;
+		    else
+			s = links[curdoc.link].lname;
+		} else
+		    s = curdoc.address;
+		if (!s && !*s)
 		    HTInfoMsg("Current URL is empty.");
+		if (put_clip(s))
+		    HTInfoMsg("Copy to clipboard failed.");
+		else if (s == curdoc.address)
+		    HTInfoMsg("Document URL put to clipboard.");
+		else
+		    HTInfoMsg("Link URL put to clipboard.");
+	    }
+	    break;
+
+	case LYK_PASTE_URL:
+	    if (no_goto && !LYValidate) { /*  Go to not allowed. - FM */
+		HTUserMsg(GOTO_DISALLOWED);
+	    } else {
+		unsigned char *s = get_clip_grab(), *e, *t;
+		char *buf;
+		int len;
+
+		if (!s)
+		    break;
+		len = strlen(s);
+		e = s + len;
+		while (s < e && strchr(" \t\n\r", *s))
+		    s++;
+		while (s < e && strchr(" \t\n\r", e[-1]))
+		    e--;
+		if (s >= e) {
+		    HTInfoMsg("No URL in the clipboard.");
+		    break;
 		}
+		buf = (char*)malloc(e - s + 1);
+		strncpy(buf, s, e - s);
+		buf[e - s] = '\0';
+		t = buf;
+
+		while (s < e) {
+		    if (strchr(" \t\n\r", *s)) {
+			int nl = 0;	/* Keep whitespace without NL - file names! */
+			unsigned char *s1 = s;
+
+			while (strchr(" \t\n\r", *s)) {
+			    if (!nl && *s == '\n')
+				nl = 1;
+			    s++;
+			}
+			if (!nl) {
+			    while (s1 < s) {
+				if (*s1 != '\r' && *s1 != '\r')
+				    *t = *s1;
+				t++, s1++;
+			    }
+			}
+		    } else
+			*t++ = *s++;
+		}
+		*t = '\0';
+		get_clip_release();
+		do_check_goto_URL(buf, &temp, &force_load);
+		free(buf);
 	    }
 	    break;
 #endif
@@ -6817,9 +7089,9 @@ new_cmd:  /*
 		    break;
 		}
 	    }
-	    move(0, 0);
+	    LYmove(0, 0);
 	    lynx_start_title_color ();
-	    addstr(str_kcode(last_kcode));
+	    LYaddstr(str_kcode(last_kcode));
 	    lynx_stop_title_color ();
 
 	    break;
@@ -6840,9 +7112,10 @@ new_cmd:  /*
 	    break;
 
 	case LYK_END:
-	    if (more) {
-	       Newline = HText_getNumOfLines() - display_lines + 3;  /* go to end of file */
-	       arrowup = TRUE;	 /* position on last link */
+	    i = HText_getNumOfLines() - display_lines + 2;
+	    if (i >= 1 && Newline != i) {
+		Newline = i;		/* go to end of file */
+		arrowup = TRUE;		/* position on last link */
 	    } else {
 		cmd = LYK_NEXT_PAGE;
 		goto new_cmd;
@@ -6913,10 +7186,14 @@ new_cmd:  /*
 	case LYK_PREV_DOC:	/* back up a level */
 	    switch (handle_PREV_DOC(&cmd, &old_c, real_c)) {
 	    case 1:
-		return(0);
+		return(EXIT_SUCCESS);
 	    case 2:
 		goto new_cmd;
 	    }
+	    break;
+
+	case LYK_NEXT_DOC:	/* undo back up a level */
+	    handle_NEXT_DOC();
 	    break;
 
 	case LYK_NOCACHE: /* Force submission of form or link with no-cache */
@@ -6972,6 +7249,12 @@ new_cmd:  /*
 	    handle_LYK_MAIN_MENU(&old_c, real_c);
 	    break;
 
+#ifdef EXP_NESTED_TABLES
+	case LYK_NESTED_TABLES:
+	    if (handle_LYK_NESTED_TABLES(&cmd))
+		goto new_cmd;
+	    break;
+#endif
 	case LYK_OPTIONS:	/* options screen */
 	    if (handle_LYK_OPTIONS(&cmd, &refresh_screen))
 		goto new_cmd;
@@ -6983,6 +7266,7 @@ new_cmd:  /*
 
 	case LYK_WHEREIS:	/* search within the document */
 	case LYK_NEXT:		/* find the next occurrence in the document */
+	case LYK_PREV:		/* find the previous occurrence in the document */
 	    handle_LYK_WHEREIS(cmd, &refresh_screen);
 	    break;
 
@@ -7082,8 +7366,11 @@ new_cmd:  /*
 #endif /* DIRED_SUPPORT || VMS*/
 
 #ifdef USE_EXTERNALS
-	case LYK_EXTERN:	/* use external program on url */
-	    handle_LYK_EXTERN(&refresh_screen);
+	case LYK_EXTERN_LINK:	/* use external program on url */
+	    handle_LYK_EXTERN_LINK(&refresh_screen);
+	    break;
+	case LYK_EXTERN_PAGE:	/* use external program on current page */
+	    handle_LYK_EXTERN_PAGE(&refresh_screen);
 	    break;
 #endif /* USE_EXTERNALS */
 
@@ -7166,7 +7453,23 @@ new_cmd:  /*
 
 	case LYK_DO_NOTHING:	/* pretty self explanatory */
 	    break;
-
+#ifdef SUPPORT_CHDIR
+	case LYK_CHDIR:
+	    handle_LYK_CHDIR();
+	    break;
+#endif
+#ifdef USE_CURSES_PADS
+	case LYK_SHIFT_LEFT:
+	    handle_LYK_SHIFT_LEFT(&refresh_screen, key_count);
+	    break;
+	case LYK_SHIFT_RIGHT:
+	    handle_LYK_SHIFT_RIGHT(&refresh_screen, key_count);
+	    break;
+	case LYK_LINEWRAP_TOGGLE:
+	    if (handle_LYK_LINEWRAP_TOGGLE(&cmd, &refresh_screen))
+		goto new_cmd;
+	    break;
+#endif
 	} /* end of BIG switch */
     }
 }
@@ -7417,9 +7720,9 @@ PRIVATE void show_main_statusline ARGS2(
 	 */
 	if (is_www_index) {
 	    char *indx = gettext("-index-");
-	    move(LYlines-1, LYcols - strlen(indx) - 1);
+	    LYmove(LYlines-1, LYcols - strlen(indx) - 1);
 	    start_reverse();
-	    addstr(indx);
+	    LYaddstr(indx);
 	    stop_reverse();
 	}
 
@@ -7455,14 +7758,6 @@ PRIVATE void show_main_statusline ARGS2(
 	_statusline(HELP);
     }
 
-#if 0	/* messages now produced in show_formlink_statusline - kw */
-#ifdef INACTIVE_INPUT_STYLE_VH
-    if (textinput_redrawn) {
-	_statusline(gettext("Inactive text input, activate to edit (e.g., press ENTER)"));
-    }
-#endif
-#endif
-
     /* turn off cursor since now it's probably on statusline -HV */
     /* But not if LYShowCursor is on.  -show_cursor may be used as a
      * workaround to avoid putting the cursor in the last position, for
@@ -7488,17 +7783,17 @@ PUBLIC void repaint_main_statusline ARGS1(
 PRIVATE void form_noviceline ARGS1(
     int,	disabled)
 {
-    move(LYlines-2,0); clrtoeol();
+    LYmove(LYlines-2,0); LYclrtoeol();
     if (!disabled) {
-	addstr(FORM_NOVICELINE_ONE);
+	LYaddstr(FORM_NOVICELINE_ONE);
     }
-    move(LYlines-1,0); clrtoeol();
+    LYmove(LYlines-1,0); LYclrtoeol();
     if (disabled)
 	return;
     if (EditBinding(FROMASCII('\025')) == LYE_ERASE) {
-	addstr(FORM_NOVICELINE_TWO);
+	LYaddstr(FORM_NOVICELINE_TWO);
     } else if (EditBinding(FROMASCII('\025')) == LYE_DELBL) {
-	addstr(FORM_NOVICELINE_TWO_DELBL);
+	LYaddstr(FORM_NOVICELINE_TWO_DELBL);
     } else {
 	char *temp = NULL;
 	char *erasekey = fmt_keys(LYKeyForEditAction(LYE_ERASE), -1);
@@ -7511,7 +7806,7 @@ PRIVATE void form_noviceline ARGS1(
 			   FORM_NOVICELINE_TWO_DELBL_VAR, erasekey);
 	}
 	if (temp) {
-	    addstr(temp);
+	    LYaddstr(temp);
 	    FREE(temp);
 	}
 	FREE(erasekey);
@@ -7570,9 +7865,9 @@ PRIVATE void exit_immediately_with_error_message ARGS2(
     FREE(buf);
 
     if (!dump_output_immediately) {
-	exit_immediately(-1);
+	exit_immediately(EXIT_FAILURE);
     }
-    /* else: return(-1) in mainloop */
+    /* else: return(EXIT_FAILURE) in mainloop */
 }
 
 

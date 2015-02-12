@@ -1,16 +1,18 @@
 #ifndef LYKEYMAP_H
 #define LYKEYMAP_H
 
-#ifndef HTUTILS_H
 #include <HTUtils.h>
-#endif
+#include <HTList.h>
+#include <LYCurses.h>
 
 extern BOOLEAN LYisNonAlnumKeyname PARAMS((int ch, int KeyName));
+extern HTList *LYcommandList NOPARAMS;
+extern char *LYKeycodeToString PARAMS((int c, BOOLEAN upper8));
+extern char *fmt_keys PARAMS((int lkc_first, int lkc_second));
 extern char *key_for_func PARAMS((int func));
 extern char *key_for_func_ext PARAMS((int lac, int context_code));
-extern char *fmt_keys PARAMS((int lkc_first, int lkc_second));
 extern int LYReverseKeymap PARAMS((int KeyName));
-extern int lookup_keymap PARAMS((int code));
+extern int LYStringToKeycode PARAMS((char *src));
 extern int lacname_to_lac PARAMS((CONST char *func));
 extern int lecname_to_lec PARAMS((CONST char *func));
 extern int lkcstring_to_lkc PARAMS((CONST char *src));
@@ -66,14 +68,6 @@ extern LYKeymap_t key_override[];
 				/* mask for lynxactioncode - must cover all
 				   assigned LYK_* values */
 
-
-#if 0
-/*  Substitute a single actioncode given a double one - NOT USED */
-#define LKC2_TO_LKC(c,n)   (((c) == -1 || !((c) & LKC_ISLECLAC)) ? (c) : \
-			    ((n) == 1) ? (((c) & LAC_MASK) | LKC_ISLAC) : \
-			    (((((c)&~LKC_ISLECLAC)>>LAC_SHIFT) & LAC_MASK) | LKC_ISLECLAC))
-#endif /* 0 */
-
 /*  Return lkc masking single actioncode, given an lkc masking a lac + lec */
 #define LKC2_TO_LKC(c)   (((c) == -1 || !((c) & LKC_ISLECLAC)) ? (c) : \
 			    (((c) & LAC_MASK) | LKC_ISLAC))
@@ -109,10 +103,13 @@ extern LYKeymap_t key_override[];
 /*  Variables for holding and passing around lynxactioncodes are
  *  generally of type int, the types LYKeymap_t and LYKeymapCodes
  *  are currently only used for the definitions.  That could change. - kw
+ *
+ *  The values in this enum are indexed against the command names in the
+ *  'revmap[]' array in LYKeymap.c
  */
-/* The order of this enum must match the 'revmap[]' array in LYKeymap.c */
 typedef enum {
     LYK_UNKNOWN=0
+  , LYK_COMMAND
   , LYK_1
   , LYK_2
   , LYK_3
@@ -124,7 +121,6 @@ typedef enum {
   , LYK_9
   , LYK_SOURCE
   , LYK_RELOAD
-  , LYK_PIPE
   , LYK_QUIT
   , LYK_ABORT
   , LYK_NEXT_PAGE
@@ -150,6 +146,7 @@ typedef enum {
   , LYK_LEFT_LINK
   , LYK_HISTORY
   , LYK_PREV_DOC
+  , LYK_NEXT_DOC
   , LYK_ACTIVATE
   , LYK_SUBMIT	/* mostly like LYK_ACTIVATE, for mouse use, don't map */
   , LYK_GOTO
@@ -163,6 +160,7 @@ typedef enum {
   , LYK_OPTIONS
   , LYK_INDEX_SEARCH
   , LYK_WHEREIS
+  , LYK_PREV
   , LYK_NEXT
   , LYK_COMMENT
   , LYK_EDIT
@@ -207,9 +205,11 @@ typedef enum {
 #endif
 
 #ifdef USE_EXTERNALS
-  , LYK_EXTERN
+  , LYK_EXTERN_LINK
+  , LYK_EXTERN_PAGE
 #else
-#define LYK_EXTERN        LYK_UNKNOWN
+#define LYK_EXTERN_LINK   LYK_UNKNOWN
+#define LYK_EXTERN_PAGE   LYK_UNKNOWN
 #endif /* !defined(USE_EXTERNALS) */
 
 #if defined(VMS) || defined(DIRED_SUPPORT)
@@ -231,12 +231,52 @@ typedef enum {
 
 #ifdef SH_EX
   , LYK_CHG_CENTER
-  , LYK_TO_CLIPBOARD
 #endif /* SH_EX */
+
 #ifdef KANJI_CODE_OVERRIDE
   , LYK_CHG_KCODE
 #endif
+
+#ifdef SUPPORT_CHDIR
+  , LYK_CHDIR
+#endif
+
+#ifdef USE_CURSES_PADS
+  , LYK_SHIFT_LEFT
+  , LYK_SHIFT_RIGHT
+  , LYK_LINEWRAP_TOGGLE
+#else
+#define LYK_SHIFT_LEFT      LYK_UNKNOWN
+#define LYK_SHIFT_RIGHT     LYK_UNKNOWN
+#define LYK_LINEWRAP_TOGGLE LYK_UNKNOWN
+#endif
+
+#ifdef CAN_CUT_AND_PASTE
+  , LYK_PASTE_URL
+  , LYK_TO_CLIPBOARD
+#else
+#define LYK_PASTE_URL      LYK_UNKNOWN
+#define LYK_TO_CLIPBOARD   LYK_UNKNOWN
+#endif
+
+#ifdef EXP_NESTED_TABLES
+  , LYK_NESTED_TABLES
+#else
+#define LYK_NESTED_TABLES  LYK_UNKNOWN
+#endif
+
 } LYKeymapCode;
 
+/*
+ * Symbol table for internal commands.
+ */
+typedef struct {
+	LYKeymapCode code;
+	CONST char *name;
+	CONST char *doc;
+} Kcmd;
+
+extern Kcmd * LYKeycodeToKcmd PARAMS((LYKeymapCode code));
+extern Kcmd * LYStringToKcmd PARAMS((CONST char * name));
 
 #endif /* LYKEYMAP_H */

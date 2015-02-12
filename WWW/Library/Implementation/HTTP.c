@@ -1,4 +1,4 @@
-/*	HyperText Tranfer Protocol	- Client implementation 	HTTP.c
+/*	HyperText Tranfer Protocol	- Client implementation		HTTP.c
 **	==========================
 ** Modified:
 ** 27 Jan 1994	PDM  Added Ari Luotonen's Fix for Reload when using proxy
@@ -12,6 +12,10 @@
 #endif /* __DJGPP__ */
 #include <HTTP.h>
 #include <LYUtils.h>
+
+#ifdef USE_SSL
+#include <HTNews.h>
+#endif
 
 #define HTTP_VERSION	"HTTP/1.0"
 
@@ -67,9 +71,85 @@ extern char *http_error_file;	 /* Store HTTP status code in this file */
 extern BOOL traversal;		 /* TRUE if we are doing a traversal */
 extern BOOL dump_output_immediately;  /* TRUE if no interactive user */
 
+#ifdef USE_SSL
+PUBLIC SSL_CTX * ssl_ctx = NULL;	/* SSL ctx */
+
+PRIVATE void free_ssl_ctx NOARGS
+{
+    if (ssl_ctx != NULL)
+	SSL_CTX_free(ssl_ctx);
+}
+
+PUBLIC SSL * HTGetSSLHandle NOARGS
+{
+    if (ssl_ctx == NULL) {
+	/*
+	 *  First time only.
+	 */
+#if SSLEAY_VERSION_NUMBER < 0x0800
+	ssl_ctx = SSL_CTX_new();
+	X509_set_default_verify_paths(ssl_ctx->cert);
+#else
+	SSLeay_add_ssl_algorithms();
+	ssl_ctx = SSL_CTX_new(SSLv23_client_method());
+	SSL_CTX_set_options(ssl_ctx, SSL_OP_ALL);
+	SSL_CTX_set_default_verify_paths(ssl_ctx);
+#endif /* SSLEAY_VERSION_NUMBER < 0x0800 */
+	atexit(free_ssl_ctx);
+    }
+    return(SSL_new(ssl_ctx));
+}
+
+PUBLIC void HTSSLInitPRNG NOARGS
+{
+#if SSLEAY_VERSION_NUMBER >= 0x00905100
+    if (RAND_status() == 0) {
+	char rand_file[256];
+	time_t t;
+	pid_t pid;
+	long l,seed;
+
+	t = time(NULL);
+	pid = getpid();
+	RAND_file_name(rand_file, 256);
+	CTRACE((tfp,"HTTP: Seeding PRNG\n"));
+	if(rand_file != NULL) {
+	    /* Seed as much as 1024 bytes from RAND_file_name */
+	    RAND_load_file(rand_file, 1024);
+	}
+	/* Seed in time (mod_ssl does this) */
+	RAND_seed((unsigned char *)&t, sizeof(time_t));
+	/* Seed in pid (mod_ssl does this) */
+	RAND_seed((unsigned char *)&pid, sizeof(pid_t));
+	/* Initialize system's random number generator */
+	RAND_bytes((unsigned char *)&seed, sizeof(long));
+	lynx_srand(seed);
+	while (RAND_status() == 0) {
+	    /* Repeatedly seed the PRNG using the system's random number generator until it has been seeded with enough data */
+	    l = lynx_rand();
+	    RAND_seed((unsigned char *)&l, sizeof(long));
+	}
+	if (rand_file != NULL) {
+	    /* Write a rand_file */
+	    RAND_write_file(rand_file);
+	}
+    }
+#endif /* SSLEAY_VERSION_NUMBER >= 0x00905100 */
+    return;
+}
+
+#define HTTP_NETREAD(sock, buff, size, handle) \
+	(handle ? SSL_read(handle, buff, size) : NETREAD(sock, buff, size))
+#define HTTP_NETWRITE(sock, buff, size, handle) \
+	(handle ? SSL_write(handle, buff, size) : NETWRITE(sock, buff, size))
+#define HTTP_NETCLOSE(sock, handle)  \
+	{ (void)NETCLOSE(sock); if (handle) SSL_free(handle); handle = NULL; }
+
+#else
 #define HTTP_NETREAD(a, b, c, d)   NETREAD(a, b, c)
 #define HTTP_NETWRITE(a, b, c, d)  NETWRITE(a, b, c)
 #define HTTP_NETCLOSE(a, b)  (void)NETCLOSE(a)
+#endif /* USE_SSL */
 
 #ifdef _WINDOWS		/* 1997/11/06 (Thu) 13:00:08 */
 
@@ -270,16 +350,16 @@ PRIVATE int HTLoadHTTP ARGS4 (
 {
   int s;			/* Socket number for returned data */
   CONST char *url = arg;	/* The URL which get_physical() returned */
-  char *command = NULL; 	/* The whole command */
+  char *command = NULL;		/* The whole command */
   char *eol;			/* End of line if found */
   char *start_of_data;		/* Start of body of reply */
   int status;			/* tcp return */
   int bytes_already_read;
-  char crlf[3]; 		/* A CR LF equivalent string */
+  char crlf[3];			/* A CR LF equivalent string */
   HTStream *target;		/* Unconverted data */
   HTFormat format_in;		/* Format arriving in the message */
-  BOOL do_head = FALSE; 	/* Whether or not we should do a head */
-  BOOL do_post = FALSE; 	/* ARE WE posting ? */
+  BOOL do_head = FALSE;		/* Whether or not we should do a head */
+  BOOL do_post = FALSE;		/* ARE WE posting ? */
   char *METHOD;
 
   BOOL had_header;		/* Have we had at least one header? */
@@ -292,14 +372,26 @@ PRIVATE int HTLoadHTTP ARGS4 (
   BOOL first_Accept = TRUE;
   BOOL show_401 = FALSE;
   BOOL show_407 = FALSE;
-  BOOL auth_proxy = NO; 	/* Generate a proxy authorization. - AJL */
+  BOOL auth_proxy = NO;		/* Generate a proxy authorization. - AJL */
 
   int length, rawlength, rv;
   int server_status;
   BOOL doing_redirect, already_retrying = FALSE;
   int len = 0;
 
+#ifdef USE_SSL
+  BOOL do_connect = FALSE;	/* ARE WE going to use a proxy tunnel ? */
+  BOOL did_connect = FALSE;	/* ARE WE actually using a proxy tunnel ? */
+  CONST char *connect_url = NULL; /* The URL being proxied */
+  char *connect_host = NULL;	/* The host being proxied */
+  SSL * handle = NULL;		/* The SSL handle */
+  char SSLprogress[256];	/* progress bar message */
+#if SSLEAY_VERSION_NUMBER >= 0x0900
+  BOOL try_tls = TRUE;
+#endif /* SSLEAY_VERSION_NUMBER >= 0x0900 */
+#else
   void * handle = NULL;
+#endif /* USE_SSL */
 
   if (anAnchor->isHEAD)
       do_head = TRUE;
@@ -316,6 +408,30 @@ PRIVATE int HTLoadHTTP ARGS4 (
       _HTProgress (BAD_REQUEST);
       goto done;
   }
+
+#ifdef USE_SSL
+  if (using_proxy && !strncmp(url, "http://", 7)) {
+      if ((connect_url = strstr((url+7), "https://"))) {
+	  do_connect = TRUE;
+	  connect_host = HTParse(connect_url, "https", PARSE_HOST);
+	  if (!strchr(connect_host, ':')) {
+	      sprintf(temp, ":%d", HTTPS_PORT);
+	      StrAllocCat(connect_host, temp);
+	  }
+	  CTRACE((tfp, "HTTP: connect_url = '%s'\n", connect_url));
+	  CTRACE((tfp, "HTTP: connect_host = '%s'\n", connect_host));
+      } else if ((connect_url = strstr((url+7), "snews://"))) {
+	  do_connect = TRUE;
+	  connect_host = HTParse(connect_url, "snews", PARSE_HOST);
+	  if (!strchr(connect_host, ':')) {
+	      sprintf(temp, ":%d", SNEWS_PORT);
+	      StrAllocCat(connect_host, temp);
+	  }
+	  CTRACE((tfp, "HTTP: connect_url = '%s'\n", connect_url));
+	  CTRACE((tfp, "HTTP: connect_host = '%s'\n", connect_host));
+      }
+  }
+#endif /* USE_SSL */
 
   sprintf(crlf, "%c%c", CR, LF);
 
@@ -339,6 +455,12 @@ try_again:
   line_buffer = NULL;
   line_kept_clean = NULL;
 
+#ifdef USE_SSL
+  if (!strncmp(url, "https", 5))
+    status = HTDoConnect (url, "HTTPS", HTTPS_PORT, &s);
+  else
+    status = HTDoConnect (url, "HTTP", HTTP_PORT, &s);
+#else
   if (!strncmp(url, "https", 5))
     {
       HTAlert(gettext("This client does not contain support for HTTPS URLs."));
@@ -346,6 +468,7 @@ try_again:
       goto done;
     }
   status = HTDoConnect (arg, "HTTP", HTTP_PORT, &s);
+#endif /* USE_SSL */
   if (status == HT_INTERRUPTED) {
       /*
       **  Interrupt cleanly.
@@ -375,12 +498,91 @@ try_again:
  * This is a nice long function as well.  *sigh*  -RJP
  */
 
+#ifdef USE_SSL
+use_tunnel:
+  /*
+  ** If this is an https document
+  ** then do the SSL stuff here
+  */
+  if (did_connect || !strncmp(url, "https", 5)) {
+      handle = HTGetSSLHandle();
+      SSL_set_fd(handle, s);
+#if SSLEAY_VERSION_NUMBER >= 0x0900
+      if (!try_tls)
+	  handle->options|=SSL_OP_NO_TLSv1;
+#endif /* SSLEAY_VERSION_NUMBER >= 0x0900 */
+      HTSSLInitPRNG();
+      status = SSL_connect(handle);
+
+      if (status <= 0) {
+#if SSLEAY_VERSION_NUMBER >= 0x0900
+	  if (try_tls) {
+	      CTRACE((tfp, "HTTP: Retrying connection without TLS\n"));
+	      _HTProgress("Retrying connection.");
+	      try_tls = FALSE;
+	      if (did_connect)
+		  HTTP_NETCLOSE(s, handle);
+	      goto try_again;
+	  } else {
+	      unsigned long SSLerror;
+	      CTRACE((tfp,
+"HTTP: Unable to complete SSL handshake for '%s', SSL_connect=%d, SSL error stack dump follows\n",
+				url, status));
+	      SSL_load_error_strings();
+	      while((SSLerror=ERR_get_error())!=0) {
+		  CTRACE((tfp,"HTTP: SSL: %s\n",ERR_error_string(SSLerror,NULL)));
+	      }
+	      HTAlert("Unable to make secure connection to remote host.");
+	      if (did_connect)
+		  HTTP_NETCLOSE(s, handle);
+	      status = HT_NOT_LOADED;
+	      goto done;
+	  }
+#else
+	  unsigned long SSLerror;
+	  CTRACE((tfp,
+"HTTP: Unable to complete SSL handshake for '%s', SSL_connect=%d, SSL error stack dump follows\n",
+				url, status));
+	  SSL_load_error_strings();
+	  while((SSLerror=ERR_get_error())!=0) {
+	      CTRACE((tfp,"HTTP: SSL: %s\n",ERR_error_string(SSLerror,NULL)));
+	  }
+	  HTAlert("Unable to make secure connection to remote host.");
+	  if (did_connect)
+	      HTTP_NETCLOSE(s, handle);
+	  status = HT_NOT_LOADED;
+	  goto done;
+#endif /* SSLEAY_VERSION_NUMBER >= 0x0900 */
+      }
+      sprintf(SSLprogress,"Secure %d-bit %s (%s) HTTP connection",SSL_get_cipher_bits(handle,NULL),SSL_get_cipher_version(handle),SSL_get_cipher(handle));
+      _HTProgress(SSLprogress);
+
+#ifdef NOTDEFINED
+      if (strcmp(HTParse(url, "", PARSE_HOST),
+		 strstr(X509_NAME_oneline(
+			X509_get_subject_name(
+				handle->session->peer)),"/CN=")+4)) {
+	  HTAlert("Certificate is for different host name");
+	  HTAlert(strstr(X509_NAME_oneline(
+			 X509_get_subject_name(
+				handle->session->peer)),"/CN=")+4);
+      }
+#endif /* NOTDEFINED */
+  }
+#endif /* USE_SSL */
+
   /*	Ask that node for the document,
   **	omitting the host name & anchor
   */
   {
     char * p1 = (HTParse(url, "", PARSE_PATH|PARSE_PUNCTUATION));
 
+#ifdef USE_SSL
+    if (do_connect) {
+	METHOD = "CONNECT";
+	StrAllocCopy(command, "CONNECT ");
+    } else
+#endif /* USE_SSL */
     if (do_post) {
 	METHOD = "POST";
 	StrAllocCopy(command, "POST ");
@@ -397,8 +599,17 @@ try_again:
     **	of say: /gopher://a;lkdjfl;ajdf;lkj/;aldk/adflj
     **	so that just gopher://.... is sent.
     */
+#ifdef USE_SSL
+    if (using_proxy && !did_connect) {
+	if (do_connect)
+	    StrAllocCat(command, connect_host);
+	else
+	    StrAllocCat(command, p1+1);
+    }
+#else
     if (using_proxy)
 	StrAllocCat(command, p1+1);
+#endif /* USE_SSL */
     else
 	StrAllocCat(command, p1);
     FREE(p1);
@@ -428,39 +639,34 @@ try_again:
       for (i = 0; i < n; i++) {
 	  HTPresentation *pres =
 			(HTPresentation *)HTList_objectAt(HTPresentations, i);
-	  if (pres->rep_out == WWW_PRESENT) {
-	      if (pres->rep != WWW_SOURCE &&
-		  strcasecomp(HTAtom_name(pres->rep), "www/mime") &&
-		  strcasecomp(HTAtom_name(pres->rep), "www/compressed") &&
-		  pres->quality <= 1.0 && pres->quality >= 0.0) {
-		  if (pres->quality < 1.0) {
-		      if (pres->maxbytes > 0) {
-			  sprintf(temp, ";q=%4.3f;mxb=%ld",
-					pres->quality, pres->maxbytes);
-		      } else {
-			  sprintf(temp, ";q=%4.3f", pres->quality);
-		      }
-		  } else if (pres->maxbytes > 0) {
-		      sprintf(temp, ";mxb=%ld", pres->maxbytes);
+	  if (pres->get_accept) {
+	      if (pres->quality < 1.0) {
+		  if (pres->maxbytes > 0) {
+		      sprintf(temp, ";q=%4.3f;mxb=%ld",
+				    pres->quality, pres->maxbytes);
 		  } else {
-		      temp[0] = '\0';
+		      sprintf(temp, ";q=%4.3f", pres->quality);
 		  }
-		  HTSprintf0(&linebuf, "%s%s%s",
-				(first_Accept ?
-				   "Accept: " : ", "),
+	      } else if (pres->maxbytes > 0) {
+		  sprintf(temp, ";mxb=%ld", pres->maxbytes);
+	      } else {
+		  temp[0] = '\0';
+	      }
+	      HTSprintf0(&linebuf, "%s%s%s",
+			    (first_Accept ?
+			       "Accept: " : ", "),
+			    HTAtom_name(pres->rep),
+			    temp);
+	      len += strlen(linebuf);
+	      if (len > 252 && !first_Accept) {
+		  StrAllocCat(command, crlf);
+		  HTSprintf0(&linebuf, "Accept: %s%s",
 				HTAtom_name(pres->rep),
 				temp);
-		  len += strlen(linebuf);
-		  if (len > 252 && !first_Accept) {
-		      StrAllocCat(command, crlf);
-		      HTSprintf0(&linebuf, "Accept: %s%s",
-				    HTAtom_name(pres->rep),
-				    temp);
-		      len = strlen(linebuf);
-		  }
-		  StrAllocCat(command, linebuf);
-		  first_Accept = FALSE;
+		  len = strlen(linebuf);
 	      }
+	      StrAllocCat(command, linebuf);
+	      first_Accept = FALSE;
 	  }
       }
       HTSprintf(&command, "%s*/*;q=0.01%c%c",
@@ -638,6 +844,10 @@ try_again:
 		} else {
 		    if (traversal || dump_output_immediately)
 			HTAlert(FAILED_NEED_PASSWD);
+#ifdef USE_SSL
+		    if (did_connect)
+			HTTP_NETCLOSE(s, handle);
+#endif /* USE_SSL */
 		    FREE(command);
 		    FREE(hostname);
 		    FREE(docname);
@@ -752,7 +962,11 @@ try_again:
       auth_proxy = NO;
   }
 
-    if (do_post) {
+    if (
+#ifdef USE_SSL
+	!do_connect &&
+#endif /* USE_SSL */
+	do_post) {
 	CTRACE((tfp, "HTTP: Doing post, content-type '%s'\n",
 		     anAnchor->post_content_type ? anAnchor->post_content_type
 						 : "lose"));
@@ -776,11 +990,17 @@ try_again:
 	StrAllocCat(command, anAnchor->post_data);
     }
     else
-        StrAllocCat(command, crlf);	/* Blank line means "end" of headers */
+	StrAllocCat(command, crlf);	/* Blank line means "end" of headers */
 
+#ifdef USE_SSL
+  CTRACE((tfp, "Writing:\n%s%s----------------------------------\n",
+	       command,
+	       (anAnchor->post_data && !do_connect ? crlf : "")));
+#else
   CTRACE((tfp, "Writing:\n%s%s----------------------------------\n",
 	       command,
 	       (anAnchor->post_data ? crlf : "")));
+#endif /* USE_SSL */
 
   _HTProgress (gettext("Sending HTTP request."));
 
@@ -832,7 +1052,7 @@ try_again:
     BOOL end_of_file = NO;
     int buffer_length = INIT_LINE_SIZE;
 
-    line_buffer = (char *)calloc(1, (buffer_length * sizeof(char)));
+    line_buffer = typecallocn(char, buffer_length);
     if (line_buffer == NULL)
 	outofmem(__FILE__, "HTLoadHTTP");
 
@@ -990,13 +1210,13 @@ try_again:
     if (http_error_file) {     /* Make the status code externally available */
 	FILE *error_file;
 #ifdef SERVER_STATUS_ONLY
-	error_file = fopen(http_error_file, "w");
+	error_file = fopen(http_error_file, TXT_W);
 	if (error_file) {		/* Managed to open the file */
 	    fprintf(error_file, "error=%d\n", server_status);
 	    fclose(error_file);
 	}
 #else
-	error_file = fopen(http_error_file, "a");
+	error_file = fopen(http_error_file, TXT_A);
 	if (error_file) {		/* Managed to open the file */
 	    fprintf(error_file, "   URL=%s (%s)\n", url, METHOD);
 	    fprintf(error_file, "STATUS=%s\n", line_buffer);
@@ -1143,6 +1363,35 @@ try_again:
 		 *  > 206 is unknown.
 		 *  All should return something to display.
 		 */
+#if defined(USE_SSL) && !defined(DISABLE_NEWS)
+		if (do_connect) {
+		    CTRACE((tfp, "HTTP: Proxy tunnel to '%s' established.\n",
+				connect_host));
+		    do_connect = FALSE;
+		    url = connect_url;
+		    FREE(line_buffer);
+		    FREE(line_kept_clean);
+		    if (!strncmp(connect_url, "snews", 5)) {
+			CTRACE((tfp,
+			"      Will attempt handshake and snews connection.\n"));
+			status = HTNewsProxyConnect(s, url, anAnchor,
+						    format_out, sink);
+			goto done;
+		    }
+		    did_connect = TRUE;
+		    already_retrying = TRUE;
+		    eol = 0;
+		    bytes_already_read = 0;
+		    had_header = NO;
+		    length = 0;
+		    doing_redirect = FALSE;
+		    permanent_redirection = FALSE;
+		    target = NULL;
+		    CTRACE((tfp,
+			"      Will attempt handshake and resubmit headers.\n"));
+		    goto use_tunnel;
+		}
+#endif /* USE_SSL */
 		HTProgress(line_buffer);
 	    } /* case 2 switch */
 	    break;
@@ -1337,6 +1586,13 @@ try_again:
 			gettext("Retrying with access authorization information."));
 		    FREE(line_buffer);
 		    FREE(line_kept_clean);
+#ifdef USE_SSL
+		    if (using_proxy && !strncmp(url, "https://", 8)) {
+			url = arg;
+			do_connect = TRUE;
+			did_connect = FALSE;
+		    }
+#endif /* USE_SSL */
 		    goto try_again;
 		} else if (!(traversal || dump_output_immediately) &&
 			   HTConfirm(gettext("Show the 401 message body?"))) {
@@ -1771,6 +2027,15 @@ done:
   do_head = FALSE;
   do_post = FALSE;
   reloading = FALSE;
+#ifdef USE_SSL
+  do_connect = FALSE;
+  did_connect = FALSE;
+  FREE(connect_host);
+  if (handle) {
+    SSL_free(handle);
+    handle = NULL;
+  }
+#endif /* USE_SSL */
   return status;
 }
 

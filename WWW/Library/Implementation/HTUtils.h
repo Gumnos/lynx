@@ -17,7 +17,7 @@
 #include <sys/types.h>
 #include <stdio.h>
 
-#else
+#else  /* HAVE_CONFIG_H */
 
 #ifdef DJGPP
 #include <sys/config.h>	/* pseudo-autoconf values for DJGPP libc/headers */
@@ -46,6 +46,10 @@
 #define ANSI_VARARGS 1
 #undef HAVE_STDARG_H
 #define HAVE_STDARG_H 1
+#endif
+
+#if defined(VMS) || defined(_WINDOWS)
+#define HAVE_STDLIB_H 1
 #endif
 
 /* Accommodate non-autoconf'd Makefile's (VMS, DJGPP, etc) */
@@ -98,6 +102,22 @@
 
 #endif /* HAVE_CONFIG_H */
 
+#ifndef lynx_srand
+#define lynx_srand srand
+#endif
+
+#ifndef lynx_rand
+#define lynx_rand rand
+#endif
+
+#if '0' != 48
+#define NOT_ASCII
+#endif
+
+#if '0' == 240
+#define EBCDIC
+#endif
+
 #ifndef LY_MAXPATH
 #define LY_MAXPATH 256
 #endif
@@ -142,32 +162,17 @@ typedef unsigned short mode_t;
 
 #endif /* _WINDOWS */
 
-#ifdef __EMX__
-#include <unistd.h> /* should be re-include protected under EMX */
-#include <stdlib.h> /* should be re-include protected under EMX */
-#define getcwd _getcwd2
-#define chdir _chdir2
-
-#endif
-
 #ifndef USE_COLOR_STYLE
     /* it's useless for such setup */
 #  define NO_EMPTY_HREFLESS_A
 #endif
 
-/*
+#if  defined(__EMX__) || defined(WIN_EX)
+#  define CAN_CUT_AND_PASTE
+#endif
 
-Debug message control.
-
- */
-
-#ifdef NO_LYNX_TRACE
-#define TRACE 0
-#define PROGRESS(str) /* nothing for now */
-#else
-#define TRACE (WWW_TraceFlag)
-#define PROGRESS(str) printf(str)
-        extern int WWW_TraceFlag;
+#if defined(USE_SLANG) || (defined(USE_COLOR_STYLE) && defined(__EMX__))
+#  define USE_BLINK
 #endif
 
 /*
@@ -186,9 +191,23 @@ typedef void * HTError;                 /* Unused at present -- best definition?
 Standard C library for malloc() etc
 
  */
-#ifdef DGUX
+#ifdef HAVE_STDLIB_H
 #include <stdlib.h>
-#endif /* DGUX */
+#endif
+
+#ifndef EXIT_SUCCESS
+#define EXIT_SUCCESS 0
+#endif
+
+#ifndef EXIT_FAILURE
+#define EXIT_FAILURE 1
+#endif
+
+#ifdef __EMX__
+#include <unistd.h> /* should be re-include protected under EMX */
+#define getcwd _getcwd2
+#define chdir _chdir2
+#endif
 
 #ifdef vax
 #ifdef unix
@@ -202,22 +221,15 @@ Standard C library for malloc() etc
 #ifdef NeXT
 #include <libc.h>       /* NeXT */
 #endif /* NeXT */
-#ifndef MACH /* Vincent.Cate@furmint.nectar.cs.cmu.edu */
-#ifndef __STRICT_BSD__
-#include <stdlib.h>
-#endif /* !__STRICT_BSD__ */
-#endif /* !MACH */
 
 #else /* ultrix: */
 
 #include <malloc.h>
 #include <memory.h>
-#include <stdlib.h>   /* ANSI */   /* BSN */
 
 #endif /* !ultrix */
 #else   /* VMS: */
 
-#include <stdlib.h>
 #include <unixlib.h>
 #if defined(VAXC) && !defined(__DECC)
 #define malloc	VAXC$MALLOC_OPT
@@ -358,12 +370,12 @@ extern BOOL LYOutOfMemory;	/* Declared in LYexit.c - FM */
 /*      Inline Function WHITE: Is character c white space? */
 /*      For speed, include all control characters */
 
-#define WHITE(c) (((unsigned char)(TOASCII(c))) <= 32)
+#define WHITE(c) ((UCH(TOASCII(c))) <= 32)
 
 /*     Inline Function LYIsASCII: Is character c a traditional ASCII
 **     character (i.e. <128) after converting from host character set.  */
 
-#define LYIsASCII(c) (TOASCII((unsigned char)(c)) < 128)
+#define LYIsASCII(c) (TOASCII(UCH(c)) < 128)
 
 /*
 
@@ -454,8 +466,8 @@ Upper- and Lowercase macros
 
 #ifndef TOLOWER
   /* Pyramid and Mips can't uppercase non-alpha */
-#define TOLOWER(c) (isupper((unsigned char)c) ? tolower((unsigned char)c) : ((unsigned char)c))
-#define TOUPPER(c) (islower((unsigned char)c) ? toupper((unsigned char)c) : ((unsigned char)c))
+#define TOLOWER(c) (isupper(UCH(c)) ? tolower(UCH(c)) : UCH(c))
+#define TOUPPER(c) (islower(UCH(c)) ? toupper(UCH(c)) : UCH(c))
 #endif /* TOLOWER */
 
 #define FREE(x) if (x != 0) {free((char *)x); x = NULL;}
@@ -472,10 +484,35 @@ The local equivalents of CR and LF
 #define LF   FROMASCII('\012')  /* ASCII line feed LOCAL EQUIVALENT */
 #define CR   FROMASCII('\015')  /* Will be converted to ^M for transmission */
 
-#define CTRACE(p) if(TRACE)fprintf p
+/*
+ * Debug message control.
+ */
+#ifdef NO_LYNX_TRACE
+#define WWW_TraceFlag   0
+#define WWW_TraceMask   0
+#define LYTraceLogFP    0
+#else
+extern BOOLEAN WWW_TraceFlag;
+extern int WWW_TraceMask;
+#endif
+
+#define TRACE           (WWW_TraceFlag)
+#define TRACE_bit(n)    (TRACE && (WWW_TraceMask & (1 << n)) != 0)
+#define TRACE_SGML      (TRACE_bit(0))
+#define TRACE_STYLE     (TRACE_bit(1))
+#define TRACE_TRST      (TRACE_bit(2))
+
+#if defined(LY_TRACELINE)
+#define LY_SHOWWHERE fprintf( tfp, "%s: %d: ", __FILE__, LY_TRACELINE ),
+#else
+#define LY_SHOWWHERE /* nothing */
+#endif
+
+#define CTRACE(p)         ((void)((TRACE) && ( LY_SHOWWHERE fprintf p )))
+#define CTRACE2(m,p)      ((void)((m)     && ( LY_SHOWWHERE fprintf p )))
 #define tfp TraceFP()
 #define CTRACE_SLEEP(secs) if (TRACE && LYTraceLogFP == 0) sleep(secs)
-#define CTRACE_FLUSH(fp) if(TRACE) fflush(fp)
+#define CTRACE_FLUSH(fp)   if (TRACE) fflush(fp)
 
 extern FILE *TraceFP NOPARAMS;
 
@@ -504,9 +541,51 @@ extern FILE *TraceFP NOPARAMS;
 #define Rgetpeername  getpeername
 #endif
 
+/*
+ * Workaround for order-of-evaluation problem with gcc and socks5 headers
+ * which breaks the Rxxxx names by attaching the prefix twice:
+ */
+#ifdef INCLUDE_PROTOTYPES
+#undef  Raccept
+#undef  Rbind
+#undef  Rconnect
+#undef  Rlisten
+#undef  Rselect
+#undef  Rgetpeername
+#undef  Rgetsockname
+#define Raccept       accept
+#define Rbind         bind
+#define Rconnect      connect
+#define Rgetpeername  getpeername
+#define Rgetsockname  getsockname
+#define Rlisten       listen
+#define Rselect       select
+#endif
+
 #endif /* USE_SOCKS5 */
 
 #define SHORTENED_RBIND	/* FIXME: do this in configure-script */
+
+#ifdef USE_SSL
+#define free_func free__func
+#ifdef USE_OPENSSL_INCL
+#include <openssl/ssl.h>
+#include <openssl/crypto.h>
+#include <openssl/rand.h>
+#include <openssl/err.h>
+#else
+#include <ssl.h>
+#include <crypto.h>
+#include <rand.h>
+#include <err.h>
+#endif
+#undef free_func
+
+extern SSL * HTGetSSLHandle NOPARAMS;
+extern void HTSSLInitPRNG NOPARAMS;
+extern char HTGetSSLCharacter PARAMS((void * handle));
+
+#endif /* USE_SSL */
 
 #include <userdefs.h>
 

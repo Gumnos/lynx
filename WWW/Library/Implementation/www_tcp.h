@@ -56,11 +56,8 @@ Default values
 #define INVSOC (-1)             /* Unix invalid socket */
 		/* NB: newer libwww has something different for Windows */
 
-#if !defined(__MINGW32__)
-typedef struct sockaddr_in SockA;  /* See netinet/in.h */
-#endif
-
 #ifndef VMS
+
 #include <sys/types.h>
 
 #if defined(__BORLANDC__)
@@ -74,6 +71,7 @@ typedef struct sockaddr_in SockA;  /* See netinet/in.h */
 #endif /* DJGPP or __BORLANDC__ */
 
 #if defined(_MSC_VER)
+#undef HAVE_DIRENT_H
 #define HAVE_DIRENT_H
 #undef HAVE_SYS_FILIO_H
 #endif /* _MSC_VER */
@@ -115,6 +113,11 @@ typedef struct sockaddr_in SockA;  /* See netinet/in.h */
 #ifdef __CYGWIN__
 #define _WINDOWS_NSL
 #define WIN_EX
+#else
+#ifdef WIN_EX
+#define HAVE_FTIME 1
+#define HAVE_SYS_TIMEB_H 1
+#endif
 #endif /* __CYGWIN__ */
 
 #ifdef HAVE_FCNTL_H
@@ -159,6 +162,8 @@ extern unsigned char IBM1047[];
 #endif /* EBCDIC */
 #endif /* !TOASCII */
 
+/* convert a char to an unsigned, needed if we have signed characters for ctype.h */
+#define UCH(ch) ((unsigned char)(ch))
 
 /*
 IBM-PC running Windows NT
@@ -186,6 +191,30 @@ extern int ws_netread(int fd, char *buf, int len);
 #include <time.h>
 #include <errno.h>
 #include <direct.h>
+
+#ifdef USE_WINSOCK2_H
+#include <winsock2.h>		/* normally included in windows.h */
+
+#undef EINPROGRESS
+#undef EALREADY
+#undef EISCONN
+#undef EINTR
+#undef EAGAIN
+#undef ENOTCONN
+#undef ECONNRESET
+#undef ETIMEDOUT
+
+#define EINPROGRESS  WSAEINPROGRESS
+#define EALREADY     WSAEALREADY
+#define EISCONN      WSAEISCONN
+#define EINTR        WSAEINTR
+/* fine EAGAIN       WSAEAGAIN */
+#define ENOTCONN     WSAENOTCONN
+#define ECONNRESET   WSAECONNRESET
+#define ETIMEDOUT    WSAETIMEDOUT
+
+#else /* USE_WINSOCK_H */
+
 #include <winsock.h>
 typedef struct sockaddr_in SockA;  /* See netinet/in.h */
 
@@ -194,7 +223,6 @@ typedef struct sockaddr_in SockA;  /* See netinet/in.h */
 #undef EAGAIN
 #endif /* _MSC_VER */
 
-#define EWOULDBLOCK          (WSABASEERR+35)	/* ADD by JH7AYN */
 #define EINPROGRESS          (WSABASEERR+36)
 #define EALREADY             (WSABASEERR+37)
 #define EISCONN              (WSABASEERR+56)
@@ -203,9 +231,12 @@ typedef struct sockaddr_in SockA;  /* See netinet/in.h */
 #define ENOTCONN             (WSABASEERR+57)
 #define ECONNRESET           (WSABASEERR+54)
 #define ETIMEDOUT             WSAETIMEDOUT	/* 1997/11/10 (Mon) */
-#define EINVAL                22
+
 #undef  SOCKET_ERRNO	/* 1997/10/19 (Sun) 18:01:46 */
 #define SOCKET_ERRNO          WSAGetLastError()
+
+#endif	/* USE_WINSOCK_H */
+
 #define INCLUDES_DONE
 #define TCP_INCLUDES_DONE
 #endif  /* WINDOWS */
@@ -600,22 +631,6 @@ typedef unsigned short mode_t;
 typedef int pid_t;
 #endif /* !pid_t */
 
-#ifndef WEXITSTATUS
-#ifdef sony_news
-#define WEXITSTATUS(s) WIFEXITED(s)
-#else
-#define WEXITSTATUS(s) (((s).w_status >> 8) & 0377)
-#endif /* sony_news */
-#endif /* !WEXITSTATUS */
-
-#ifndef WTERMSIG
-#ifdef sony_news
-#define WTERMSIG(s) (s).w_termsig
-#else
-#define WTERMSIG(s) (((s).w_status >> 8) & 0177)
-#endif /* sony_news */
-#endif /* !WTERMSIG */
-
 #endif /* NeXT || sony_news */
 
 #define INCLUDES_DONE
@@ -665,6 +680,8 @@ typedef int pid_t;
 #include <libintl.h>
 #endif
 
+#define N_(s) (s)
+
 #ifndef HAVE_GETTEXT
 #define gettext(s) s
 #endif
@@ -685,6 +702,8 @@ Defaults
 #endif
 #include <netdb.h>
 #endif  /* TCP includes */
+
+typedef unsigned short PortNumber;
 
 #ifndef S_ISLNK
 #define S_ISLNK(m)	(((m) & S_IFMT) == S_IFLNK)
@@ -793,5 +812,32 @@ typedef unsigned int fd_set;
 #else
 #define set_errno(value) /* we do not know how */
 #endif
+
+/* IPv6 support */
+#if defined(HAVE_GETADDRINFO) && defined(HAVE_GAI_STRERROR) && defined(ENABLE_IPV6)
+#	define INET6
+#endif /* HAVE_GETADDRINFO && HAVE_GAI_STRERROR && ENABLE_IPV6 */
+
+#if !defined(__MINGW32__)
+#ifdef INET6
+typedef struct sockaddr_storage SockA;  /* See netinet/in.h */
+#else
+typedef struct sockaddr_in SockA;  /* See netinet/in.h */
+#endif /* INET6 */
+#endif
+
+#ifdef INET6
+#ifdef SIN6_LEN
+#define SOCKADDR_LEN(soc_address) ((struct sockaddr *)&soc_address)->sa_len
+#else
+#ifndef SA_LEN
+#define SA_LEN(x) (((x)->sa_family == AF_INET6)?sizeof(struct sockaddr_in6): \
+       (((x)->sa_family == AF_INET)?sizeof(struct sockaddr_in):sizeof(struct sockaddr)))
+#endif
+#define SOCKADDR_LEN(soc_address) SA_LEN((struct sockaddr *)&soc_address)
+#endif /* SIN6_LEN */
+#else
+#define SOCKADDR_LEN(soc_address) sizeof(soc_address)
+#endif /* INET6 */
 
 #endif /* TCP_H */
