@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYCharUtils.h,v 1.26 2010/09/24 09:57:20 tom Exp $
+ * $LynxId: LYCharUtils.h,v 1.27 2011/06/11 10:35:56 tom Exp $
  */
 #ifndef LYCHARUTILS_H
 #define LYCHARUTILS_H
@@ -7,6 +7,10 @@
 #ifndef HTUTILS_H
 #include <HTUtils.h>
 #endif /* HTUTILS_H */
+
+#ifndef HTSTREAM_H
+#include <HTStream.h>
+#endif /* HTSTREAM_H */
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,6 +53,8 @@ extern "C" {
 				   const char *base);
     extern void LYAddMETAcharsetToFD(FILE *fd,
 				     int disp_chndl);
+    extern void LYAddMETAcharsetToStream(HTStream *target,
+					 int disp_chndl);
     extern void LYformTitle(char **dst,
 			    const char *src);
     extern char *LYParseTagParam(char *from,

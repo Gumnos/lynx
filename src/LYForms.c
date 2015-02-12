@@ -1,4 +1,4 @@
-/* $LynxId: LYForms.c,v 1.87 2010/10/31 17:56:18 tom Exp $ */
+/* $LynxId: LYForms.c,v 1.89 2011/06/04 15:08:15 tom Exp $ */
 #include <HTUtils.h>
 #include <HTCJK.h>
 #include <HTTP.h>
@@ -87,7 +87,7 @@ int change_form_link_ex(int cur,
 
     switch (form->type) {
     case F_CHECKBOX_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    break;
 	LYSetHilite(cur, form->num_value ? unchecked_box : checked_box);
 	form->num_value = !form->num_value;
@@ -100,14 +100,14 @@ int change_form_link_ex(int cur,
 	    break;
 	}
 
-	if (form->disabled == YES) {
+	if (FormIsReadonly(form)) {
 	    (void) LYhandlePopupList(form->num_value,
 				     links[cur].ly,
 				     links[cur].lx,
 				     (const char **) my_data,
 				     form->size,
 				     form->size_l,
-				     form->disabled,
+				     FormIsReadonly(form),
 				     FALSE);
 #if CTRL_W_HACK != DO_NOTHING
 	    if (!enable_scrollback)
@@ -123,7 +123,7 @@ int change_form_link_ex(int cur,
 					    (const char **) my_data,
 					    form->size,
 					    form->size_l,
-					    form->disabled,
+					    FormIsReadonly(form),
 					    FALSE);
 	{
 	    OptionType *opt_ptr = form->select_list;
@@ -152,7 +152,7 @@ int change_form_link_ex(int cur,
 	break;
 
     case F_RADIO_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    break;
 	/*
 	 * Radio buttons must have one and only one down at a time!
@@ -206,7 +206,7 @@ int change_form_link_ex(int cur,
 	break;
 
     case F_RESET_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    break;
 	HText_ResetForm(form);
 	*refresh_screen = TRUE;
@@ -219,7 +219,7 @@ int change_form_link_ex(int cur,
 	}
 	if (!immediate_submit)
 	    c = form_getstr(cur, use_last_tfpos, FALSE);
-	if (form->disabled == YES &&
+	if (FormIsReadonly(form) &&
 	    (c == '\r' || c == '\n' || immediate_submit)) {
 	    if (peek_mouse_link() >= 0)
 		c = LAC_TO_LKC0(LYK_ACTIVATE);
@@ -303,7 +303,7 @@ int change_form_link_ex(int cur,
 
     case F_SUBMIT_TYPE:
     case F_IMAGE_SUBMIT_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    break;
 	if (form->no_cache &&
 	    form->submit_method != URL_MAIL_METHOD) {
@@ -403,7 +403,7 @@ static int form_getstr(int cur,
 	 * much of the tail as fits.  - FM
 	 */
 	value += (strlen(form->value) - max_length);
-	if (!form->disabled &&
+	if (!FormIsReadonly(form) &&
 	    !(form->submit_method == URL_MAIL_METHOD && no_mail)) {
 	    /*
 	     * If we can edit it, report that we are using the tail.  - FM
@@ -457,7 +457,9 @@ static int form_getstr(int cur,
     if (redraw_only) {
 	return 0;		/*return value won't be analysed */
     }
-
+#ifdef FEPCTRL
+    fep_on();
+#endif
     /*
      * And go for it!
      */
@@ -643,6 +645,9 @@ static int form_getstr(int cur,
 		LYRefreshEdit(&MyEdit);
 	    } else {
 		HTInfoMsg(gettext("Clipboard empty or Not text data."));
+#ifdef FEPCTRL
+		fep_off();
+#endif
 		continue;
 	    }
 	}
@@ -657,6 +662,9 @@ static int form_getstr(int cur,
 	    break;
 	}
 	if (action == LYE_ABORT) {
+#ifdef FEPCTRL
+	    fep_off();
+#endif
 	    return (DO_NOTHING);
 	}
 	if (action == LYE_STOP) {
@@ -694,15 +702,18 @@ static int form_getstr(int cur,
 		    c = HTConfirmDefault(PREV_DOC_QUERY, NO);
 		}
 		if (c == YES) {
+#ifdef FEPCTRL
+		    fep_off();
+#endif
 		    return (ch);
 		} else {
-		    if (form->disabled == YES)
+		    if (FormIsReadonly(form))
 			_statusline(ARROWS_OR_TAB_TO_MOVE);
 		    else
 			_statusline(ENTER_TEXT_ARROWS_OR_TAB);
 		}
 	    }
-	    if (form->disabled == YES) {
+	    if (FormIsReadonly(form)) {
 		/*
 		 * Allow actions that don't modify the contents even in
 		 * disabled form fields, so the user can scroll through the
@@ -840,6 +851,9 @@ static int form_getstr(int cur,
 	if (non_empty(form->value))
 	    form->value_cs = current_char_set;
     }
+#ifdef FEPCTRL
+    fep_off();
+#endif
     return (ch);
 }
 
@@ -851,7 +865,7 @@ void show_formlink_statusline(const FormInfo * form,
 {
     switch (form->type) {
     case F_PASSWORD_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    statusline(FORM_LINK_PASSWORD_UNM_MSG);
 	else
 #ifdef TEXTFIELDS_MAY_NEED_ACTIVATION
@@ -862,25 +876,25 @@ void show_formlink_statusline(const FormInfo * form,
 	    statusline(FORM_LINK_PASSWORD_MESSAGE);
 	break;
     case F_OPTION_LIST_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    statusline(FORM_LINK_OPTION_LIST_UNM_MSG);
 	else
 	    statusline(FORM_LINK_OPTION_LIST_MESSAGE);
 	break;
     case F_CHECKBOX_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    statusline(FORM_LINK_CHECKBOX_UNM_MSG);
 	else
 	    statusline(FORM_LINK_CHECKBOX_MESSAGE);
 	break;
     case F_RADIO_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    statusline(FORM_LINK_RADIO_UNM_MSG);
 	else
 	    statusline(FORM_LINK_RADIO_MESSAGE);
 	break;
     case F_TEXT_SUBMIT_TYPE:
-	if (form->disabled == YES) {
+	if (FormIsReadonly(form)) {
 	    statusline(FORM_LINK_TEXT_SUBMIT_UNM_MSG);
 	} else if (form->submit_method ==
 		   URL_MAIL_METHOD) {
@@ -928,7 +942,7 @@ void show_formlink_statusline(const FormInfo * form,
 	break;
     case F_SUBMIT_TYPE:
     case F_IMAGE_SUBMIT_TYPE:
-	if (form->disabled == YES) {
+	if (FormIsReadonly(form)) {
 	    statusline(FORM_LINK_SUBMIT_DIS_MSG);
 	} else if (form->submit_method ==
 		   URL_MAIL_METHOD) {
@@ -971,25 +985,25 @@ void show_formlink_statusline(const FormInfo * form,
 	}
 	break;
     case F_RESET_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    statusline(FORM_LINK_RESET_DIS_MSG);
 	else
 	    statusline(FORM_LINK_RESET_MESSAGE);
 	break;
     case F_BUTTON_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    statusline(FORM_LINK_BUTTON_DIS_MSG);
 	else
 	    statusline(FORM_LINK_BUTTON_MESSAGE);
 	break;
     case F_FILE_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    statusline(FORM_LINK_FILE_UNM_MSG);
 	else
 	    statusline(FORM_LINK_FILE_MESSAGE);
 	break;
     case F_TEXT_TYPE:
-	if (form->disabled == YES)
+	if (FormIsReadonly(form))
 	    statusline(FORM_LINK_TEXT_UNM_MSG);
 	else
 #ifdef TEXTFIELDS_MAY_NEED_ACTIVATION
@@ -1000,7 +1014,7 @@ void show_formlink_statusline(const FormInfo * form,
 	    statusline(FORM_LINK_TEXT_MESSAGE);
 	break;
     case F_TEXTAREA_TYPE:
-	if (form->disabled == YES) {
+	if (FormIsReadonly(form)) {
 	    statusline(FORM_LINK_TEXT_UNM_MSG);
 	} else {
 	    char *submit_str = NULL;

@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMail.c,v 1.80 2010/12/11 14:52:59 tom Exp $
+ * $LynxId: LYMail.c,v 1.88 2011/06/04 13:32:51 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTParse.h>
@@ -303,83 +303,111 @@ static void show_addresses(char *addresses)
 #if USE_BLAT_MAILER
 
 /*
-syntax:
+ * blat's options-file parser (see makeargv.cpp) treats backslash and double
+ * quote characters specially.  lynx doesn't.  Do a conversion as we write the
+ * option.
+ */
+static void blat_option(FILE *fp, const char *option, const char *value)
+{
+    if (non_empty(value)) {
+	const char *special = "\\\"";
+	size_t length = strlen(value);
+	size_t reject = strcspn(value, special);
+
+	fputs(option, fp);
+	fputc(' ', fp);
+	if (length == reject) {
+	    fputs(value, fp);
+	} else {
+	    fputc('"', fp);
+	    while (*value != '\0') {
+		if (strchr(special, *value)) {
+		    fputc('\\', fp);
+		}
+		fputc(UCH(*value), fp);
+		++value;
+	    }
+	    fputc('"', fp);
+	}
+	fputc('\n', fp);
+    }
+}
+
+/*
+syntax for blat 2.6.2:
 Blat <filename> -t <recipient> [optional switches (see below)]
 
-<filename>    : file with the message body
--t <recipient>: recipient list (comma separated)
--s <subj>     : subject line
--f <sender>   : overrides the default sender address (must be known to server)
--i <addr>     : a 'From:' address, not necessarily known to the SMTP server.
--c <recipient>: carbon copy recipient list (comma separated)
--b <recipient>: blind carbon copy recipient list (comma separated)
--h            : displays this help.
--mime         : MIME Quoted-Printable Content-Transfer-Encoding.
--q            : supresses *all* output.
--server <addr>: overrides the default SMTP server to be used.
+-bodyF <filename> : file with the message body
+-t <recipient>    : recipient list (comma separated)
+-s <subj>         : subject line
+-f <sender>       : overrides the default sender address (must be known to server)
+-i <addr>         : a 'From:' address, not necessarily known to the SMTP server.
+-c <recipient>    : carbon copy recipient list (comma separated)
+-b <recipient>    : blind carbon copy recipient list (comma separated)
+-help             : displays the help message.
+-mime             : MIME Quoted-Printable Content-Transfer-Encoding.
+-q                : supresses *all* output.
+-server <addr>    : overrides the default SMTP server to be used.
 
 */
 
-static char *blat_cmd(char *mail_cmd,
-		      char *filename,
+static char *blat_cmd(char *filename,
 		      char *address,
 		      char *subject,
 		      char *ccaddr,
 		      char *mail_addr)
 {
-    static char *b_cmd;
+    char *b_cmd = NULL;
 
-#ifdef USE_ALT_BLAT_MAILER
+    if (mail_is_altblat) {
+	const char *format = "%s %s -t %s -s %s %s%s%s";
 
-    HTSprintf0(&b_cmd, "%s %s -t \"%s\" -s \"%s\" %s%s%s%s",
-	       mail_cmd,
-	       filename,
-	       address,
-	       subject,
-	       system_mail_flags,
-	       ccaddr ? " -c \"" : "",
-	       NonNull(ccaddr),
-	       ccaddr ? "\"" : "");
+	HTAddParam(&b_cmd, format, 1, ALTBLAT_MAIL);
+	HTAddParam(&b_cmd, format, 2, filename);
+	HTAddParam(&b_cmd, format, 3, address);
+	HTAddParam(&b_cmd, format, 4, subject);
+	HTAddToCmd(&b_cmd, format, 5, ALTBLAT_MAIL_FLAGS);
+	if (non_empty(ccaddr)) {
+	    HTAddToCmd(&b_cmd, format, 6, " -c ");
+	    HTAddParam(&b_cmd, format, 7, NonNull(ccaddr));
+	}
+	HTEndParam(&b_cmd, format, 8);
 
-#else /* !USE_ALT_BLAT_MAILER */
+    } else {
 
-    static char bl_cmd_file[512];
-    FILE *fp;
+	const char *format = "%s -of %s";
+	char bl_cmd_file[LY_MAXPATH];
+	FILE *fp;
 
 #ifdef __CYGWIN__
-    char dosname[LY_MAXPATH];
-#endif
+	char dosname[LY_MAXPATH];
 
-    bl_cmd_file[0] = '\0';
-    if ((fp = LYOpenTemp(bl_cmd_file, ".blt", "w")) == NULL) {
-	HTAlert(FORM_MAILTO_FAILED);
-	return NULL;
-    }
-#ifdef __CYGWIN__
-    cygwin_conv_to_full_win32_path(filename, dosname);
-    fprintf(fp, "%s\n", dosname);
 #else
-    fprintf(fp, "%s\n", filename);
-#endif
-    fprintf(fp, "-t\n%s\n", address);
-    if (subject)
-	fprintf(fp, "-s\n%s\n", subject);
-    if (non_empty(mail_addr)) {
-	fprintf(fp, "-f\n%s\n", mail_addr);
-    }
-    if (non_empty(ccaddr)) {
-	fprintf(fp, "-c\n%s\n", ccaddr);
-    }
-    LYCloseOutput(fp);
-
-#ifdef __CYGWIN__
-    cygwin_conv_to_full_win32_path(bl_cmd_file, dosname);
-    HTSprintf0(&b_cmd, "%s \"@%s\"", mail_cmd, dosname);
-#else
-    HTSprintf0(&b_cmd, "%s @%s", mail_cmd, bl_cmd_file);
+	char *dosname;
 #endif
 
-#endif /* USE_ALT_BLAT_MAILER */
+	bl_cmd_file[0] = '\0';
+	if ((fp = LYOpenTemp(bl_cmd_file, ".blt", "w")) == NULL) {
+	    HTAlert(FORM_MAILTO_FAILED);
+	    return NULL;
+	}
+
+	HTAddParam(&b_cmd, format, 1, BLAT_MAIL);
+
+	ConvertToWin32Path(filename, dosname);
+	blat_option(fp, "-bodyF", dosname);
+	blat_option(fp, "-t", address);
+	blat_option(fp, "-s", subject);
+	blat_option(fp, "-f", mail_addr);
+	blat_option(fp, "-c", ccaddr);
+	LYCloseOutput(fp);
+
+	ConvertToWin32Path(bl_cmd_file, dosname);
+
+	HTAddParam(&b_cmd, format, 2, dosname);
+	HTEndParam(&b_cmd, format, 3);
+
+    }
 
     return b_cmd;
 }
@@ -467,55 +495,48 @@ int LYSendMailFile(char *the_address,
 		   char *message)
 {
     char *cmd = NULL;
-
-#ifdef __DJGPP__
-    char *shell;
-#endif /* __DJGPP__ */
     int code;
 
     if (!LYSystemMail())
 	return 0;
 
 #if USE_BLAT_MAILER
-    if (mail_is_blat)
-	StrAllocCopy(cmd,
-		     blat_cmd(system_mail,
-			      the_filename,
-			      the_address,
-			      the_subject,
-			      the_ccaddr,
-			      personal_mail_address
-		     )
-	    );
-    else
+    if (mail_is_blat) {
+	cmd = blat_cmd(the_filename,
+		       the_address,
+		       the_subject,
+		       the_ccaddr,
+		       personal_mail_address);
+    } else
 #endif
 #ifdef __DJGPP__
-    if ((shell = LYGetEnv("SHELL")) != NULL) {
-	if (strstr(shell, "sh") != NULL) {
-	    HTSprintf0(&cmd, "%s -c %s -t \"%s\" -F %s",
-		       shell,
-		       system_mail,
-		       the_address,
-		       the_filename);
+    if (LYGetEnv("SHELL")) {
+	extern int dj_is_bash;
+	extern char *shell;
+	const char *c_option;
+	const char *format = "%s %s %s -t %s -F %s";
+
+	if (dj_is_bash) {
+	    c_option = "-c";
 	} else {
-	    HTSprintf0(&cmd, "%s /c %s -t \"%s\" -F %s",
-		       shell,
-		       system_mail,
-		       the_address,
-		       the_filename);
+	    c_option = "/c";
 	}
-    } else {
-	HTSprintf0(&cmd, "%s -t \"%s\" -F %s",
-		   system_mail,
-		   the_address,
-		   the_filename);
-    }
-#else
-	HTSprintf0(&cmd, "%s -t \"%s\" -F %s",
-		   system_mail,
-		   the_address,
-		   the_filename);
+	HTAddParam(&cmd, format, 1, shell);
+	HTAddParam(&cmd, format, 2, c_option);
+	HTAddParam(&cmd, format, 3, system_mail);
+	HTAddParam(&cmd, format, 4, the_address);
+	HTAddParam(&cmd, format, 5, the_filename);
+	HTEndParam(&cmd, format, 6);
+    } else
 #endif /* __DJGPP__ */
+    {
+	const char *format = "%s -t %s -F %s";
+
+	HTAddParam(&cmd, format, 1, system_mail);
+	HTAddParam(&cmd, format, 2, the_address);
+	HTAddParam(&cmd, format, 3, the_filename);
+	HTEndParam(&cmd, format, 4);
+    }
 
     stop_curses();
     SetOutputMode(O_TEXT);

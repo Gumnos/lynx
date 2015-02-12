@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTParse.c,v 1.67 2010/09/25 13:55:42 tom Exp $
+ * $LynxId: HTParse.c,v 1.69 2011/06/06 10:46:18 tom Exp $
  *
  *		Parse HyperText Document Address		HTParse.c
  *		================================
@@ -300,7 +300,8 @@ static void convert_to_idna(char *host)
 			buffer,
 			idna_strerror((Idna_rc) code)));
 	    }
-	    FREE(output);
+	    if (output)
+		(free) (output);
 	}
 	free(buffer);
     }
@@ -465,14 +466,12 @@ char *HTParse(const char *aName,
      * Handle the host field.
      */
     if (wanted & PARSE_HOST) {
-	char *host;
-
 	if (given.host || related.host) {
 	    if (wanted & PARSE_PUNCTUATION) {
 		*tail++ = '/';
 		*tail++ = '/';
 	    }
-	    strcpy(host = tail, given.host ? given.host : related.host);
+	    strcpy(tail, given.host ? given.host : related.host);
 #define CLEAN_URLS
 #ifdef CLEAN_URLS
 	    /*
@@ -537,7 +536,7 @@ char *HTParse(const char *aName,
 	     * Depending on locale-support, we could have a literal UTF-8
 	     * string as a host name, or a URL-encoded form of that.
 	     */
-	    convert_to_idna(host);
+	    convert_to_idna(tail);
 #endif
 #endif /* CLEAN_URLS */
 	}

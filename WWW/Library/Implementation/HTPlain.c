@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTPlain.c,v 1.48 2010/09/25 12:38:08 tom Exp $
+ * $LynxId: HTPlain.c,v 1.49 2011/06/11 12:09:07 tom Exp $
  *
  *		Plain text object		HTWrite.c
  *		=================
@@ -10,6 +10,8 @@
  *	Bugs:
  *		strings written must be less than buffer size.
  */
+
+#define HTSTREAM_INTERNAL 1
 
 #include <HTUtils.h>
 #include <LYCharVals.h>		/* S/390 -- gil -- 0288 */

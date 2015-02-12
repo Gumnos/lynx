@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTMIME.c,v 1.75 2010/09/24 08:29:24 tom Exp $
+ * $LynxId: HTMIME.c,v 1.76 2011/06/11 12:10:40 tom Exp $
  *
  *			MIME Message Parse			HTMIME.c
  *			==================
@@ -14,6 +14,9 @@
  *	   Feb 92	Written Tim Berners-Lee, CERN
  *
  */
+
+#define HTSTREAM_INTERNAL 1
+
 #include <HTUtils.h>
 #include <HTMIME.h>		/* Implemented here */
 #include <HTTP.h>		/* for redirecting_url */

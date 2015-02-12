@@ -1,4 +1,4 @@
-/* $LynxId: LYKeymap.c,v 1.73 2010/11/07 21:21:04 tom Exp $ */
+/* $LynxId: LYKeymap.c,v 1.79 2011/06/11 12:36:28 tom Exp $ */
 #include <HTUtils.h>
 #include <LYUtils.h>
 #include <LYGlobalDefs.h>
@@ -37,10 +37,6 @@ const char *LYKbLayoutNames[] =
     (char *) 0
 };
 #endif /* EXP_KEYBOARD_LAYOUT */
-
-struct _HTStream {
-    HTStreamClass *isa;
-};
 
 /* * * Tables mapping LynxKeyCodes to LynxActionCodes  * * */
 
@@ -82,13 +78,8 @@ LYK_UP_TWO,       LYK_CHG_CENTER,   LYK_RELOAD,    LYK_TO_CLIPBOARD,
 LYK_TRACE_TOGGLE,  LYK_NEXT_DOC,  LYK_SWITCH_DTD,  LYK_REFRESH,
 /* ^T */            /* ^U */        /* ^V */       /* ^W */
 
-#ifdef USE_CACHEJAR
-LYK_CACHE_JAR,          0,              0,             0,
+LYK_CACHE_JAR,          0,   LYK_MAXSCREEN_TOGGLE,     0,
 /* ^X */            /* ^Y */        /* ^Z */       /* ESC */
-#else
-0,                      0,              0,             0,
-/* ^X */            /* ^Y */        /* ^Z */       /* ESC */
-#endif
 
 0,                      0,              0,             0,
 /* ^\ */            /* ^] */        /* ^^ */       /* ^_ */
@@ -898,7 +889,7 @@ static Kcmd revmap[] = {
     DATA(
 	LYK_INSERT_FILE, "INSERTFILE",
 	"insert file into a textarea (just above cursorline)" ),
-#ifdef EXP_ADDRLIST_PAGE
+#ifdef USE_ADDRLIST_PAGE
     DATA(
 	LYK_ADDRLIST, "ADDRLIST",
 	"like LIST command, but always shows the links' URLs" ),
@@ -981,6 +972,11 @@ static Kcmd revmap[] = {
     DATA(
 	LYK_CACHE_JAR, "CACHE_JAR",
 	"examine list of cached documents" ),
+#endif
+#ifdef USE_MAXSCREEN_TOGGLE
+    DATA(
+	LYK_MAXSCREEN_TOGGLE, "MAXSCREEN_TOGGLE",
+	"toggle max screen and normal" ),
 #endif
     DATA(
 	LYK_UNKNOWN, NULL,
@@ -1376,32 +1372,37 @@ int lkcstring_to_lkc(const char *src)
 {
     int c = -1;
 
-    if (strlen(src) == 1)
+    if (strlen(src) == 1) {
 	c = *src;
-    else if (strlen(src) == 2 && *src == '^')
+    } else if (strlen(src) == 2 && *src == '^') {
 	c = src[1] & 037;
-    else if (strlen(src) >= 2 && isdigit(UCH(*src))) {
-	if (sscanf(src, "%d", &c) != 1)
-	    return (-1);
+    } else if (strlen(src) >= 2 && isdigit(UCH(*src))) {
+	char *next = 0;
+
+	c = (int) strtol(src, &next, 0);
+	if (next != 0 && *next != '\0')
+	    c = (-1);
 #ifdef USE_KEYMAPS
     } else {
 	map_string_to_keysym(src, &c);
 #ifndef USE_SLANG
 	if (c >= 0) {
 	    if ((c & LKC_MASK) > 255 && !(c & LKC_ISLKC))
-		return (-1);	/* Don't accept untranslated curses KEY_* */
+		c = (-1);	/* Don't accept untranslated curses KEY_* */
 	    else
 		c &= ~LKC_ISLKC;
 	}
 #endif
 #endif
     }
-    if (c == CH_ESC)
+
+    if (c == CH_ESC) {
 	escape_bound = 1;
-    if (c < -1)
-	return (-1);
-    else
-	return c;
+    } else if (c < -1) {
+	c = (-1);
+    }
+
+    return c;
 }
 
 static int LYLoadKeymap(const char *arg GCC_UNUSED,

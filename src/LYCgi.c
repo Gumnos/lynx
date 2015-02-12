@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYCgi.c,v 1.61 2010/09/25 00:54:31 tom Exp $
+ * $LynxId: LYCgi.c,v 1.64 2011/06/11 12:35:20 tom Exp $
  *                   Lynx CGI support                              LYCgi.c
  *                   ================
  *
@@ -48,10 +48,6 @@
 
 #include <LYLeaks.h>
 #include <www_wait.h>
-
-struct _HTStream {
-    HTStreamClass *isa;
-};
 
 static char **env = NULL;	/* Environment variables */
 static unsigned envc_size = 0;	/* Slots in environment array */

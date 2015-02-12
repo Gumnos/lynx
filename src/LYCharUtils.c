@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYCharUtils.c,v 1.109 2010/11/07 21:21:01 tom Exp $
+ * $LynxId: LYCharUtils.c,v 1.113 2011/06/11 12:15:50 tom Exp $
  *
  *  Functions associated with LYCharSets.c and the Lynx version of HTML.c - FM
  *  ==========================================================================
@@ -546,6 +546,25 @@ void LYFillLocalFileURL(char **href,
 
     FREE(temp);
     return;
+}
+
+void LYAddMETAcharsetToStream(HTStream *target, int disp_chndl)
+{
+    char *buf = 0;
+
+    if (disp_chndl == -1)
+	/*
+	 * -1 means use current_char_set.
+	 */
+	disp_chndl = current_char_set;
+
+    if (target != 0 && disp_chndl >= 0) {
+	HTSprintf0(&buf, "<META %s content=\"text/html;charset=%s\">\n",
+		   "http-equiv=\"content-type\"",
+		   LYCharSet_UC[disp_chndl].MIMEname);
+	(*target->isa->put_string) (target, buf);
+	FREE(buf);
+    }
 }
 
 /*
@@ -1132,9 +1151,7 @@ char **LYUCFullyTranslateString(char **str,
 #ifdef KANJI_CODE_OVERRIDE
     static unsigned char sjis_1st = '\0';
 
-#ifdef CONV_JISX0201KANA_JISX0208KANA
     unsigned char sjis_str[3];
-#endif
 #endif
 
     /*
@@ -1247,8 +1264,7 @@ char **LYUCFullyTranslateString(char **str,
 		} else if (sjis_1st && IS_SJIS_LO(code)) {
 		    sjis_1st = '\0';
 		} else {
-#ifdef CONV_JISX0201KANA_JISX0208KANA
-		    if (0xA1 <= code && code <= 0xDF) {
+		    if (conv_jisx0201kana && 0xA1 <= code && code <= 0xDF) {
 			sjis_str[2] = '\0';
 			JISx0201TO0208_SJIS(UCH(code),
 					    sjis_str, sjis_str + 1);
@@ -1256,7 +1272,6 @@ char **LYUCFullyTranslateString(char **str,
 			p++;
 			continue;
 		    }
-#endif
 		}
 	    }
 #endif

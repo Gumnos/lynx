@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTNews.c,v 1.67 2010/10/27 00:10:51 tom Exp $
+ * $LynxId: HTNews.c,v 1.69 2011/06/11 12:10:55 tom Exp $
  *
  *			NEWS ACCESS				HTNews.c
  *			===========
@@ -76,9 +76,6 @@ static int HTNewsGetCharacter(void);
 struct _HTStructured {
     const HTStructuredClass *isa;
     /* ... */
-};
-struct _HTStream {
-    HTStreamClass *isa;
 };
 
 #define LINE_LENGTH 512		/* Maximum length of line of ARTICLE etc */
@@ -2486,8 +2483,8 @@ static int HTLoadNews(const char *arg,
 	    }
 	    SnipIn(command, "GROUP %.*s", 9, groupName);
 	} else {
-	    size_t add_open = (strchr(p1, '<') == 0);
-	    size_t add_close = (strchr(p1, '>') == 0);
+	    size_t add_open = (size_t) (strchr(p1, '<') == 0);
+	    size_t add_close = (size_t) (strchr(p1, '>') == 0);
 
 	    if (strlen(p1) + add_open + add_close >= 252) {
 		FREE(ProxyHost);

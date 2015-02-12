@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTStream.h,v 1.15 2010/09/25 11:42:48 tom Exp $
+ * $LynxId: HTStream.h,v 1.16 2011/06/11 12:08:40 tom Exp $
  *
  *                                                      The Stream class definition -- libwww
                                  STREAM OBJECT DEFINITION
@@ -47,6 +47,11 @@ extern "C" {
 
     } HTStreamClass;
 
+#ifndef HTSTREAM_INTERNAL
+    struct _HTStream {
+	HTStreamClass *isa;
+    };
+#endif
 /*
 
   Generic Error Stream

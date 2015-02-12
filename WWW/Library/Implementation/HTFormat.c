@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTFormat.c,v 1.73 2010/11/07 21:20:56 tom Exp $
+ * $LynxId: HTFormat.c,v 1.74 2011/06/11 12:13:09 tom Exp $
  *
  *		Manage different file formats			HTFormat.c
  *		=============================
@@ -12,6 +12,8 @@
  *	Therefore, non-ASCII machines can't read local files.
  *
  */
+
+#define HTSTREAM_INTERNAL 1
 
 #include <HTUtils.h>
 
@@ -56,13 +58,6 @@ static float HTMaxSecs = 1e10;	/* No effective limit */
 #endif
 
 BOOL HTOutputSource = NO;	/* Flag: shortcut parser to stdout */
-
-#ifdef ORIGINAL
-struct _HTStream {
-    const HTStreamClass *isa;
-    /* ... */
-};
-#endif /* ORIGINAL */
 
 /* this version used by the NetToText stream */
 struct _HTStream {

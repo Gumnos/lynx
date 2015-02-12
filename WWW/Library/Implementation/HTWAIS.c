@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTWAIS.c,v 1.35 2010/09/25 00:04:53 tom Exp $
+ * $LynxId: HTWAIS.c,v 1.36 2011/06/11 12:13:32 tom Exp $
  *
  *	WorldWideWeb - Wide Area Informaion Server Access	HTWAIS.c
  *	==================================================
@@ -112,11 +112,6 @@ static char line[2048];		/* For building strings to display */
 
 struct _HTStructured {
     const HTStructuredClass *isa;
-    /* ... */
-};
-
-struct _HTStream {
-    const HTStreamClass *isa;
     /* ... */
 };
 

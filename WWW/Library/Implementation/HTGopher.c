@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTGopher.c,v 1.51 2010/10/03 22:30:43 tom Exp $
+ * $LynxId: HTGopher.c,v 1.55 2011/06/11 13:06:08 tom Exp $
  *
  *			GOPHER ACCESS				HTGopher.c
  *			=============
@@ -17,6 +17,8 @@
  *			  port 79, gtype 0 gopher URLs to the finger
  *			  gateway.
  */
+
+#define HTSTREAM_INTERNAL 1
 
 #include <HTUtils.h>		/* Coding convention macros */
 

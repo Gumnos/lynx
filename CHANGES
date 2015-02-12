@@ -1,7 +1,91 @@
--- $LynxId: CHANGES,v 1.527 2011/01/10 10:22:59 tom Exp $
+-- $LynxId: CHANGES,v 1.556 2011/06/12 16:04:15 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2011-06-12 (2.8.8dev.9)
+* modfy cfg2html to add ".url" directive for referencing RFC's etc -TD
+* document blat/blatj usage in lynx.cfg -TD
+* add/use WriteStreamTitle(), to provide doctype for cookie-jar page, used to
+  help validate the page -TD
+* improve readability of cookie-jar page by showing the unescaped cookie
+  values, other minor formatting changes -TD
+* modify cookie domain-matching to accommodate RFC 6265, which states that a
+  leading dot on a domain attribute should be discarded (report by Sebastien
+  Hinderer) -TD
+* integrate most of the changes from patch in 2.8.6rel.4 package at
+	http://en.sourceforge.jp/project/lynx-win32-pata -TH, TD
+  + provide toggle between normal/fullscreen
+  + ifdef'd changes for FEP.
+  + correct a message translation in ja.po
+  + modify Xsystem.c to not use MinGW's system() call.
+  + add three items to lynx.cfg
+	conv_jisx0201kana
+	message_language
+	wait_viewer_termination
+  + replace ifdef's for CONV_JISX0201KANA_JISX0208KANA with configuration
+    variable conv_jisx0201kana
+  + modify makefile.bcb and lynx.rsp to use openssl and intl libraries.
+  + add feature ifdef'd with USE_PROGRAM_DIR which adds fallback definitions
+    for pathnames to use the directory of lynx.exe
+  + add check for unsafe filenames in DOS/Windows, e.g., those that correspond
+    to a device.
+* update command-line syntax for the blat mailer, to work with blat 2.6.2 -TD
+* change default in makelynx.bat to assume blat rather than blatj, because
+  the latter does not provide a way to authenticate user/password on a mail
+  server -TD
+* change #define's for addrlist-page and alt-bindings to reflect their
+  non-experimental status -TD
+* change default for --enable-addrlist-page configure option to enabled -TD
+* modify blat/blatj configuration so that support for both is compiled-in
+  for DOSPATH configurations.  Add "-altblat" option to select blat vs blatj.
+  Define USE_ALT_BLAT_MAILER to specify which is the default (prompted by
+  report by LarryL) -TD
+* correct an interaction between LYCloseOutput() and LYRemoveTemp() as used in
+  send_file_to_mail(), to allow a temporary file to be closed and used by
+  external program before removing it -TD
+* modify lkcstring_to_lkc() to accept hex/octal values, allowing those in the
+  KEYMAP configuration as suggested by the commented lines in lynx.cfg (report
+  by Richie Wood) -TD
+* build-fix for DEC C 5.x with _DECC_V4_SOURCE defined, i.e., missing
+  declaration of "off_t" (report/analysis by Rod Reiger) -TD
+* build-fixes for Alpha VMS V8.3 with C V7.1-015, based on lynx 2.8.7
+  development snapshot (report/analysis by Scott Harrod) -TD
+* improve scripts/tbl2html.pl, to handle translation of octal escapes in the
+  approximation comments -TD
+* amend implementation of "readonly" attribute from 2.8.7dev.10 to distinguish
+  it from "disabled" (report by David Paschal) -TD
+* amend change to cookie prefix matching from Debian #460108.  The discussion
+  overlooked this definition from RFC 2109:
+   Path   Defaults to the path of the request URL that generated the
+          Set-Cookie response, up to, but not including, the
+          right-most /.
+  In that context, lynx was correct to extract the default "path" attribute
+  of
+    http://jukebox/cgi-bin/disorder
+  as
+    /cgi-bin
+  rather than
+    /cgi-bin/disorder
+  as asserted in the report.  However, lynx warned unnecessarily (according to
+  the bug report) about the given path attribute.  Deciding whether to suppress
+  this warning is under control of the user via the lynx.cfg setting
+  COOKIE_QUERY_INVALID_DOMAINS since 2.8.2dev.16 (report by Owen Leibman) -TD
+* add eo.po (Esperanto) from
+    http://translationproject.org/latest/lynx
+* modify format of ADVANCED_COOKIE_CONFIRMATION message in nl.po per guideline
+  to allow localized single-letter responses to prompt (report by Jurgen
+  Gaeremy) -TD
+* add configure check for <bsd/random.h>, used in Debian package -TD
+* modify src/tidy_tls.c to use gnutls_priority_set_direct() in preference to
+  various access functions, to eliminate deprecation warnings (report by
+  Andreas Metzler) -TD
+* updated several configure script macros (TD):
+  CF_CURSES_CPPFLAGS, CF_CURSES_FUNCS, CF_CURSES_HEADER, CF_CURSES_LIBS,
+  CF_CURSES_TERM_H, CF_DISABLE_RPATH_HACK, CF_PDCURSES_X11, CF_PKG_CONFIG,
+  CF_RPATH_HACK, CF_STRUCT_TERMIOS, CF_XOPEN_CURSES, CF_XOPEN_SOURCE,
+  CF_X_ATHENA_LIBS
+* update config.guess (2011-01-01), config.sub (2011-04-01)
 
 2011-01-10 (2.8.8dev.8)
 * correct sense of menu-name parameter in add_item_to_list() from dev.7
@@ -21,7 +105,7 @@ Changes since Lynx 2.8 release
   (Debian #603646) -TD
 * cleanup URLs in lynx documentation -DK
 * add check in getfile() when handling a "mailto:" url, to prevent it when the
-  user has requested a dump (Debian #533308) -TD
+  user has requested a dump (Debian #563308) -TD
 * improve configure check for IDNA library, which may depend upon intllib,
   e.g., building with mingw on cygwin -DK
 * modify autoconf macros which look for X libraries, e.g., for PDCurses, to

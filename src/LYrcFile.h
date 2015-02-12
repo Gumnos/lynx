@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYrcFile.h,v 1.40 2010/12/11 14:12:47 tom Exp $
+ * $LynxId: LYrcFile.h,v 1.42 2011/06/12 00:30:05 tom Exp $
  */
 #ifndef LYRCFILE_H
 #define LYRCFILE_H
@@ -11,6 +11,7 @@
 /* configuration-variable names to share with LYReadCFG.c and LYOptions.c */
 #define RC_ACCEPT_ALL_COOKIES           "accept_all_cookies"
 #define RC_ALERTSECS                    "alertsecs"
+#define RC_ALT_BLAT_MAIL                "alt_blat_mail"
 #define RC_ALWAYS_RESUBMIT_POSTS        "always_resubmit_posts"
 #define RC_ALWAYS_TRUSTED_EXEC          "always_trusted_exec"
 #define RC_ANONFTP_PASSWORD             "anonftp_password"
@@ -24,6 +25,7 @@
 #define RC_BAD_HTML                     "bad_html"
 #define RC_BIBP_BIBHOST                 "bibp_bibhost"
 #define RC_BIBP_GLOBALSERVER            "bibp_globalserver"
+#define RC_BLAT_MAIL                    "blat_mail"
 #define RC_BLOCK_MULTI_BOOKMARKS        "block_multi_bookmarks"
 #define RC_BOLD_H1                      "bold_h1"
 #define RC_BOLD_HEADERS                 "bold_headers"
@@ -44,6 +46,7 @@
 #define RC_COLOR_STYLE                  "color_style"
 #define RC_COMPRESS_PATH                "compress_path"
 #define RC_CONNECT_TIMEOUT              "connect_timeout"
+#define RC_CONV_JISX0201KANA            "conv_jisx0201kana"
 #define RC_COOKIE_ACCEPT_DOMAINS        "cookie_accept_domains"
 #define RC_COOKIE_FILE                  "cookie_file"
 #define RC_COOKIE_LOOSE_INVALID_DOMAINS "cookie_loose_invalid_domains"
@@ -138,6 +141,7 @@
 #define RC_MAX_COOKIES_GLOBAL           "max_cookies_global"
 #define RC_MAX_URI_SIZE                 "max_uri_size"
 #define RC_MESSAGESECS                  "messagesecs"
+#define RC_MESSAGE_LANGUAGE             "message_language"
 #define RC_MINIMAL_COMMENTS             "minimal_comments"
 #define RC_MKDIR_PATH                   "mkdir_path"
 #define RC_MULTI_BOOKMARK               "multi_bookmark"
@@ -175,7 +179,7 @@
 #define RC_PERSONAL_MAILCAP             "personal_mailcap"
 #define RC_PERSONAL_MAIL_ADDRESS        "personal_mail_address"
 #define RC_PERSONAL_MAIL_NAME           "personal_mail_name"
-#define RC_POSITIONABLE_EDITOR		"positionable_editor"
+#define RC_POSITIONABLE_EDITOR          "positionable_editor"
 #define RC_PREFERRED_CHARSET            "preferred_charset"
 #define RC_PREFERRED_ENCODING           "preferred_encoding"
 #define RC_PREFERRED_LANGUAGE           "preferred_language"
@@ -264,6 +268,7 @@
 #define RC_VI_KEYS                      "vi_keys"
 #define RC_VI_KEYS_ALWAYS_ON            "vi_keys_always_on"
 #define RC_WAIS_PROXY                   "wais_proxy"
+#define RC_WAIT_VIEWER_TERMINATION      "wait_viewer_termination"
 #define RC_XHTML_PARSING                "xhtml_parsing"
 #define RC_XLOADIMAGE_COMMAND           "xloadimage_command"
 #define RC_ZCAT_PATH                    "zcat_path"

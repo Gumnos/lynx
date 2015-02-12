@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTWSRC.c,v 1.27 2010/09/25 00:35:26 tom Exp $
+ * $LynxId: HTWSRC.c,v 1.28 2011/06/11 12:11:53 tom Exp $
  *
  *			Parse WAIS Source file			HTWSRC.c
  *			======================
@@ -10,6 +10,8 @@
  *
  *	3 June 93	Bug fix: Won't crash if no description
  */
+
+#define HTSTREAM_INTERNAL 1
 
 #include <HTUtils.h>
 

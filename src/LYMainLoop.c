@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMainLoop.c,v 1.172 2010/09/25 14:57:53 tom Exp $
+ * $LynxId: LYMainLoop.c,v 1.175 2011/06/05 20:38:08 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTAccess.h>
@@ -1183,7 +1183,7 @@ static int handle_LYK_ACTIVATE(int *c,
 		if (user_mode == NOVICE_MODE &&
 		    textinput_activated &&
 		    (real_cmd == LYK_ACTIVATE || real_cmd == LYK_SUBMIT)) {
-		    form_noviceline(links[curdoc.link].l_form->disabled);
+		    form_noviceline(FormIsReadonly(links[curdoc.link].l_form));
 		}
 	    }
 
@@ -1492,7 +1492,7 @@ static int handle_LYK_ACTIVATE(int *c,
     return 0;
 }
 
-#ifdef EXP_ADDRLIST_PAGE
+#ifdef USE_ADDRLIST_PAGE
 static BOOLEAN handle_LYK_ADDRLIST(int *cmd)
 {
     /*
@@ -1524,7 +1524,7 @@ static BOOLEAN handle_LYK_ADDRLIST(int *cmd)
     }
     return FALSE;
 }
-#endif /* EXP_ADDRLIST_PAGE */
+#endif /* USE_ADDRLIST_PAGE */
 
 static void handle_LYK_ADD_BOOKMARK(BOOLEAN *refresh_screen,
 				    int *old_c,
@@ -2525,7 +2525,7 @@ static void handle_LYK_DWIMHELP(const char **cshelpfile)
      */
     if (curdoc.link >= 0 && curdoc.link < nlinks &&
 	links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-	!links[curdoc.link].l_form->disabled &&
+	!FormIsReadonly(links[curdoc.link].l_form) &&
 	F_TEXTLIKE(links[curdoc.link].l_form->type)) {
 	*cshelpfile = LYLineeditHelpURL();
     }
@@ -2990,7 +2990,7 @@ static BOOLEAN handle_LYK_HEAD(int *cmd)
 		 StrNCmp(curdoc.address, "http", 4))) {
 		HTUserMsg(LINK_NOT_HTTP_URL);
 	    } else if (links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-		       links[curdoc.link].l_form->disabled) {
+		       FormIsReadonly(links[curdoc.link].l_form)) {
 		HTUserMsg(FORM_ACTION_DISABLED);
 	    } else if (links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
 		       links[curdoc.link].l_form->submit_action != 0 &&
@@ -3198,6 +3198,16 @@ static void handle_LYK_INDEX(int *old_c,
 #ifdef KANJI_CODE_OVERRIDE
 	    if (HTCJK == JAPANESE) {
 		last_kcode = NOKANJI;	/* AUTO */
+	    }
+#endif
+#ifdef USE_PROGRAM_DIR
+	    if (is_url(indexfile) == 0) {
+		char *tmp = NULL;
+
+		HTSprintf0(&tmp, "%s\\%s", program_dir, indexfile);
+		FREE(indexfile);
+		LYLocalFileToURL(&indexfile, tmp);
+		FREE(tmp);
 	    }
 #endif
 	    set_address(&newdoc, indexfile);
@@ -5191,6 +5201,25 @@ static BOOLEAN handle_LYK_LINEWRAP_TOGGLE(int *cmd,
 }
 #endif
 
+#ifdef USE_MAXSCREEN_TOGGLE
+static BOOLEAN handle_LYK_MAXSCREEN_TOGGLE(int *cmd)
+{
+    static int flag = 0;
+
+    CTRACE((tfp, "Entering handle_LYK_MAXSCREEN_TOGGLE\n"));
+    if (flag) {
+	CTRACE((tfp, "Calling recoverWindowSize()\n"));
+	recoverWindowSize();
+	flag = 0;
+    } else {
+	CTRACE((tfp, "Calling maxmizeWindowSize()\n"));
+	maxmizeWindowSize();
+	flag = 1;
+    }
+    return reparse_or_reload(cmd);
+}
+#endif
+
 /*
  * Here's where we do all the work.
  * mainloop is basically just a big switch dependent on the users input.  I
@@ -6539,7 +6568,7 @@ int mainloop(void)
 		     * Replace novice lines if in NOVICE_MODE.
 		     */
 		    if (user_mode == NOVICE_MODE) {
-			form_noviceline(links[curdoc.link].l_form->disabled);
+			form_noviceline(FormIsReadonly(links[curdoc.link].l_form));
 		    }
 		    real_c = change_form_link(curdoc.link,
 					      &newdoc, &refresh_screen,
@@ -6569,7 +6598,7 @@ int mainloop(void)
 #ifdef TEXTFIELDS_MAY_NEED_ACTIVATION
 		} else if (LinkIsTextarea(curdoc.link)
 			   && textfields_need_activation
-			   && !links[curdoc.link].l_form->disabled
+			   && !FormIsReadonly(links[curdoc.link].l_form)
 			   && peek_mouse_link() < 0 &&
 			   (((LKC_TO_LAC(keymap, real_c) == LYK_NEXT_LINK ||
 #ifdef TEXTAREA_AUTOGROW
@@ -7292,12 +7321,12 @@ int mainloop(void)
 		goto new_cmd;
 	    break;
 
-#ifdef EXP_ADDRLIST_PAGE
+#ifdef USE_ADDRLIST_PAGE
 	case LYK_ADDRLIST:	/* always list URL's (only) */
 	    if (handle_LYK_ADDRLIST(&cmd))
 		goto new_cmd;
 	    break;
-#endif /* EXP_ADDRLIST_PAGE */
+#endif /* USE_ADDRLIST_PAGE */
 
 	case LYK_VLINKS:	/* list links visited during the current session */
 	    if (handle_LYK_VLINKS(&cmd, &newdoc_link_is_absolute))
@@ -7416,6 +7445,13 @@ int mainloop(void)
 	    break;
 	case LYK_LINEWRAP_TOGGLE:
 	    if (handle_LYK_LINEWRAP_TOGGLE(&cmd, &refresh_screen))
+		goto new_cmd;
+	    break;
+#endif
+
+#ifdef USE_MAXSCREEN_TOGGLE
+	case LYK_MAXSCREEN_TOGGLE:
+	    if (handle_LYK_MAXSCREEN_TOGGLE(&cmd))
 		goto new_cmd;
 	    break;
 #endif

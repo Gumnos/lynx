@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMain.c,v 1.226 2010/12/11 14:19:47 tom Exp $
+ * $LynxId: LYMain.c,v 1.232 2011/06/06 00:01:44 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTP.h>
@@ -16,6 +16,7 @@
 #include <HTML.h>
 #include <LYUtils.h>
 #include <LYGlobalDefs.h>
+#include <LYMail.h>
 #include <LYOptions.h>
 #include <LYSignal.h>
 #include <LYGetFile.h>
@@ -350,6 +351,15 @@ BOOLEAN no_table_center = FALSE;	/* 1998/10/09 (Fri) 15:12:49 */
 
 #if USE_BLAT_MAILER
 BOOLEAN mail_is_blat = TRUE;
+BOOLEAN mail_is_altblat = USE_ALT_BLAT_MAILER;
+
+#if USE_ALT_BLAT_MAILER
+#define THIS_BLAT_MAIL ALTBLAT_MAIL
+#define THAT_BLAT_MAIL BLAT_MAIL
+#else
+#define THIS_BLAT_MAIL BLAT_MAIL
+#define THAT_BLAT_MAIL ALTBLAT_MAIL
+#endif
 #endif
 
 #ifdef USE_BLINK
@@ -562,6 +572,8 @@ int cookie_noprompt;
 #ifdef USE_SSL
 int ssl_noprompt = FORCE_PROMPT_DFT;
 #endif
+BOOLEAN conv_jisx0201kana = TRUE;
+BOOLEAN wait_viewer_termination = FALSE;
 
 int connect_timeout = 18000; /*=180000*0.1 - used in HTDoConnect.*/
 int reading_timeout = 18000; /*=180000*0.1 - used in HTDoConnect.*/
@@ -616,6 +628,10 @@ int LYNoZapKey = 0;		/* 0: off (do z checking), 1: full, 2: initially */
 #endif
 
 BOOLEAN FileInitAlreadyDone = FALSE;
+
+#ifdef USE_PROGRAM_DIR
+char *program_dir = NULL;
+#endif
 
 static BOOLEAN stack_dump = FALSE;
 static char *terminal = NULL;
@@ -932,6 +948,27 @@ static void append_ssl_version(char **target,
 }
 #endif /* USE_SSL */
 
+/* Set the text message domain.  */
+void LYSetTextDomain(void)
+{
+#if defined(HAVE_LIBINTL_H) || defined(HAVE_LIBGETTEXT_H)
+    const char *cp;
+
+    if ((cp = LYGetEnv("LYNX_LOCALEDIR")) == 0) {
+#ifdef USE_PROGRAM_DIR
+	char *localedir = NULL;
+
+	HTSprintf0(&localedir, "%s\\locale", program_dir);
+	cp = localedir;
+#else
+	cp = LOCALEDIR;
+#endif
+    }
+    bindtextdomain(NLS_TEXTDOMAIN, cp);
+    textdomain(NLS_TEXTDOMAIN);
+#endif
+}
+
 static void SetLocale(void)
 {
 #ifdef LOCALE
@@ -940,17 +977,7 @@ static void SetLocale(void)
      */
     setlocale(LC_ALL, "");
 #endif /* LOCALE */
-    /* Set the text message domain.  */
-#if defined(HAVE_LIBINTL_H) || defined(HAVE_LIBGETTEXT_H)
-    {
-	const char *cp;
-
-	if ((cp = LYGetEnv("LYNX_LOCALEDIR")) == 0)
-	    cp = LOCALEDIR;
-	bindtextdomain(NLS_TEXTDOMAIN, cp);
-	textdomain(NLS_TEXTDOMAIN);
-    }
-#endif /* HAVE_LIBINTL_H */
+    LYSetTextDomain();
 }
 
 /*
@@ -1062,6 +1089,15 @@ int main(int argc,
      */
     pgm = argv[0];
     cp = NULL;
+#ifdef USE_PROGRAM_DIR
+    StrAllocCopy(program_dir, pgm);
+    if ((cp = strrchr(program_dir, '\\')) != NULL) {
+	*cp = '\0';
+    } else {
+	FREE(program_dir);
+	StrAllocCopy(program_dir, ".");
+    }
+#endif
     if ((cp = LYLastPathSep(pgm)) != NULL) {
 	pgm = cp + 1;
     }
@@ -1133,8 +1169,8 @@ int main(int argc,
 
 #ifndef VMS
     StrAllocCopy(list_format, LIST_FORMAT);
-#endif /* !VMS */
     StrAllocCopy(ftp_format, FTP_FORMAT);
+#endif /* !VMS */
 
     AlertSecs = SECS2Secs(ALERTSECS);
     DelaySecs = SECS2Secs(DEBUGSECS);
@@ -1154,11 +1190,7 @@ int main(int argc,
     StrAllocCopy(language, PREFERRED_LANGUAGE);
     StrAllocCopy(pref_charset, PREFERRED_CHARSET);
     StrAllocCopy(system_mail, SYSTEM_MAIL);
-#ifdef SYSTEM_MAIL_FLAGS
     StrAllocCopy(system_mail_flags, SYSTEM_MAIL_FLAGS);
-#else
-    StrAllocCopy(system_mail_flags, "");
-#endif
 
     StrAllocCopy(LYUserAgent, LYNX_NAME);
     StrAllocCat(LYUserAgent, "/");
@@ -1195,15 +1227,16 @@ int main(int argc,
     else if ((ccp = LYGetEnv("TMP")) != NULL)
 	StrAllocCopy(lynx_temp_space, ccp);
 #endif
-    else
-#ifdef TEMP_SPACE
+    else {
+#if defined(USE_PROGRAM_DIR)
+	StrAllocCopy(lynx_temp_space, program_dir);
+#elif defined(TEMP_SPACE)
 	StrAllocCopy(lynx_temp_space, TEMP_SPACE);
 #else
-    {
 	puts(gettext("You MUST define a valid TMP or TEMP area!"));
 	exit_immediately(EXIT_FAILURE);
-    }
 #endif
+    }
 
 #ifdef WIN_EX			/* for Windows 2000 ... 1999/08/23 (Mon) 08:24:35 */
     if (access(lynx_temp_space, 0) != 0)
@@ -1421,6 +1454,15 @@ int main(int argc,
 	    (cp = LYGetEnv("lynx_cfg")) != NULL)
 	    StrAllocCopy(lynx_cfg_file, cp);
     }
+#ifdef USE_PROGRAM_DIR
+    if (!lynx_cfg_file) {
+	HTSprintf0(&lynx_cfg_file, "%s\\lynx.cfg", program_dir);
+	if (!LYCanReadFile(lynx_cfg_file)) {
+	    FREE(lynx_cfg_file);
+	    lynx_cfg_file = NULL;
+	}
+    }
+#endif
 
     /*
      * If we still don't have a configuration file, use the userdefs.h
@@ -1549,6 +1591,11 @@ int main(int argc,
 	    StrAllocCopy(lynx_lss_file, LYNX_LSS_FILE);
 
 	LYTildeExpand(&lynx_lss_file, TRUE);
+#ifdef USE_PROGRAM_DIR
+	if (!isEmpty(lynx_lss_file) && !LYCanReadFile(lynx_lss_file)) {
+	    HTSprintf0(&lynx_lss_file, "%s\\lynx.lss", program_dir);
+	}
+#endif
 
 	/*
 	 * If the lynx-style file is not available, inform the user and exit.
@@ -1702,6 +1749,16 @@ int main(int argc,
     if (LYCookieSaveFile != NULL) {
 	LYTildeExpand(&LYCookieSaveFile, FALSE);
     }
+#ifdef USE_PROGRAM_DIR
+    if (is_url(helpfile) == 0) {
+	char *tmp = NULL;
+
+	HTSprintf0(&tmp, "%s\\%s", program_dir, helpfile);
+	FREE(helpfile);
+	LYLocalFileToURL(&helpfile, tmp);
+	FREE(tmp);
+    }
+#endif
 
     /*
      * In dump_output_immediately mode, LYCookieSaveFile defaults to
@@ -3271,6 +3328,12 @@ static Config_Type Arg_Table [] =
       "accept_all_cookies", 4|SET_ARG,		LYAcceptAllCookies,
       "\naccept cookies without prompting if Set-Cookie handling\nis on"
    ),
+#if USE_BLAT_MAILER
+   PARSE_SET(
+      "altblat",	4|TOGGLE_ARG,		mail_is_altblat,
+      "select mail tool (`"THIS_BLAT_MAIL"' ==> `"THAT_BLAT_MAIL"')"
+   ),
+#endif
    PARSE_FUN(
       "anonymous",	2|FUNCTION_ARG,		anonymous_fun,
       "apply restrictions for anonymous account,\nsee also -restrictions"
@@ -3587,7 +3650,7 @@ soon as they are seen)"
 #if USE_BLAT_MAILER
    PARSE_SET(
       "noblat",		4|TOGGLE_ARG,		mail_is_blat,
-      "select mail tool (`BLAT' ==> `sendmail')"
+      "select mail tool (`"THIS_BLAT_MAIL"' ==> `"SYSTEM_MAIL"')"
    ),
 #endif
    PARSE_FUN(

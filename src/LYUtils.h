@@ -1,4 +1,4 @@
-/* $LynxId: LYUtils.h,v 1.85 2010/09/24 09:58:04 tom Exp $ */
+/* $LynxId: LYUtils.h,v 1.88 2011/06/11 10:20:06 tom Exp $ */
 #ifndef LYUTILS_H
 #define LYUTILS_H
 
@@ -8,6 +8,10 @@
 #ifndef HTLIST_H
 #include <HTList.h>
 #endif /* HTLIST_H */
+
+#ifndef HTSTREAM_H
+#include <HTStream.h>
+#endif /* HTSTREAM_H */
 
 #ifdef VMS
 #include <HTFTP.h>
@@ -89,7 +93,7 @@ extern "C" {
 #define LYIsPathSep(ch) ((ch) == '/')
 #define LYIsDosDrive(s) FALSE	/* really nothing */
 #endif
-#ifdef EXP_ADDRLIST_PAGE
+#ifdef USE_ADDRLIST_PAGE
 #define LYIsListpageTitle(name) \
     (!strcmp((name), LIST_PAGE_TITLE) || \
      !strcmp((name), ADDRLIST_PAGE_TITLE))
@@ -189,6 +193,7 @@ extern "C" {
     extern void LYmsec_delay(unsigned msec);
     extern void LYsetXDisplay(char *new_display);
     extern void WriteInternalTitle(FILE *fp0, const char *Title);
+    extern void WriteStreamTitle(HTStream *target, const char *Title);
     extern void change_sug_filename(char *fname);
     extern void convert_to_spaces(char *string, int condense);
     extern void free_and_clear(char **obj);
@@ -271,6 +276,11 @@ extern "C" {
 #if defined(WIN_EX)		/* 1997/10/16 (Thu) 20:13:28 */
     extern char *HTDOS_short_name(const char *path);
     extern char *w32_strerror(DWORD ercode);
+#endif
+
+#if defined(WIN_EX) || defined(__CYGWIN__)	/* 2000/03/07 (Tue) 17:17:46 */
+    extern int unsafe_filename(const char *fname);
+    extern FILE *safe_fopen(const char *fname, const char *mode);
 #endif
 
 #ifdef VMS

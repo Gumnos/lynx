@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTFWriter.c,v 1.97 2010/09/25 01:00:57 tom Exp $
+ * $LynxId: HTFWriter.c,v 1.99 2011/06/11 12:15:28 tom Exp $
  *
  *		FILE WRITER				HTFWrite.h
  *		===========
@@ -10,6 +10,8 @@
  *	Bugs:
  *		strings written must be less than buffer size.
  */
+
+#define HTSTREAM_INTERNAL 1
 
 #include <HTUtils.h>
 #include <LYCurses.h>
@@ -408,7 +410,7 @@ static void HTFWriter_free(HTStream *me)
 #endif
 	    }
 #ifdef _WIN_CC
-	    exec_command(me->end_command, FALSE);
+	    exec_command(me->end_command, wait_viewer_termination);
 #else
 	    LYSystem(me->end_command);
 #endif

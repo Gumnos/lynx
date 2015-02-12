@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMap.c,v 1.40 2010/09/24 22:31:41 tom Exp $
+ * $LynxId: LYMap.c,v 1.43 2011/06/11 12:36:41 tom Exp $
  *			Lynx Client-side Image MAP Support	       LYMap.c
  *			==================================
  *
@@ -46,10 +46,6 @@ typedef struct _LYImageMap {
     char *title;
     HTList *elements;
 } LYImageMap;
-
-struct _HTStream {
-    HTStreamClass *isa;
-};
 
 static HTList *LynxMaps = NULL;
 

@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTMLGen.c,v 1.34 2010/09/25 12:38:36 tom Exp $
+ * $LynxId: HTMLGen.c,v 1.36 2011/06/11 12:10:02 tom Exp $
  *
  *		HTML Generator
  *		==============
@@ -14,6 +14,8 @@
  *	from the incomming data or the anchor.	Currently it is from the former
  *	which is cleanest.
  */
+
+#define HTSTREAM_INTERNAL 1
 
 #include <HTUtils.h>
 
@@ -39,10 +41,6 @@
 #include <LYGlobalDefs.h>
 #include <LYCurses.h>
 #include <LYLeaks.h>
-
-#define PUTC(c) (*me->targetClass.put_character)(me->target, c)
-/* #define PUTS(s) (*me->targetClass.put_string)(me->target, s) */
-#define PUTB(s,l) (*me->targetClass.put_block)(me->target, s, l)
 
 #ifdef USE_COLOR_STYLE
 char class_string[TEMPSTRINGSIZE];

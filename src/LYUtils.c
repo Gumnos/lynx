@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYUtils.c,v 1.207 2010/12/08 09:42:15 tom Exp $
+ * $LynxId: LYUtils.c,v 1.213 2011/06/11 12:14:34 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTCP.h>
@@ -2754,15 +2754,21 @@ BOOLEAN LYCanDoHEAD(const char *address)
  */
 BOOLEAN LYCloseInput(FILE *fp)
 {
+    int result = FALSE;
+
     if (fp != 0) {
 	int err = ferror(fp);
+	LY_TEMP *p = FindTempfileByFP(fp);
 
 	fclose(fp);
+	if (p != 0) {
+	    p->file = 0;
+	}
 	if (!err) {
-	    return TRUE;
+	    result = TRUE;
 	}
     }
-    return FALSE;
+    return (BOOLEAN) result;
 }
 
 /*
@@ -2770,16 +2776,24 @@ BOOLEAN LYCloseInput(FILE *fp)
  */
 BOOLEAN LYCloseOutput(FILE *fp)
 {
+    int result = FALSE;
+
     if (fp != 0) {
 	int err = ferror(fp);
+	LY_TEMP *p = FindTempfileByFP(fp);
 
 	fclose(fp);
+	if (p != 0) {
+	    p->file = 0;
+	}
 	if (!err) {
-	    return TRUE;
+	    result = TRUE;
 	}
     }
-    HTAlert(CANNOT_WRITE_TO_FILE);
-    return FALSE;
+    if (!result) {
+	HTAlert(CANNOT_WRITE_TO_FILE);
+    }
+    return (BOOLEAN) result;
 }
 
 /*
@@ -5137,6 +5151,10 @@ static char *HomeEnv(void)
 	    }
 	}
 	/* General M$ */
+#ifdef USE_PROGRAM_DIR
+	if (result == 0)
+	    result = CheckDir(program_dir);
+#endif
 	if (result == 0)
 	    result = CheckDir(LYGetEnv("TEMP"));
 	if (result == 0)
@@ -6478,7 +6496,7 @@ static uip_entry ly_uip[] =
   , { UIP_PERMIT_OPTIONS	, 0	      , NULL, NULL, NULL }
   , { UIP_UPLOAD_OPTIONS	, UIP_F_LMULTI, NULL, NULL, NULL }
 #endif
-#ifdef EXP_ADDRLIST_PAGE
+#ifdef USE_ADDRLIST_PAGE
   , { UIP_ADDRLIST_PAGE		, UIP_F_LMULTI, NULL, NULL, NULL }
 #endif
   , { UIP_LYNXCFG		, UIP_F_LMULTI, NULL, NULL, NULL }
@@ -6782,6 +6800,25 @@ void LYLocalFileToURL(char **target,
     StrAllocCat(*target, leaf);
 }
 
+#define MY_DOCTYPE "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">\n"
+#define PUT_STRING(buf)    (*(target)->isa->put_string)(target, buf)
+
+/*
+ * Like WriteInternalTitle, used for writing title on pages constructed via
+ * streams.
+ */
+void WriteStreamTitle(HTStream *target, const char *Title)
+{
+    char *buf = 0;
+
+    PUT_STRING(MY_DOCTYPE);
+    PUT_STRING("<html>\n<head>\n");
+    LYAddMETAcharsetToStream(target, -1);
+    HTSprintf0(&buf, "<title>%s</title>\n</head>\n<body>\n", Title);
+    PUT_STRING(buf);
+    FREE(buf);
+}
+
 /*
  * Open a temporary file for internal-pages, optionally reusing an existing
  * filename.
@@ -6808,8 +6845,7 @@ FILE *InternalPageFP(char *filename,
  */
 void WriteInternalTitle(FILE *fp0, const char *Title)
 {
-    fprintf(fp0,
-	    "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">\n");
+    fprintf(fp0, MY_DOCTYPE);
 
     fprintf(fp0, "<html>\n<head>\n");
     LYAddMETAcharsetToFD(fp0, -1);
@@ -7850,3 +7886,131 @@ void LYCloselog(void)
 }
 
 #endif /* SYSLOG_REQUESTED_URLS */
+
+#if defined(WIN_EX) || defined(__CYGWIN__)	/* 2000/03/07 (Tue) 17:17:46 */
+
+#define IS_SEP(p)	((p == '\\') || (p == '/') || (p == ':'))
+
+static char *black_list[] =
+{
+    "con",
+    "prn",
+    "clock$",
+    "config$",
+    NULL
+};
+
+static int is_device(char *fname)
+{
+    HANDLE fileHandle;
+    DWORD val;
+    int i;
+
+    i = 0;
+    while (black_list[i] != NULL) {
+	if (stricmp(fname, black_list[i]) == 0) {
+	    return 1;		/* device file */
+	}
+	i++;
+    }
+
+    fileHandle = CreateFile(fname, 0, 0, 0, OPEN_EXISTING, 0, 0);
+
+    if (fileHandle == INVALID_HANDLE_VALUE) {
+	return 0;		/* normal file */
+    } else {
+	val = GetFileType(fileHandle);
+	switch (val) {
+	case 1:
+	    val = 0;
+	    break;
+	case 2:
+	    val = 1;		/* device file */
+	    break;
+	default:
+	    val = 0;
+	    break;
+	}
+
+	CloseHandle(fileHandle);
+    }
+    return val;
+}
+
+static char *device_list[] =
+{
+    "con",
+    "nul",
+    "aux",
+    "prn",
+    NULL
+};
+
+#define IS_SJIS_HI1(hi) ((0x81<=hi)&&(hi<=0x9F))	/* 1st lev. */
+#define IS_SJIS_HI2(hi) ((0xE0<=hi)&&(hi<=0xEF))	/* 2nd lev. */
+
+int unsafe_filename(const char *fname)
+{
+    int i, len, sum;
+    unsigned char *cp;
+    char *save;
+
+    i = 0;
+    while (device_list[i] != NULL) {
+	if (stricmp(fname, device_list[i]) == 0) {
+	    return 0;		/* device file (open OK) */
+	}
+	i++;
+    }
+
+    save = cp = strdup(fname);
+
+    while (*cp) {
+	if (IS_SJIS_HI1(*cp) || IS_SJIS_HI2(*cp))
+	    cp += 2;		/* KANJI skip */
+	if (IS_SEP(*cp)) {
+	    *cp = '\0';
+	}
+	cp++;
+    }
+
+    sum = 0;
+    cp = save;
+    len = strlen(fname);
+    while (cp < (save + len)) {
+	if (*cp == '\0') {
+	    cp++;
+	} else {
+	    char *q;
+
+	    q = strchr(cp, '.');
+	    if (q)
+		*q = '\0';
+	    if (is_device(cp)) {
+		sum++;
+		break;
+	    }
+	    if (q)
+		cp = q + 1;
+	    while (*cp)
+		cp++;
+	}
+    }
+    free(save);
+
+    if (sum != 0)
+	return 1;
+    else
+	return 0;
+}
+
+FILE *safe_fopen(const char *fname, const char *mode)
+{
+    if (unsafe_filename(fname)) {
+	return (FILE *) NULL;
+    } else {
+	return fopen(fname, mode);
+    }
+}
+
+#endif /* defined(WIN_EX) || defined(__CYGWIN__) */
