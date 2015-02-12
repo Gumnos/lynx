@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTTCP.c,v 1.104 2010/09/25 11:32:53 tom Exp $
+ * $LynxId: HTTCP.c,v 1.106 2010/11/07 21:20:58 tom Exp $
  *
  *			Generic Communication Code		HTTCP.c
  *			==========================
@@ -76,9 +76,6 @@ static char *hostname = NULL;	/* The name of this host */
 #ifdef SOCKS
 unsigned long socks_bind_remoteAddr;	/* for long Rbind */
 #endif /* SOCKS */
-
-/* PUBLIC SockA HTHostAddress; *//* The internet address of the host */
-					/* Valid after call to HTHostName() */
 
 /*	Encode INET status (as in sys/errno.h)			  inet_status()
  *	------------------
@@ -2105,7 +2102,7 @@ int HTDoRead(int fildes,
 #ifdef USE_READPROGRESS
     CTRACE2(TRACE_TIMING, (tfp, "...HTDoRead returns %d (%" PRI_time_t
 			   " seconds)\n",
-			   result, CAST_time_t(time((time_t *) 0) - start)));
+			   result, CAST_time_t (time((time_t *)0) - start)));
 #endif
     return result;
 }

@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMain.c,v 1.224 2010/09/27 00:23:43 tom Exp $
+ * $LynxId: LYMain.c,v 1.226 2010/12/11 14:19:47 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTP.h>
@@ -211,6 +211,7 @@ BOOLEAN emacs_keys = EMACS_KEYS_ALWAYS_ON;
 BOOLEAN error_logging = MAIL_SYSTEM_ERROR_LOGGING;
 BOOLEAN goto_buffer = GOTOBUFFER;	/* TRUE if offering default goto URL */
 BOOLEAN historical_comments = FALSE;
+BOOLEAN html5_charsets = FALSE;
 BOOLEAN is_www_index = FALSE;
 BOOLEAN jump_buffer = JUMPBUFFER;	/* TRUE if offering default shortcut */
 BOOLEAN lynx_mode = NORMAL_LYNX_MODE;
@@ -448,7 +449,8 @@ char *lynxlinksfile = NULL;	/* the current visited links file URL */
 char *lynxlistfile = NULL;	/* the current list file URL */
 char *original_dir = NULL;	/* the original directory */
 char *personal_extension_map = NULL;	/* .mime.types */
-char *personal_mail_address = NULL;	/* the users mail address */
+char *personal_mail_address = NULL;	/* the user's mail address */
+char *personal_mail_name = NULL;	/* the user's personal name mail */
 char *personal_type_map = NULL;	/* .mailcap */
 char *pref_charset = NULL;	/* preferred character set */
 char *proxyauth_info[2] =
@@ -3506,6 +3508,10 @@ soon as they are seen)"
    ),
    PARSE_SET(
       "historical",	4|TOGGLE_ARG,		historical_comments,
+      "toggles use of '>' or '-->' as terminator for comments"
+   ),
+   PARSE_SET(
+      "html5_charsets",	4|TOGGLE_ARG,		html5_charsets,
       "toggles use of '>' or '-->' as terminator for comments"
    ),
    PARSE_FUN(

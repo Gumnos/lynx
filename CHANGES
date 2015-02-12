@@ -1,7 +1,43 @@
--- $LynxId: CHANGES,v 1.508 2010/10/04 08:19:06 tom Exp $
+-- $LynxId: CHANGES,v 1.525 2010/12/11 14:28:43 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2010-12-11 (2.8.8dev.7)
+* add PERSONAL_MAIL_NAME to options menu and .lynxrc (Debian #603647) -TD
+* remind user how to cancel message (Debian #292787) -TD
+* add HTML5_CHARSETS feature, which allows the user to choose whether to
+  interpret pages without an explicit charset according to the HTML5
+  "compatibility" feature (Debian #604466, #514897) -TD
+* add EXTERNAL_MENU feature to lynx.cfg, which allows the user to customize the
+  menu-entry shown, e.g., to suppress the display of the URL
+  (Debian #603646) -TD
+* cleanup URLs in lynx documentation -DK
+* add check in getfile() when handling a "mailto:" url, to prevent it when the
+  user has requested a dump (Debian #533308) -TD
+* improve configure check for IDNA library, which may depend upon intllib,
+  e.g., building with mingw on cygwin -DK
+* modify autoconf macros which look for X libraries, e.g., for PDCurses, to
+  accommodate ongoing changes in xorg package scripts -TD
+* reorganize autoconf macro CF_WITH_CURSES_DIR, to make it usable for both
+  curses and ncurses -TD
+* several changes to autoconf macros to lessen use of legacy shell feature
+  "${name-value}" in favor of "${name:-value}", since the former is broken in
+  recent versions of bash -TD
+* apply overlooked patch from pre-2.8.5, makes RMDIR_PATH configurable
+  (report/patch by Frank Heckenbach).
+* correct one of the places where link-number is formatted, for form input
+  anchors.  This was broken in dev.6 by the -unique_urls changes (report by
+  DK) -TD
+* undo a cleanup change to link-types from dev.6 which broke some uses of
+  input-anchors (report by FLWM) -TD
+* minor formatting improvements to sources using cindent 2.0-20101107 -TD
+* restore \r to \n conversion in HTML_put_character(), broken in gcc warning
+  cleanup (report by FLWM) -TD
+* fix a double-free in make_argv() (report by FLWM) -TD
+* add a memset in RestoreSession(), fixes uninitialized memory reference for
+  the VLINK section -PBM
+* update config.guess (2010-09-24), config.sub (2010-09-11)
 
 2010-10-04 (2.8.8dev.6)
 * amend change for Debian #514897 to exclude XML documents (Debian #592883) -TD

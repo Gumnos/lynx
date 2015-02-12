@@ -1,5 +1,5 @@
 /*
- * $LynxId: userdefs.h,v 1.256 2010/06/19 18:23:03 tom Exp $
+ * $LynxId: userdefs.h,v 1.261 2010/12/08 01:28:43 Doug.Kaufman Exp $
  *
  * Lynx - Hypertext navigation system
  *
@@ -506,7 +506,7 @@
  * An index to your CWIS can be placed here or a document containing
  * pointers to lots of interesting places on the web.
  */
-#define DEFAULT_INDEX_FILE "http://www.ncsa.uiuc.edu/SDG/Software/Mosaic/MetaIndex.html"
+#define DEFAULT_INDEX_FILE "http://scout.wisc.edu/"
 
 /*****************************
  * If USE_TRACE_LOG is set FALSE, then when TRACE mode is invoked the
@@ -1184,7 +1184,7 @@
  *
  *  NOTE: This can generate A REAL LOT of mail, be warned!!!
  */
-/* #define ALERTMAIL "webmaster@localhost" *//*error recipient if no owner */
+/* #define ALERTMAIL "webmaster@localhost" */ /*error recipient if no owner */
 
 /*********************************
  * If CHECKMAIL is set to TRUE, the user will be informed (via a status line
@@ -1432,11 +1432,11 @@
  * the version definition with the Project Version on checkout.  Just
  * ignore it. - kw */
 /* $Format: "#define LYNX_VERSION \"$ProjectVersion$\""$ */
-#define LYNX_VERSION "2.8.8dev.5"
+#define LYNX_VERSION "2.8.8dev.7"
 #define LYNX_WWW_HOME "http://lynx.isc.org/"
 #define LYNX_WWW_DIST "http://lynx.isc.org/current/"
 /* $Format: "#define LYNX_DATE \"$ProjectDate$\""$ */
-#define LYNX_DATE "Wed, 25 Aug 2010 02:40:13 -0700"
+#define LYNX_DATE "Sat, 11 Dec 2010 07:26:32 -0800"
 #define LYNX_DATE_OFF 5		/* truncate the automatically-generated date */
 #define LYNX_DATE_LEN 11	/* truncate the automatically-generated date */
 

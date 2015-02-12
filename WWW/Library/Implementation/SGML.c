@@ -1,5 +1,5 @@
 /*
- * $LynxId: SGML.c,v 1.140 2010/10/04 00:04:12 tom Exp $
+ * $LynxId: SGML.c,v 1.142 2010/12/10 01:46:10 tom Exp $
  *
  *			General SGML Parser code		SGML.c
  *			========================
@@ -42,7 +42,7 @@
 #define AssumeCP1252(context) \
 	(((context)->inUCLYhndl == LATIN1 \
 	  || (context)->inUCLYhndl == US_ASCII) \
-	 && !(context)->extended_html)
+	 && html5_charsets)
 
 #define INVALID (-1)
 
@@ -2153,7 +2153,7 @@ static void SGML_character(HTStream *context, int c_in)
 		   uck < 256) {
 	    CTRACE((tfp, "UCTransUniChar returned 0x%.2" PRI_UCode_t
 		    ":'%c'.\n",
-		    uck, FROMASCII((char) uck)));
+		    uck, FROMASCII((char)uck)));
 	    /*
 	     * We got one octet from the conversions, so use it.  - FM
 	     */

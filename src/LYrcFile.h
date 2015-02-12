@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYrcFile.h,v 1.36 2010/09/26 17:05:07 tom Exp $
+ * $LynxId: LYrcFile.h,v 1.40 2010/12/11 14:12:47 tom Exp $
  */
 #ifndef LYRCFILE_H
 #define LYRCFILE_H
@@ -75,6 +75,7 @@
 #define RC_ENABLE_LYNXRC                "enable_lynxrc"
 #define RC_ENABLE_SCROLLBACK            "enable_scrollback"
 #define RC_EXTERNAL                     "external"
+#define RC_EXTERNAL_MENU                "external_menu"
 #define RC_FILE_EDITOR                  "file_editor"
 #define RC_FILE_SORTING_METHOD          "file_sorting_method"
 #define RC_FINGER_PROXY                 "finger_proxy"
@@ -96,6 +97,7 @@
 #define RC_HELPFILE                     "helpfile"
 #define RC_HIDDEN_LINK_MARKER           "hidden_link_marker"
 #define RC_HISTORICAL_COMMENTS          "historical_comments"
+#define RC_HTML5_CHARSETS               "html5_charsets"
 #define RC_HTMLSRC_ATTRNAME_XFORM       "htmlsrc_attrname_xform"
 #define RC_HTMLSRC_TAGNAME_XFORM        "htmlsrc_tagname_xform"
 #define RC_HTTPS_PROXY                  "https_proxy"
@@ -172,6 +174,7 @@
 #define RC_PERSONAL_EXTENSION_MAP       "personal_extension_map"
 #define RC_PERSONAL_MAILCAP             "personal_mailcap"
 #define RC_PERSONAL_MAIL_ADDRESS        "personal_mail_address"
+#define RC_PERSONAL_MAIL_NAME           "personal_mail_name"
 #define RC_POSITIONABLE_EDITOR		"positionable_editor"
 #define RC_PREFERRED_CHARSET            "preferred_charset"
 #define RC_PREFERRED_ENCODING           "preferred_encoding"
@@ -190,6 +193,7 @@
 #define RC_REPLAYSECS                   "replaysecs"
 #define RC_REUSE_TEMPFILES              "reuse_tempfiles"
 #define RC_RLOGIN_PATH                  "rlogin_path"
+#define RC_RMDIR_PATH                   "rmdir_path"
 #define RC_RM_PATH                      "rm_path"
 #define RC_RULE                         "rule"
 #define RC_RULESFILE                    "rulesfile"
