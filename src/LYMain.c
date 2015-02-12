@@ -40,6 +40,7 @@
 #include <dpmi.h>
 #include <io.h>
 #include <sys/stat.h>
+#include <sys/exceptn.h>
 #endif /* __DJGPP__ */
 
 #ifdef __EMX__
@@ -59,8 +60,10 @@
 
 #ifdef FNAMES_8_3
 #define COOKIE_FILE "cookies"
+#define TRACE_FILE "LY-TRACE.LOG"
 #else
 #define COOKIE_FILE ".lynx_cookies"
+#define TRACE_FILE "Lynx.trace"
 #endif /* FNAMES_8_3 */
 
 /* ahhhhhhhhhh!! Global variables :-< */
@@ -73,7 +76,7 @@ PUBLIC BOOLEAN sigint = FALSE;
 #endif /* IGNORE_CTRL_C */
 
 #ifdef __DJGPP__
-char init_ctrl_break[1];
+PRIVATE char init_ctrl_break[1];
 #endif /* __DJGPP__ */
 
 #if USE_VMS_MAILER
@@ -93,18 +96,18 @@ PUBLIC char *syslog_txt = NULL;		/* syslog arb text for session */
 #endif /* SYSLOG_REQUESTED_URLS */
 #endif /* !VMS */
 
-#ifdef VMS
-PUBLIC char *LYCSwingPath = NULL;
-#endif /* VMS */
-
 #ifdef DIRED_SUPPORT
 PUBLIC BOOLEAN lynx_edit_mode = FALSE;
 PUBLIC BOOLEAN no_dired_support = FALSE;
-PUBLIC int dir_list_style = MIXED_STYLE;
 PUBLIC HTList *tagged = NULL;
+PUBLIC int LYAutoUncacheDirLists = 2; /* default dired uncaching behavior */
+PUBLIC int dir_list_order = ORDER_BY_NAME;
+PUBLIC int dir_list_style = MIXED_STYLE;
+
 #ifdef OK_OVERRIDE
 PUBLIC BOOLEAN prev_lynx_edit_mode = FALSE;
 #endif /* OK_OVERRIDE */
+
 #ifdef OK_PERMIT
 #ifdef NO_CHANGE_EXECUTE_PERMS
 PUBLIC BOOLEAN no_change_exec_perms = TRUE;
@@ -112,7 +115,7 @@ PUBLIC BOOLEAN no_change_exec_perms = TRUE;
 PUBLIC BOOLEAN no_change_exec_perms = FALSE;
 #endif /* NO_CHANGE_EXECUTE_PERMS */
 #endif /* OK_PERMIT */
-PUBLIC int LYAutoUncacheDirLists = 2; /* default dired uncaching behavior */
+
 #endif /* DIRED_SUPPORT */
 
 	   /* Number of docs cached in memory */
@@ -154,49 +157,57 @@ PUBLIC lynx_list_item_type *downloaders = NULL;
 PUBLIC lynx_list_item_type *externals = NULL;
 			    /* linked list of external options */
 #endif
+
 PUBLIC lynx_list_item_type *uploaders = NULL;
 PUBLIC int port_syntax = 1;
 PUBLIC int LYShowColor = SHOW_COLOR_UNKNOWN; /* to show or not */
 PUBLIC int LYrcShowColor = SHOW_COLOR_UNKNOWN; /* ... last used */
+
 #if !defined(NO_OPTION_FORMS) && !defined(NO_OPTION_MENU)
 PUBLIC BOOLEAN LYUseFormsOptions = TRUE; /* use forms-based options menu */
 #endif
+
+PUBLIC BOOLEAN LYJumpFileURL = FALSE;	 /* always FALSE the first time */
+PUBLIC BOOLEAN LYPermitURL = FALSE;
+PUBLIC BOOLEAN LYRestricted = FALSE; /* whether we have -anonymous option */
 PUBLIC BOOLEAN LYShowCursor = SHOW_CURSOR; /* to show or not to show */
-PUBLIC BOOLEAN verbose_img = VERBOSE_IMAGES;  /* show filenames or not */
+PUBLIC BOOLEAN LYUnderlineLinks = UNDERLINE_LINKS; /* Show the links underlined vs bold */
 PUBLIC BOOLEAN LYUseDefShoCur = TRUE;	/* Command line -show_cursor toggle */
+PUBLIC BOOLEAN LYUserSpecifiedURL = TRUE;/* always TRUE  the first time */
+PUBLIC BOOLEAN LYValidate = FALSE;
 PUBLIC BOOLEAN LYforce_no_cache = FALSE;
-PUBLIC BOOLEAN LYoverride_no_cache = FALSE;/*override no-cache b/c history etc*/
 PUBLIC BOOLEAN LYinternal_flag = FALSE; /* override no-cache b/c internal link*/
+PUBLIC BOOLEAN LYoverride_no_cache = FALSE;/*override no-cache b/c history etc*/
 PUBLIC BOOLEAN LYresubmit_posts = ALWAYS_RESUBMIT_POSTS;
 PUBLIC BOOLEAN LYtrimInputFields = FALSE;
-PUBLIC BOOLEAN LYUserSpecifiedURL = TRUE;/* always TRUE  the first time */
-PUBLIC BOOLEAN LYJumpFileURL = FALSE;	 /* always FALSE the first time */
-PUBLIC BOOLEAN jump_buffer = JUMPBUFFER; /* TRUE if offering default shortcut */
-PUBLIC BOOLEAN goto_buffer = GOTOBUFFER; /* TRUE if offering default goto URL */
-PUBLIC BOOLEAN ftp_passive = FTP_PASSIVE; /* TRUE if doing ftp in passive mode */
-PUBLIC BOOLEAN recent_sizechange = FALSE;/* the window size changed recently? */
-PUBLIC int user_mode = NOVICE_MODE;
-PUBLIC BOOLEAN dump_output_immediately = FALSE;
-PUBLIC BOOLEAN is_www_index = FALSE;
-PUBLIC BOOLEAN lynx_mode = NORMAL_LYNX_MODE;
-PUBLIC BOOLEAN bold_headers = FALSE;
 PUBLIC BOOLEAN bold_H1 = FALSE;
+PUBLIC BOOLEAN bold_headers = FALSE;
 PUBLIC BOOLEAN bold_name_anchors = FALSE;
-PUBLIC BOOLEAN use_underscore = SUBSTITUTE_UNDERSCORES;
-PUBLIC BOOLEAN nolist = FALSE;
-PUBLIC BOOLEAN historical_comments = FALSE;
-PUBLIC BOOLEAN minimal_comments = FALSE;
-PUBLIC BOOLEAN soft_dquotes = FALSE;
-PUBLIC BOOLEAN LYRestricted = FALSE; /* whether we have -anonymous option */
-PUBLIC BOOLEAN LYValidate = FALSE;
-PUBLIC BOOLEAN LYPermitURL = FALSE;
-PUBLIC BOOLEAN child_lynx = FALSE;
-PUBLIC BOOLEAN error_logging = MAIL_SYSTEM_ERROR_LOGGING;
-PUBLIC BOOLEAN check_mail = CHECKMAIL;
-PUBLIC BOOLEAN vi_keys = VI_KEYS_ALWAYS_ON;
-PUBLIC BOOLEAN emacs_keys = EMACS_KEYS_ALWAYS_ON;
-PUBLIC int keypad_mode = DEFAULT_KEYPAD_MODE;
 PUBLIC BOOLEAN case_sensitive = CASE_SENSITIVE_ALWAYS_ON;
+PUBLIC BOOLEAN check_mail = CHECKMAIL;
+PUBLIC BOOLEAN child_lynx = FALSE;
+PUBLIC BOOLEAN dump_output_immediately = FALSE;
+PUBLIC BOOLEAN emacs_keys = EMACS_KEYS_ALWAYS_ON;
+PUBLIC BOOLEAN error_logging = MAIL_SYSTEM_ERROR_LOGGING;
+PUBLIC BOOLEAN ftp_passive = FTP_PASSIVE; /* TRUE if doing ftp in passive mode */
+PUBLIC BOOLEAN ftp_local_passive;
+PUBLIC char *ftp_lasthost;
+PUBLIC BOOLEAN goto_buffer = GOTOBUFFER; /* TRUE if offering default goto URL */
+PUBLIC BOOLEAN historical_comments = FALSE;
+PUBLIC BOOLEAN is_www_index = FALSE;
+PUBLIC BOOLEAN jump_buffer = JUMPBUFFER; /* TRUE if offering default shortcut */
+PUBLIC BOOLEAN lynx_mode = NORMAL_LYNX_MODE;
+PUBLIC BOOLEAN minimal_comments = FALSE;
+PUBLIC BOOLEAN nolist = FALSE;
+PUBLIC BOOLEAN number_fields_on_left = TRUE;
+PUBLIC BOOLEAN number_links_on_left = TRUE;
+PUBLIC BOOLEAN recent_sizechange = FALSE;/* the window size changed recently? */
+PUBLIC BOOLEAN soft_dquotes = FALSE;
+PUBLIC BOOLEAN use_underscore = SUBSTITUTE_UNDERSCORES;
+PUBLIC BOOLEAN verbose_img = VERBOSE_IMAGES;  /* show filenames or not */
+PUBLIC BOOLEAN vi_keys = VI_KEYS_ALWAYS_ON;
+PUBLIC int keypad_mode = DEFAULT_KEYPAD_MODE;
+PUBLIC int user_mode = NOVICE_MODE;
 
 PUBLIC BOOLEAN telnet_ok = TRUE;
 #ifndef DISABLE_NEWS
@@ -282,9 +293,11 @@ PUBLIC BOOLEAN local_host_only = FALSE;
 PUBLIC BOOLEAN override_no_download = FALSE;
 PUBLIC BOOLEAN show_dotfiles = FALSE;	/* From rcfile if no_dotfiles is false */
 PUBLIC BOOLEAN LYforce_HTML_mode = FALSE;
+PUBLIC BOOLEAN LYfind_leaks = TRUE;
 
 #ifdef __DJGPP__
 PUBLIC BOOLEAN watt_debug = FALSE;	/* WATT-32 debugging */
+PUBLIC BOOLEAN dj_is_bash = FALSE;  /* Check for bash shell under DJGPP */
 #endif /* __DJGPP__ */
 
 #ifdef WIN_EX
@@ -305,11 +318,9 @@ PUBLIC BOOLEAN system_is_NT = FALSE;
 
 #ifdef SH_EX
 PUBLIC BOOLEAN show_cfg = FALSE;
-#ifdef WIN_EX
-PUBLIC int     debug_delay = 0;		/* 1998/10/06 (Tue) 08:41:20 */
 #endif
+
 PUBLIC BOOLEAN no_table_center = FALSE;	/* 1998/10/09 (Fri) 15:12:49 */
-#endif /* SH_EX */
 
 #if USE_BLAT_MAILER
 PUBLIC BOOLEAN mail_is_blat = TRUE;
@@ -411,21 +422,23 @@ PUBLIC char *startrealm = NULL;		/* the startfile realm */
 PUBLIC char *system_mail = NULL;	/* The path for sending mail */
 PUBLIC char *system_mail_flags = NULL;	/* Flags for sending mail */
 PUBLIC char *x_display = NULL;		/* display environment variable */
-PUBLIC histstruct history[MAXHIST];
+PUBLIC HistInfo history[MAXHIST];
 PUBLIC int AlertSecs;			/* time-delay for HTAlert() messages   */
+PUBLIC int DebugSecs;			/* time-delay for HTProgress messages */
 PUBLIC int InfoSecs;			/* time-delay for Information messages */
 PUBLIC int LYMultiBookmarks = MULTI_BOOKMARK_SUPPORT;
 PUBLIC int LYStatusLine = -1;		/* Line for statusline() if > -1 */
 PUBLIC int LYcols = DFT_COLS;
 PUBLIC int LYlines = DFT_ROWS;
 PUBLIC int MessageSecs;			/* time-delay for important Messages   */
+PUBLIC int ReplaySecs;			/* time-delay for command-scripts */
 PUBLIC int ccount = 0;			/* Starting number for lnk#.dat files in crawls */
 PUBLIC int dump_output_width = 0;
 PUBLIC int lynx_temp_subspace = 0;	/* > 0 if we made temp-directory */
 PUBLIC int nhist = 0;			/* number of history entries */
 PUBLIC int nlinks = 0;			/* number of links in memory */
 PUBLIC int outgoing_mail_charset = -1;	/* translate mail to this charset */
-PUBLIC linkstruct links[MAXLINKS];
+PUBLIC LinkInfo links[MAXLINKS];
 
 #ifndef DISABLE_BIBP
 PUBLIC BOOLEAN BibP_bibhost_available = FALSE;  /* until check succeeds  */
@@ -435,18 +448,25 @@ PUBLIC char *BibP_bibhost = NULL;	 /* local server for bibp: links  */
 PUBLIC char *BibP_globalserver = NULL;   /* global server for bibp: links */
 #endif
 
-#ifdef EXP_PERSISTENT_COOKIES
+#ifdef USE_PERSISTENT_COOKIES
 PUBLIC BOOLEAN persistent_cookies = FALSE; /* disabled by default! */
 PUBLIC char *LYCookieFile = NULL;	/* cookie read file */
 PUBLIC char *LYCookieSaveFile = NULL;	/* cookie save file */
-#endif /* EXP_PERSISTENT_COOKIES */
+#endif /* USE_PERSISTENT_COOKIES */
 
 #ifdef EXP_NESTED_TABLES
-PUBLIC BOOLEAN nested_tables = TRUE;
+PUBLIC BOOLEAN nested_tables =
+#if defined(USE_COLOR_STYLE)
+    TRUE
+#else
+    FALSE				/* see 2001-08-15  */
+#endif
+    ;
 #endif
 
 PUBLIC BOOLEAN LYShowTransferRate = TRUE;
-PUBLIC int LYTransferRate = rateEtaKB_maybe;
+PUBLIC int LYTransferRate = rateKB;
+PUBLIC char * LYTransferName = NULL;
 
 PUBLIC char *XLoadImageCommand = NULL;	/* Default image viewer for X */
 PUBLIC BOOLEAN LYNoISMAPifUSEMAP = FALSE; /* Omit ISMAP link if MAP present? */
@@ -472,6 +492,12 @@ PUBLIC BOOLEAN LYPrependCharsetToSource = TRUE;
 PUBLIC BOOLEAN LYQuitDefaultYes = QUIT_DEFAULT_YES;
 PUBLIC BOOLEAN dont_wrap_pre = FALSE;
 
+PUBLIC int cookie_noprompt;
+
+#ifdef USE_SSL
+PUBLIC int ssl_noprompt = FORCE_PROMPT_DFT;
+#endif
+
 PUBLIC int connect_timeout = 18000; /*=180000*0.1 - used in HTDoConnect.*/
 
 #ifdef EXP_JUSTIFY_ELTS
@@ -479,8 +505,17 @@ PUBLIC BOOL ok_justify = TRUE;
 PUBLIC int justify_max_void_percent = 35;
 #endif
 
+#ifdef EXP_LOCALE_CHARSET
+PUBLIC BOOLEAN LYLocaleCharset = FALSE;
+#endif
+
 #ifndef NO_DUMP_WITH_BACKSPACES
 PUBLIC BOOLEAN with_backspaces = FALSE;
+#endif
+
+#if defined(PDCURSES) && defined(PDC_BUILD) && PDC_BUILD >= 2401
+PUBLIC int scrsize_x = 0;
+PUBLIC int scrsize_y = 0;
 #endif
 
 PUBLIC BOOL force_empty_hrefless_a = FALSE;
@@ -511,8 +546,7 @@ PUBLIC int LYNoZapKey = 0; /* 0: off (do z checking), 1: full, 2: initially */
 #endif
 
 #ifndef DISABLE_NEWS
-extern int HTNewsChunkSize; /* Number of news articles per chunk (HTNews.c) */
-extern int HTNewsMaxChunk;  /* Max news articles before chunking (HTNews.c) */
+#include <HTNews.h>
 #endif
 
 PUBLIC BOOLEAN FileInitAlreadyDone = FALSE;
@@ -583,7 +617,7 @@ PRIVATE void reset_break(void)
 #endif /* __DJGPP__ */
 
 #if defined(WIN_EX)
-PUBLIC int is_windows_nt(void)
+PRIVATE int is_windows_nt(void)
 {
     DWORD version;
 
@@ -614,8 +648,10 @@ PRIVATE void free_lynx_globals NOARGS
 
 #ifdef VMS
     Define_VMSLogical("LYNX_VERSION", "");
-    FREE(LYCSwingPath);
 #endif /* VMS */
+#ifndef VMS
+    FREE(lynx_version_putenv_command);
+#endif
 
 #if USE_VMS_MAILER
     FREE(mail_adrs);
@@ -646,7 +682,7 @@ PRIVATE void free_lynx_globals NOARGS
     FREE(BibP_bibhost);
     FREE(BibP_globalserver);
 #endif
-#ifdef EXP_PERSISTENT_COOKIES
+#ifdef USE_PERSISTENT_COOKIES
     FREE(LYCookieFile);
     FREE(LYCookieSaveFile);
 #endif
@@ -677,10 +713,8 @@ PRIVATE void free_lynx_globals NOARGS
     FREE(URLDomainPrefixes);
     FREE(URLDomainSuffixes);
     FREE(XLoadImageCommand);
-#ifndef VMS
-    FREE(lynx_version_putenv_command);
-#endif
     FREE(lynx_temp_space);
+    FREE(LYTransferName);
     FREE(LYTraceLogPath);
     FREE(lynx_cfg_file);
 #if defined(USE_COLOR_STYLE)
@@ -847,6 +881,49 @@ PRIVATE BOOL cleanup_win32(DWORD fdwCtrlType)
 #endif
 
 /*
+ * Append the SSL version to lynx version or user-agent string.
+ */
+#ifdef USE_SSL
+PRIVATE void append_ssl_version ARGS2(
+	char **,	target,
+	char *,		separator)
+{
+    char SSLLibraryVersion[256];
+    char *SSLcp;
+
+    HTSprintf(target, " SSL-MM%s1.4.1", separator);
+
+#undef LYNX_SSL_VERSION
+
+#if defined(SSLEAY_VERSION)
+#define LYNX_SSL_VERSION SSLeay_version(SSLEAY_VERSION)
+#else
+#if defined(OPENSSL_VERSION_TEXT)
+#define LYNX_SSL_VERSION OPENSSL_VERSION_TEXT
+#else
+#if defined(GNUTLS_VERSION)
+#define LYNX_SSL_VERSION GNUTLS_VERSION
+#endif /* GNUTLS_VERSION */
+#endif /* OPENSSL_VERSION_TEXT */
+#endif
+
+#ifdef LYNX_SSL_VERSION
+    if (*separator == ' ')
+	StrAllocCat(*target, ",");
+    LYstrncpy(SSLLibraryVersion, LYNX_SSL_VERSION, sizeof(SSLLibraryVersion)-1);
+    if ((SSLcp = strchr(SSLLibraryVersion, ' ')) != NULL) {
+	*SSLcp++ = *separator;
+	if ((SSLcp = strchr(SSLcp, ' ')) != NULL) {
+	    *SSLcp = '\0';
+	    StrAllocCat(*target, " ");
+	    StrAllocCat(*target, SSLLibraryVersion);
+	}
+    }
+#endif /* LYNX_SSL_VERSION */
+}
+#endif /* USE_SSL */
+
+/*
  * Wow!  Someone wants to start up Lynx.
  */
 PUBLIC int main ARGS2(
@@ -864,10 +941,6 @@ PUBLIC int main ARGS2(
 #ifdef _WINDOWS
     WSADATA WSAData;
 #endif /* _WINDOWS */
-#ifdef USE_SSL
-    char SSLLibraryVersion[256];
-    char *SSLcp;
-#endif /* USE_SSL */
 
     /*
      * Just in case someone has the idea to install lynx set-uid, let's try
@@ -880,6 +953,11 @@ PUBLIC int main ARGS2(
 #ifdef    NOT_ASCII
     FixCharacters();
 #endif /* NOT_ASCII */
+
+#ifndef DISABLE_FTP
+    /* malloc a sizeof(char) so 1st strcmp() won't dump in HTLoadFile() */
+    ftp_lasthost = calloc(1,sizeof(char));
+#endif
 
 #ifdef EXP_CHARSET_CHOICE
     memset((char*)charset_subsets, 0, sizeof(charset_subset_t)*MAXCHARSETS);
@@ -907,7 +985,7 @@ PUBLIC int main ARGS2(
 
 #endif /* _WINDOWS */
 
-#if defined(__CYGWIN__) && defined(DOSPATH)
+#if 0 /* defined(__CYGWIN__) - does not work with screen */
     if (strcmp(ttyname(fileno(stdout)), "/dev/conout") != 0) {
 	printf("please \"$CYGWIN=notty\"\n");
 	exit(EXIT_SUCCESS);
@@ -933,7 +1011,13 @@ PUBLIC int main ARGS2(
     } else {
 	init_ctrl_break[0] = 1;
     }
+    __djgpp_set_sigquit_key(0x082D); /* Bind ALT-X to SIGQUIT */
+    signal(SIGQUIT, cleanup_sig);
     atexit(reset_break);
+
+    if (((cp = LYGetEnv("SHELL")) != NULL)
+      && (strstr(LYPathLeaf(cp), "sh") != NULL))
+	dj_is_bash = TRUE;
 #endif /* __DJGPP__ */
 
     /*
@@ -946,7 +1030,7 @@ PUBLIC int main ARGS2(
     SetOutputMode(O_BINARY);
 
 #ifdef DOSPATH
-    if (getenv("TERM")==NULL) putenv("TERM=vt100");
+    if (LYGetEnv("TERM")==NULL) putenv("TERM=vt100");
 #endif
 
     LYShowColor = (SHOW_COLOR ? SHOW_COLOR_ON : SHOW_COLOR_OFF);
@@ -955,12 +1039,7 @@ PUBLIC int main ARGS2(
      */
     pgm = argv[0];
     cp = NULL;
-#ifdef DOSPATH
-    if ((cp = strrchr(pgm, '\\')) != NULL) {
-	pgm = cp + 1;
-    } else if (cp == NULL)
-#endif
-    if ((cp = strrchr(pgm, '/')) != NULL) {
+    if ((cp = LYLastPathSep(pgm)) != NULL) {
 	pgm = cp + 1;
     }
 
@@ -998,9 +1077,11 @@ PUBLIC int main ARGS2(
     setlocale(LC_ALL, "");
 #endif /* LOCALE */
     /* Set the text message domain.  */
-#ifdef HAVE_LIBINTL_H
+#if defined(HAVE_LIBINTL_H) || defined(HAVE_LIBGETTEXT_H)
 #ifndef __DJGPP__
-    bindtextdomain ("lynx", LOCALEDIR);
+    if ((cp = LYGetEnv("LYNX_LOCALEDIR")) == 0)
+	cp = LOCALEDIR;
+    bindtextdomain ("lynx", cp);
 #endif /* !__DJGPP__ */
     textdomain ("lynx");
 #endif /* HAVE_LIBINTL_H */
@@ -1012,15 +1093,15 @@ PUBLIC int main ARGS2(
     /*
      *	Need this for Ultrix.
      */
-    terminal = getenv("TERM");
+    terminal = LYGetEnv("TERM");
     if ((terminal == NULL) || !strncasecomp(terminal, "xterm", 5))
 	terminal = "vt100";
 #endif /* ULTRIX */
     /*
      *	Zero the links and history struct arrays.
      */
-    memset((void *)links, 0, sizeof(linkstruct)*MAXLINKS);
-    memset((void *)history, 0, sizeof(histstruct)*MAXHIST);
+    memset((void *)links, 0, sizeof(LinkInfo)*MAXLINKS);
+    memset((void *)history, 0, sizeof(HistInfo)*MAXHIST);
     /*
      *	Zero the MultiBookmark arrays.
      */
@@ -1030,18 +1111,16 @@ PUBLIC int main ARGS2(
     StrAllocCopy(list_format, LIST_FORMAT);
 #endif /* !VMS */
 
-#ifdef HAVE_NAPMS
-#define SECS2Secs(n) (1000 * (n))
-#else
-#define SECS2Secs(n) (n)
-#endif
-    InfoSecs	= SECS2Secs(INFOSECS);
-    MessageSecs = SECS2Secs(MESSAGESECS);
     AlertSecs	= SECS2Secs(ALERTSECS);
+    DebugSecs	= SECS2Secs(DEBUGSECS);
+    InfoSecs	= SECS2Secs(INFOSECS);
+    MessageSecs	= SECS2Secs(MESSAGESECS);
+    ReplaySecs	= SECS2Secs(REPLAYSECS);
 
+    StrAllocCopy(LYTransferName, "KiB");
     StrAllocCopy(helpfile, HELPFILE);
     StrAllocCopy(startfile, STARTFILE);
-    LYTrimStartfile(startfile);
+    LYEscapeStartfile(&startfile);
     StrAllocCopy(indexfile, DEFAULT_INDEX_FILE);
     StrAllocCopy(global_type_map, GLOBAL_MAILCAP);
     StrAllocCopy(personal_type_map, PERSONAL_MAILCAP);
@@ -1050,7 +1129,12 @@ PUBLIC int main ARGS2(
     StrAllocCopy(language, PREFERRED_LANGUAGE);
     StrAllocCopy(pref_charset, PREFERRED_CHARSET);
     StrAllocCopy(system_mail, SYSTEM_MAIL);
+#ifdef SYSTEM_MAIL_FLAGS
     StrAllocCopy(system_mail_flags, SYSTEM_MAIL_FLAGS);
+#else
+    StrAllocCopy(system_mail_flags, "");
+#endif
+
     StrAllocCopy(LYUserAgent, LYNX_NAME);
     StrAllocCat(LYUserAgent, "/");
     StrAllocCat(LYUserAgent, LYNX_VERSION);
@@ -1059,20 +1143,10 @@ PUBLIC int main ARGS2(
 	StrAllocCat(LYUserAgent, HTLibraryVersion);
     }
 #ifdef USE_SSL
-    StrAllocCat(LYUserAgent, " SSL-MM/1.4.1");
-#ifdef OPENSSL_VERSION_TEXT
-    LYstrncpy(SSLLibraryVersion, OPENSSL_VERSION_TEXT, sizeof(SSLLibraryVersion)-1);
-    if ((SSLcp = strchr(SSLLibraryVersion, ' ')) != NULL) {
-	*SSLcp++ = '/';
-	if ((SSLcp = strchr(SSLcp, ' ')) != NULL) {
-	    *SSLcp = '\0';
-	    StrAllocCat(LYUserAgent, " ");
-	    StrAllocCat(LYUserAgent, SSLLibraryVersion);
-	}
-    }
-#endif /* OPENSSL_VERSION_TEXT */
+    append_ssl_version(&LYUserAgent, "/");
 #endif /* USE_SSL */
     StrAllocCopy(LYUserAgentDefault, LYUserAgent);
+
 #ifdef VMS
     Define_VMSLogical("LYNX_VERSION", LYNX_VERSION);
 #else
@@ -1084,17 +1158,17 @@ PUBLIC int main ARGS2(
      */
 #endif /* VMS */
 
-    if ((cp = getenv("LYNX_TEMP_SPACE")) != NULL)
+    if ((cp = LYGetEnv("LYNX_TEMP_SPACE")) != NULL)
 	StrAllocCopy(lynx_temp_space, cp);
-#if defined (UNIX)
-    else if ((cp = getenv("TMPDIR")) != NULL)
+#if defined (UNIX) || defined (__DJGPP__)
+    else if ((cp = LYGetEnv("TMPDIR")) != NULL)
 	StrAllocCopy(lynx_temp_space, cp);
 #endif
 #if defined (DOSPATH) || defined (__EMX__)
-    else if ((cp = getenv("TEMP")) != NULL)
-	StrAllocCopy(lynx_temp_space, HTSYS_name(cp));
-    else if ((cp = getenv("TMP")) != NULL)
-	StrAllocCopy(lynx_temp_space, HTSYS_name(cp));
+    else if ((cp = LYGetEnv("TEMP")) != NULL)
+	StrAllocCopy(lynx_temp_space, cp);
+    else if ((cp = LYGetEnv("TMP")) != NULL)
+	StrAllocCopy(lynx_temp_space, cp);
 #endif
     else
 #ifdef TEMP_SPACE
@@ -1114,7 +1188,7 @@ PUBLIC int main ARGS2(
     if ((cp = strstr(lynx_temp_space, "$USER")) != NULL) {
 	char *cp1;
 
-	if ((cp1 = getenv("USER")) != NULL) {
+	if ((cp1 = LYGetEnv("USER")) != NULL) {
 	    *cp = '\0';
 	    StrAllocCopy(temp, lynx_temp_space);
 	    *cp = '$';
@@ -1144,10 +1218,11 @@ PUBLIC int main ARGS2(
     }
 #else
     LYAddPathSep(&lynx_temp_space);
+    StrAllocCopy(lynx_temp_space, HTSYS_name(lynx_temp_space));
 #endif /* VMS */
 
     if ((HTStat(lynx_temp_space, &dir_info) < 0
-#ifdef UNIX
+#if defined(MULTI_USER_UNIX)
 	&& mkdir(lynx_temp_space, 0700) < 0
 #endif
 	)
@@ -1157,12 +1232,6 @@ PUBLIC int main ARGS2(
 		gettext("No such directory"));
 	exit_immediately(EXIT_FAILURE);
     }
-
-#ifdef VMS
-#ifdef CSWING_PATH
-    StrAllocCopy(LYCSwingPath, CSWING_PATH);
-#endif /* CSWING_PATH */
-#endif /* VMS */
 
 #if USE_VMS_MAILER
 #ifndef MAIL_ADRS
@@ -1205,7 +1274,7 @@ PUBLIC int main ARGS2(
      *	the help menu, output that and exit. - FM
      */
 #ifndef NO_LYNX_TRACE
-    if (getenv("LYNX_TRACE") != 0) {
+    if (LYGetEnv("LYNX_TRACE") != 0) {
 	WWW_TraceFlag = TRUE;
     }
 #endif
@@ -1289,10 +1358,10 @@ PUBLIC int main ARGS2(
     if (!LYValidate && !LYRestricted &&
 	strlen(ANONYMOUS_USER) > 0 &&
 #if defined (VMS) || defined (NOUSERS)
-	!strcasecomp((getenv("USER")==NULL ? " " : getenv("USER")),
+	!strcasecomp((LYGetEnv("USER")==NULL ? " " : LYGetEnv("USER")),
 		     ANONYMOUS_USER)
 #else
-#if HAVE_CUSERID
+#ifdef HAVE_CUSERID
 	STREQ((char *)cuserid((char *) NULL), ANONYMOUS_USER)
 #else
 	STREQ(((char *)getlogin()==NULL ? " " : getlogin()), ANONYMOUS_USER)
@@ -1307,13 +1376,9 @@ PUBLIC int main ARGS2(
     /*
      *	Set up the TRACE log path, and logging if appropriate. - FM
      */
-#ifdef FNAMES_8_3
-    LYAddPathToHome(LYTraceLogPath =
-		malloc(LY_MAXPATH), LY_MAXPATH, "LY-TRACE.LOG");
-#else
-    LYAddPathToHome(LYTraceLogPath =
-		malloc(LY_MAXPATH), LY_MAXPATH, "Lynx.trace");
-#endif
+    if ((cp = LYGetEnv("LYNX_TRACE_FILE")) == 0)
+	cp = TRACE_FILE;
+    LYAddPathToHome(LYTraceLogPath = malloc(LY_MAXPATH), LY_MAXPATH, cp);
 
     LYOpenTraceLog();
 
@@ -1355,8 +1420,8 @@ PUBLIC int main ARGS2(
      *	the command line, see if it's in the environment.
      */
     if (!lynx_cfg_file) {
-	if (((cp=getenv("LYNX_CFG")) != NULL) ||
-	    (cp=getenv("lynx_cfg")) != NULL)
+	if (((cp=LYGetEnv("LYNX_CFG")) != NULL) ||
+	    (cp=LYGetEnv("lynx_cfg")) != NULL)
 	    StrAllocCopy(lynx_cfg_file, cp);
     }
 
@@ -1425,8 +1490,8 @@ PUBLIC int main ARGS2(
      *	the command line, see if it's in the environment.
      */
     if (!lynx_lss_file) {
-	if (((cp=getenv("LYNX_LSS")) != NULL) ||
-	    (cp=getenv("lynx_lss")) != NULL)
+	if (((cp=LYGetEnv("LYNX_LSS")) != NULL) ||
+	    (cp=LYGetEnv("lynx_lss")) != NULL)
 	    StrAllocCopy(lynx_lss_file, cp);
     }
 
@@ -1464,7 +1529,7 @@ PUBLIC int main ARGS2(
      *  Set the original directory, used for default download
      */
     if (!strcmp(Current_Dir(filename), ".")) {
-	if ((cp = getenv("PWD")) != 0)
+	if ((cp = LYGetEnv("PWD")) != 0)
 	    StrAllocCopy(original_dir, cp);
     } else {
 	StrAllocCopy(original_dir, filename);
@@ -1498,12 +1563,16 @@ PUBLIC int main ARGS2(
      */
     read_rc(NULL);
 
+#ifdef EXP_LOCALE_CHARSET
+    LYFindLocaleCharset();
+#endif
+
     /*
      * Get WWW_HOME environment variable if it exists.
      */
-    if ((cp = getenv("WWW_HOME")) != NULL) {
+    if ((cp = LYGetEnv("WWW_HOME")) != NULL) {
 	StrAllocCopy(startfile, cp);
-	LYTrimStartfile(startfile);
+	LYEscapeStartfile(&startfile);
     }
 
     /*
@@ -1512,7 +1581,6 @@ PUBLIC int main ARGS2(
      * it's not an absolute URL, make it one. - FM
      */
     StrAllocCopy(LynxHome, startfile);
-    LYFillLocalFileURL((char **)&LynxHome, "file://localhost");
     LYEnsureAbsoluteURL((char **)&LynxHome, "LynxHome", FALSE);
 
     /*
@@ -1539,24 +1607,6 @@ PUBLIC int main ARGS2(
 #ifdef CAN_SWITCH_DISPLAY_CHARSET
     if (current_char_set == auto_display_charset) /* Better: explicit option */
 	switch_display_charsets = 1;
-#endif
-
-#undef TTY_DEVICE
-#undef NUL_DEVICE
-
-#ifdef VMS
-#define TTY_DEVICE "tt:"
-#define NUL_DEVICE "nl:"
-#endif
-
-#ifdef _WINDOWS
-#define TTY_DEVICE "con"
-#define NUL_DEVICE "nul"
-#endif
-
-#ifndef TTY_DEVICE
-#define TTY_DEVICE "/dev/tty"
-#define NUL_DEVICE "/dev/null"
 #endif
 
 #if defined (TTY_DEVICE) || defined(HAVE_TTYNAME)
@@ -1610,7 +1660,7 @@ PUBLIC int main ARGS2(
      */
     HTMLUseCharacterSet(current_char_set);
 
-#ifdef EXP_PERSISTENT_COOKIES
+#ifdef USE_PERSISTENT_COOKIES
     /*
      * Sod it, this looks like a reasonable place to load the
      * cookies file, probably.  - RP
@@ -1638,9 +1688,9 @@ PUBLIC int main ARGS2(
 
     if (LYCookieSaveFile == NULL) {
 	if (dump_output_immediately) {
-		StrAllocCopy(LYCookieSaveFile, "/dev/null");
+	    StrAllocCopy(LYCookieSaveFile, "/dev/null");
 	} else {
-		StrAllocCopy(LYCookieSaveFile, LYCookieFile);
+	    StrAllocCopy(LYCookieSaveFile, LYCookieFile);
 	}
     }
 #endif
@@ -1658,7 +1708,7 @@ PUBLIC int main ARGS2(
      *	If one was set in the configuration file, that
      *	one will be overridden. - FM
      */
-    if ((cp=getenv("LYNX_SAVE_SPACE")) != NULL)
+    if ((cp = LYGetEnv("LYNX_SAVE_SPACE")) != NULL)
 	StrAllocCopy(lynx_save_space, cp);
 
     /*
@@ -1716,7 +1766,7 @@ PUBLIC int main ARGS2(
 	!(Lynx_Color_Flags & SL_LYNX_USE_COLOR)) {
 	Lynx_Color_Flags |= SL_LYNX_USE_COLOR;
     } else if ((Lynx_Color_Flags & SL_LYNX_USE_COLOR) ||
-	       getenv("COLORTERM") != NULL) {
+	       LYGetEnv("COLORTERM") != NULL) {
 	if (LYShowColor != SHOW_COLOR_NEVER &&
 	    LYShowColor != SHOW_COLOR_ALWAYS) {
 	    LYShowColor = SHOW_COLOR_ON;
@@ -1751,7 +1801,7 @@ PUBLIC int main ARGS2(
 	}
     }
 
-    if (keypad_mode == NUMBERS_AS_ARROWS) {
+    if (!links_are_numbered()) {
 	if (number_fields)
 	    keypad_mode = LINKS_AND_FIELDS_ARE_NUMBERED;
 	if (number_links)
@@ -1794,7 +1844,7 @@ PUBLIC int main ARGS2(
 	no_multibook = TRUE;
     }
 
-#ifdef SOURCE_CACHE
+#ifdef USE_SOURCE_CACHE
     /*
      * Disable source caching if not interactive.
      */
@@ -1834,8 +1884,9 @@ PUBLIC int main ARGS2(
 #ifdef WIN32
     SetConsoleCtrlHandler((PHANDLER_ROUTINE) cleanup_win32, TRUE);
 #endif
-    if (!dump_output_immediately)
+
 #ifndef NOSIGHUP
+    if (!dump_output_immediately)
 	(void) signal(SIGHUP, cleanup_sig);
 #endif /* NOSIGHUP */
 
@@ -1929,7 +1980,6 @@ PUBLIC int main ARGS2(
      *	force in "//localhost", and if it's not an absolute URL,
      *	make it one. - FM
      */
-    LYFillLocalFileURL((char **)&startfile, "file://localhost");
     LYEnsureAbsoluteURL((char **)&startfile, "STARTFILE", FALSE);
 
     /*
@@ -1938,7 +1988,6 @@ PUBLIC int main ARGS2(
      *	not an absolute URL, make it one. - FM
      */
     if (homepage) {
-	LYFillLocalFileURL((char **)&homepage, "file://localhost");
 	LYEnsureAbsoluteURL((char **)&homepage, "HOMEPAGE", FALSE);
     }
 
@@ -2012,7 +2061,7 @@ PUBLIC int main ARGS2(
 	if (crawl && !number_links && !number_fields) {
 	    keypad_mode = NUMBERS_AS_ARROWS;
 	} else if (!nolist) {
-	    if (keypad_mode == NUMBERS_AS_ARROWS) {
+	    if (!links_are_numbered()) {
 		if (number_fields)
 		    keypad_mode = LINKS_AND_FIELDS_ARE_NUMBERED;
 		else
@@ -2029,10 +2078,9 @@ PUBLIC int main ARGS2(
 	status = mainloop();
 	if (!nolist &&
 	    !crawl &&		/* For -crawl it has already been done! */
-	    (keypad_mode == LINKS_ARE_NUMBERED ||
-	     keypad_mode == LINKS_AND_FIELDS_ARE_NUMBERED))
+	    links_are_numbered())
 	    printlist(stdout, FALSE);
-#ifdef EXP_PERSISTENT_COOKIES
+#ifdef USE_PERSISTENT_COOKIES
 	/*
 	 *  We want to save cookies picked up when in immediate dump
 	 *  mode.  Instead of calling cleanup() here, let's only call
@@ -2040,7 +2088,7 @@ PUBLIC int main ARGS2(
 	 */
 	if (persistent_cookies)
 	    LYStoreCookies(LYCookieSaveFile);
-#endif /* EXP_PERSISTENT_COOKIES */
+#endif /* USE_PERSISTENT_COOKIES */
 	exit_immediately(status);
     } else {
 	/*
@@ -2069,6 +2117,15 @@ PUBLIC int main ARGS2(
 	LYCloseCloset(RECALL_URL);
 	LYCloseCloset(RECALL_MAIL);
 	cleanup();
+#if defined(PDCURSES) && defined(PDC_BUILD) && PDC_BUILD >= 2401
+	if (! isendwin()) {
+	    extern int saved_scrsize_x;
+	    extern int saved_scrsize_y;
+	    if ((saved_scrsize_x != 0) && (saved_scrsize_y != 0)) {
+	        resize_term(saved_scrsize_y, saved_scrsize_x);
+	    }
+	}
+#endif
 	exit(status);
     }
 
@@ -2173,7 +2230,7 @@ PUBLIC void reload_read_cfg NOARGS
 
     {
 	/* set few safe flags: */
-#ifdef EXP_PERSISTENT_COOKIES
+#ifdef USE_PERSISTENT_COOKIES
 	BOOLEAN persistent_cookies_flag = persistent_cookies;
 	char * LYCookieFile_flag = NULL;
 	char * LYCookieSaveFile_flag = NULL;
@@ -2194,7 +2251,7 @@ PUBLIC void reload_read_cfg NOARGS
 #endif
 	/* free downloaders, printers, environments, dired menu */
 	free_lynx_cfg();
-#ifdef SOURCE_CACHE
+#ifdef USE_SOURCE_CACHE
 	source_cache_file_error = FALSE; /* reset flag */
 #endif
 
@@ -2241,7 +2298,7 @@ PUBLIC void reload_read_cfg NOARGS
 		 * a major problem: file paths
 		 * like lynx_save_space, LYCookieFile etc.
 		 */
-#ifdef EXP_PERSISTENT_COOKIES
+#ifdef USE_PERSISTENT_COOKIES
 	/* restore old settings */
 	if (persistent_cookies != persistent_cookies_flag) {
 	    persistent_cookies = persistent_cookies_flag;
@@ -2265,6 +2322,21 @@ PUBLIC void reload_read_cfg NOARGS
 }
 #endif /* !NO_CONFIG_INFO */
 
+PRIVATE void disable_pausing NOARGS
+{
+    AlertSecs = 0;
+    DebugSecs = 0;
+    InfoSecs = 0;
+    MessageSecs = 0;
+    ReplaySecs = 0;
+}
+
+PRIVATE void force_dump_mode NOARGS
+{
+    dump_output_immediately = TRUE;
+    disable_pausing();
+    LYcols = DFT_COLS;
+}
 
 /* There are different ways of setting arguments on the command line, and
  * there are different types of arguments.  These include:
@@ -2294,10 +2366,12 @@ typedef struct parse_args_type
 #define LYSTRING_ARG		0x0050
 #define INT_ARG			0x0060
 #define STRING_ARG		0x0070
+#define TIME_ARG		0x0080
 #define ARG_TYPE_MASK		0x0FF0
 #define NEED_NEXT_ARG		0x1000
 
 #define NEED_INT_ARG		(NEED_NEXT_ARG | INT_ARG)
+#define NEED_TIME_ARG		(NEED_NEXT_ARG | TIME_ARG)
 #define NEED_LYSTRING_ARG	(NEED_NEXT_ARG | LYSTRING_ARG)
 #define NEED_STRING_ARG		(NEED_NEXT_ARG | STRING_ARG)
 #define NEED_FUNCTION_ARG	(NEED_NEXT_ARG | FUNCTION_ARG)
@@ -2534,8 +2608,7 @@ PRIVATE int display_charset_fun ARGS1(
 PRIVATE int dump_output_fun ARGS1(
 	char *,			next_arg GCC_UNUSED)
 {
-    dump_output_immediately = TRUE;
-    LYcols = DFT_COLS;
+    force_dump_mode();
     return 0;
 }
 
@@ -2594,8 +2667,7 @@ PRIVATE int get_data_fun ARGS1(
      *  potential conflicts, so don't force the dump here. - FM
      */
 #ifndef VMS
-    dump_output_immediately = TRUE;
-    LYcols = DFT_COLS;
+    force_dump_mode();
 #endif /* VMS */
 
     StrAllocCopy(form_get_data, "?");   /* Prime the pump */
@@ -2624,14 +2696,15 @@ PRIVATE int help_fun ARGS1(
 PRIVATE int hiddenlinks_fun ARGS1(
 	char *,			next_arg)
 {
+    static Config_Enum table[] = {
+	{ "merge",	HIDDENLINKS_MERGE },
+	{ "listonly",	HIDDENLINKS_SEPARATE },
+	{ "ignore",	HIDDENLINKS_IGNORE },
+	{ NULL,		-1 },
+    };
+
     if (next_arg != 0) {
-	if (strncasecomp(next_arg, "merge", 1) == 0)
-	    LYHiddenLinks = HIDDENLINKS_MERGE;
-	else if (strncasecomp(next_arg, "listonly", 1) == 0)
-	    LYHiddenLinks = HIDDENLINKS_SEPARATE;
-	else if (strncasecomp(next_arg, "ignore", 1) == 0)
-	    LYHiddenLinks = HIDDENLINKS_IGNORE;
-	else
+	if (!LYgetEnum(table, next_arg, &LYHiddenLinks))
 	    print_help_and_exit (-1);
     } else {
 	LYHiddenLinks = HIDDENLINKS_MERGE;
@@ -2646,7 +2719,7 @@ PRIVATE int homepage_fun ARGS1(
 {
     if (next_arg != 0) {
 	StrAllocCopy(homepage, next_arg);
-	LYTrimStartfile(homepage);
+	LYEscapeStartfile(&homepage);
     }
     return 0;
 }
@@ -2659,7 +2732,7 @@ PRIVATE int mime_header_fun ARGS1(
      *  Include mime headers and force source dump.
      */
     keep_mime_headers = TRUE;
-    dump_output_immediately = TRUE;
+    force_dump_mode();
     HTOutputFormat = (LYPrependBase ?
 		      HTAtom_for("www/download") : HTAtom_for("www/dump"));
     LYcols = MAX_COLS;
@@ -2732,9 +2805,7 @@ PRIVATE int nocolor_fun ARGS1(
 PRIVATE int nopause_fun ARGS1(
 	char *,			next_arg GCC_UNUSED)
 {
-    InfoSecs = 0;
-    MessageSecs = 0;
-    AlertSecs = 0;
+    disable_pausing();
     return 0;
 }
 
@@ -2795,8 +2866,7 @@ PRIVATE int post_data_fun ARGS1(
      * conflicts, so don't force a dump here.  - FM
      */
 #ifndef VMS
-    dump_output_immediately = TRUE;
-    LYcols = DFT_COLS;
+    force_dump_mode();
 #endif /* VMS */
 
     post_data = &form_post_data;
@@ -2809,6 +2879,25 @@ PRIVATE int post_data_fun ARGS1(
 	StrAllocCat(*post_data, buf);
     }
     return 0;
+}
+
+PRIVATE char *show_restriction ARGS1(
+	CONST char *,		name)
+{
+    char *value = 0;
+
+    switch (find_restriction(name, -1)) {
+    case TRUE:
+	value = "on";
+	break;
+    case FALSE:
+	value = "off";
+	break;
+    default:
+	value = "?";
+	break;
+    }
+    return value;
 }
 
 /* -restrictions */
@@ -2828,11 +2917,16 @@ disallow changing the eXecute permission on files\n\
 (but still allow it for directories) when local file\n\
 management is enabled." },
 #endif /* DIRED_SUPPORT && OK_PERMIT */
+#ifdef SUPPORT_CHDIR
+	{ "chdir", "\
+disallow changing the working directory of lynx, e.g.,\n\
+to affect the behavior of download command" },
+#endif
 #if defined(HAVE_CONFIG_H) && !defined(NO_CONFIG_INFO)
 	{ "compileopts_info", "\
 disable info on options used to compile the binary" },
 #endif
-{ "default", "\
+	{ "default", "\
 same as commandline option -anonymous.  Sets the\n\
 default service restrictions for anonymous users.  Set to\n\
 all restricted, except for: inside_telnet, outside_telnet,\n\
@@ -2889,6 +2983,8 @@ disable viewing of lynx.cfg configuration file info" },
 	{ "lynxcfg_xinfo", "\
 disable extended lynx.cfg viewing and reloading" },
 #endif
+	{ "lynxcgi", "\
+disallow execution of Lynx CGI URLs" },
 	{ "mail", "disallow mail" },
 	{ "multibook", "disallow multiple bookmark files" },
 	{ "news_post", "disallow USENET News posting." },
@@ -2937,7 +3033,7 @@ G)oto's" },
     CONST char *value;
     BOOLEAN found, first;
 
-    if (next_arg == 0 || *next_arg == '\0') {
+    if (isEmpty(next_arg)) {
 	SetOutputMode( O_TEXT );
 	for (j = 0; j < TABLESIZE(Usage); j++) {
 	    printf("%s\n", Usage[j]);
@@ -2947,17 +3043,7 @@ G)oto's" },
 	     || !strcmp(table[j].name, "default")) {
 		value = NULL;
 	    } else {
-		switch (find_restriction(table[j].name, -1)) {
-		case TRUE:
-		    value = "on";
-		    break;
-		case FALSE:
-		    value = "off";
-		    break;
-		default:
-		    value = "?";
-		    break;
-		}
+		value = show_restriction(table[j].name);
 	    }
 	    print_help_strings (
 		table[j].name, table[j].help, value, FALSE);
@@ -2977,8 +3063,9 @@ G)oto's" },
 		if (first) {
 		    printf("Other restrictions (see the user's guide):\n");
 		}
-		printf("%s%s", column ? ", " : "  ", name);
-		column += 2 + strlen(name);
+		value = show_restriction(table[j].name);
+		printf("%s%s (%s)", column ? ", " : "  ", name, value);
+		column += 5 + strlen(name) + strlen(value);
 		if (column > 50) {
 		    column = 0;
 		    printf("\n");
@@ -3013,7 +3100,7 @@ PRIVATE int selective_fun ARGS1(
 PRIVATE int source_fun ARGS1(
 	char *,			next_arg GCC_UNUSED)
 {
-    dump_output_immediately = TRUE;
+    force_dump_mode();
     HTOutputFormat = (LYPrependBase ?
 		      HTAtom_for("www/download") : HTAtom_for("www/dump"));
     LYcols = MAX_COLS;
@@ -3038,58 +3125,35 @@ PRIVATE int traversal_fun ARGS1(
 PRIVATE int version_fun ARGS1(
 	char *,			next_arg GCC_UNUSED)
 {
-#ifdef USE_SSL
-    char SSLLibraryVersion[256];
-    char *SSLcp;
-#endif
+    char *result = NULL;
 
     SetOutputMode( O_TEXT );
 
-    printf(gettext("%s Version %s (%s)\n"),
-	  LYNX_NAME, LYNX_VERSION,
-	  LYVersionDate());
+    HTSprintf0(&result, gettext("%s Version %s (%s)"),
+	       LYNX_NAME, LYNX_VERSION,
+	       LYVersionDate());
 #ifdef USE_SSL
-    printf("libwww-FM %s, SSL-MM 1.4.1", HTLibraryVersion);
-#ifdef OPENSSL_VERSION_TEXT
-    LYstrncpy(SSLLibraryVersion, OPENSSL_VERSION_TEXT, sizeof(SSLLibraryVersion)-1);
-    if ((SSLcp = strchr(SSLLibraryVersion, ' ')) != NULL) {
-	*SSLcp++ = ' ';
-	if ((SSLcp = strchr(SSLcp, ' ')) != NULL) {
-	    *SSLcp = '\0';
-	    printf(", %s", SSLLibraryVersion);
-	}
-    }
-#endif /* OPENSSL_VERSION_TEXT */
-    printf("\n");
+    StrAllocCat(result, "\n");
+    HTSprintf(&result, "libwww-FM %s,", HTLibraryVersion);
+    append_ssl_version(&result, " ");
 #endif /* USE_SSL */
+    printf("%s\n", result);
+    free(result);
 
-#ifdef SYSTEM_NAME
 #ifndef __DATE__
 #define __DATE__ ""
 #endif
 #ifndef __TIME__
 #define __TIME__ ""
 #endif
+
+/*
+ * SYSTEM_NAME is set by the configure script.  Show build date/time for other
+ * systems, according to predefined compiler symbols.
+ */
+#ifdef SYSTEM_NAME
     printf(gettext("Built on %s %s %s\n"), SYSTEM_NAME, __DATE__, __TIME__);
-#endif
-
-    printf("\n");
-    printf(gettext(
-	  "Copyrights held by the University of Kansas, CERN, and other contributors.\n"
-	  ));
-    printf(gettext("Distributed under the GNU General Public License.\n"));
-    printf(gettext(
-	  "See http://lynx.browser.org/ and the online help for more information.\n\n"
-	  ));
-#ifdef USE_SSL
-    printf("See http://www.moxienet.com/lynx/ for information about SSL for Lynx.\n");
-#ifdef OPENSSL_VERSION_TEXT
-    printf("See http://www.openssl.org/ for information about OpenSSL.\n");
-#endif /* OPENSSL_VERSION_TEXT */
-    printf("\n");
-#endif /* USE_SSL */
-
-#ifdef SH_EX
+#else
 #ifdef __CYGWIN__
     printf("Compiled by CYGWIN (%s %s).\n", __DATE__, __TIME__);
 #else
@@ -3107,7 +3171,23 @@ PRIVATE int version_fun ARGS1(
 #endif /* _MSC_VER */
 #endif /* __BORLANDC__ */
 #endif /* __CYGWIN__ */
-#endif /* SH_EX */
+#endif
+
+    printf("\n");
+    printf(gettext(
+	  "Copyrights held by the University of Kansas, CERN, and other contributors.\n"
+	  ));
+    printf(gettext("Distributed under the GNU General Public License.\n"));
+    printf(gettext(
+	  "See http://lynx.isc.org/ and the online help for more information.\n\n"
+	  ));
+#ifdef USE_SSL
+    printf("See http://www.moxienet.com/lynx/ for information about SSL for Lynx.\n");
+#ifdef OPENSSL_VERSION_TEXT
+    printf("See http://www.openssl.org/ for information about OpenSSL.\n");
+#endif /* OPENSSL_VERSION_TEXT */
+    printf("\n");
+#endif /* USE_SSL */
 
     SetOutputMode( O_BINARY );
 
@@ -3128,6 +3208,34 @@ PRIVATE int width_fun ARGS1(
 
     return 0;
 }
+
+#if defined(PDCURSES) && defined(PDC_BUILD) && PDC_BUILD >= 2401
+/* -scrsize */
+PRIVATE int scrsize_fun ARGS1(
+	char *,			next_arg)
+{
+    if (next_arg != 0) {
+	char *cp;
+
+	if ((cp = strchr(next_arg, ',')) != 0) {
+	    *cp++ = '\0';	/* Terminate ID */
+	    scrsize_x = atoi(next_arg);
+	    scrsize_y = atoi(cp);
+	    if ((scrsize_x <= 1) || (scrsize_y <= 1)) {
+		scrsize_x = scrsize_y = 0;
+	    }
+	    if ((scrsize_x > 0) && (scrsize_x < 80)) {
+		scrsize_x = 80;
+	    }
+	    if ((scrsize_y > 0) && (scrsize_y < 4)) {
+		scrsize_y = 4;
+	    }
+	    CTRACE((tfp, "scrsize: x=%d, y=%d\n", scrsize_x, scrsize_y));
+	}
+    }
+    return 0;
+}
+#endif
 
 /* NOTE: This table is sorted by name to make the help message useful */
 PRIVATE Config_Type Arg_Table [] =
@@ -3188,12 +3296,10 @@ PRIVATE Config_Type Arg_Table [] =
       "case",		4|SET_ARG,		case_sensitive,
       "enable case sensitive user searching"
    ),
-#ifdef SH_EX
    PARSE_SET(
       "center",		4|TOGGLE_ARG,		no_table_center,
-      "Toggle center alignment in HTML TABLE"
+      "toggle center alignment in HTML TABLE"
    ),
-#endif
    PARSE_STR(
       "cfg",		2|NEED_LYSTRING_ARG,	lynx_cfg_file,
       "=FILENAME\nspecifies a lynx.cfg file other than the default"
@@ -3218,19 +3324,17 @@ PRIVATE Config_Type Arg_Table [] =
       "force color mode on with standard bg colors"
    ),
 #endif
-#ifndef __DJGPP__
    PARSE_INT(
       "connect_timeout", 4|NEED_INT_ARG,	connect_timeout,
       "=N\nset the N-second connection timeout"
    ),
-#endif
 #ifdef MISC_EXP
    PARSE_FUN(
       "convert_to",	4|FUNCTION_ARG,		convert_to_fun,
       "=FORMAT\nconvert input, FORMAT is in MIME type notation\n(experimental)"
    ),
 #endif
-#ifdef EXP_PERSISTENT_COOKIES
+#ifdef USE_PERSISTENT_COOKIES
    PARSE_STR(
       "cookie_file",	4|LYSTRING_ARG,		LYCookieFile,
       "=FILENAME\nspecifies a file to use to read cookies"
@@ -3239,7 +3343,7 @@ PRIVATE Config_Type Arg_Table [] =
       "cookie_save_file",	4|LYSTRING_ARG,	LYCookieSaveFile,
       "=FILENAME\nspecifies a file to use to store cookies"
    ),
-#endif /* EXP_PERSISTENT_COOKIES */
+#endif /* USE_PERSISTENT_COOKIES */
    PARSE_SET(
       "cookies",	4|TOGGLE_ARG,		LYSetCookies,
       "toggles handling of Set-Cookie headers"
@@ -3267,12 +3371,10 @@ with -dump, format output as with -traversal, but to stdout"
       "incremental display stages with MessageSecs delay"
    ),
 #endif
-#if defined(SH_EX) && defined(WIN_EX)
    PARSE_INT(
-      "delay",		4|NEED_INT_ARG,		debug_delay,
-      "=NNN\nset the NNN msec delay at statusline message"
+      "delay",		4|NEED_TIME_ARG,	DebugSecs,
+      "=NNN\nset NNN-second delay at statusline message"
    ),
-#endif
    PARSE_FUN(
       "display",	4|NEED_FUNCTION_ARG,	display_fun,
       "=DISPLAY\nset the display variable for X exec'ed programs"
@@ -3319,6 +3421,12 @@ keys (may be incompatible with some curses packages)"
    PARSE_SET(
       "fileversions",	4|SET_ARG,		HTVMSFileVersions,
       "include all versions of files in local VMS directory\nlistings"
+   ),
+#endif
+#ifdef LY_FIND_LEAKS
+   PARSE_SET(
+      "find_leaks",	4|TOGGLE_ARG,		LYfind_leaks,
+      "toggles memory-leak checking"
    ),
 #endif
    PARSE_SET(
@@ -3417,6 +3525,12 @@ keys (may be incompatible with some curses packages)"
       "minimal",	4|TOGGLE_ARG,		minimal_comments,
       "toggles minimal versus valid comment parsing"
    ),
+#ifdef EXP_NESTED_TABLES
+   PARSE_SET(
+      "nested_tables",	4|TOGGLE_ARG,		nested_tables,
+      "toggles nested-tables logic"
+   ),
+#endif
 #ifndef DISABLE_NEWS
    PARSE_FUN(
       "newschunksize",	4|NEED_FUNCTION_ARG,	newschunksize_fun,
@@ -3467,7 +3581,7 @@ keys (may be incompatible with some curses packages)"
       "nolog",		4|UNSET_ARG,		error_logging,
       "disable mailing of error messages to document owners"
    ),
-#if HAVE_SIGACTION && defined(SIGWINCH)
+#if defined(HAVE_SIGACTION) && defined(SIGWINCH)
    PARSE_SET(
       "nonrestarting_sigwinch", 4|SET_ARG,	LYNonRestartingSIGWINCH,
       "\nmake window size change handler non-restarting"
@@ -3590,9 +3704,15 @@ with the PREV_DOC command or from the History List"
       "rlogin",		4|UNSET_ARG,		rlogin_ok,
       "disable rlogins"
    ),
+#if defined(PDCURSES) && defined(PDC_BUILD) && PDC_BUILD >= 2401
+   PARSE_FUN(
+      "scrsize",	4|NEED_FUNCTION_ARG,	scrsize_fun,
+      "=width,height\nsize of window"
+   ),
+#endif
 #ifdef USE_SCROLLBAR
    PARSE_SET(
-      "scrollbar",	4|TOGGLE_ARG,		LYsb,
+      "scrollbar",	4|TOGGLE_ARG,		LYShowScrollbar,
       "toggles showing scrollbar"
    ),
    PARSE_SET(
@@ -3618,7 +3738,7 @@ with the PREV_DOC command or from the History List"
       "show_cursor",	4|TOGGLE_ARG,		LYUseDefShoCur,
       "toggles hiding of the cursor in the lower right corner"
    ),
-#ifdef EXP_READPROGRESS
+#ifdef USE_READPROGRESS
    PARSE_SET(
       "show_rate",	4|TOGGLE_ARG,		LYShowTransferRate,
       "toggles display of transfer rate"
@@ -3698,6 +3818,10 @@ treated '>' as a co-terminator for double-quotes and tags"
    PARSE_SET(
       "trim_input_fields", 2|SET_ARG,		LYtrimInputFields,
       "trim input text/textarea fields in forms"
+   ),
+   PARSE_SET(
+      "underline_links",4|TOGGLE_ARG,		LYUnderlineLinks,
+      "toggles use of underline/bold attribute for links"
    ),
    PARSE_SET(
       "underscore",	4|TOGGLE_ARG,		use_underscore,
@@ -3833,6 +3957,9 @@ in double-quotes (\"-\") on VMS)", NULL, TRUE);
 	    case INT_ARG:
 		sprintf(temp, "%d", *(q->int_value));
 		break;
+	    case TIME_ARG:
+		sprintf(temp, SECS_FMT, (double) Secs2SECS(*(q->int_value)));
+		break;
 	    case STRING_ARG:
 		if ((value = *(q->str_value)) != 0
 		 && !*value)
@@ -3946,7 +4073,7 @@ PRIVATE BOOL parse_arg ARGS3(
 	had_nonoption = TRUE;
 #endif
 	StrAllocCopy(startfile, arg_name);
-	LYTrimStartfile(startfile);
+	LYEscapeStartfile(&startfile);
 #ifdef _WINDOWS	/* 1998/01/14 (Wed) 20:11:17 */
 	HTUnEscape(startfile);
 	{
@@ -4056,10 +4183,19 @@ PRIVATE BOOL parse_arg ARGS3(
 		 *(q->int_value) = strtol (next_arg, &temp_ptr, 0);
 	     break;
 
+	case TIME_ARG:
+	    if ((q->int_value != 0) && (next_arg != 0)) {
+		float ival;
+		if (1 == sscanf (next_arg, "%f", &ival)) {
+		    *(q->int_value) = (int) SECS2Secs(ival);
+		}
+	    }
+	    break;
+
 	case STRING_ARG:
-	     if ((q->str_value != 0) && (next_arg != 0))
+	    if ((q->str_value != 0) && (next_arg != 0))
 		*(q->str_value) = next_arg;
-	     break;
+	    break;
 	}
 
 	Old_DTD = DTD_recovery;	/* BOOL != int */
