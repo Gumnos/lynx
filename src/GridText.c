@@ -1,5 +1,5 @@
 /*
- * $LynxId: GridText.c,v 1.277 2014/02/13 19:32:01 tom Exp $
+ * $LynxId: GridText.c,v 1.286 2014/12/16 01:23:52 tom Exp $
  *
  *		Character grid hypertext object
  *		===============================
@@ -3257,7 +3257,7 @@ static void split_line(HText *text, unsigned split)
     }				/* switch */
     previous->offset = (unsigned short) ((new_offset < 0) ? 0 : new_offset);
 
-    if (text->stbl)
+    if (text->stbl) {
 	/*
 	 * Notify simple table stuff of line split, so that it can
 	 * set the last cell's length.  The last cell should and
@@ -3273,6 +3273,7 @@ static void split_line(HText *text, unsigned split)
 		       text->Lines - 1,
 		       previous->offset,
 		       previous->size - ctrl_chars_on_previous_line);
+    }
 
     text->in_line_1 = NO;	/* unless caller sets it otherwise */
 
@@ -4876,8 +4877,9 @@ void HText_startStblTABLE(HText *me, int alignment)
 	} else
 #endif
 	{
-	    if (me->stbl)
+	    if (me->stbl) {
 		HText_cancelStbl(me);	/* auto cancel previously open table */
+	    }
 	}
 
 	me->stbl = Stbl_startTABLE(alignment);
@@ -4978,8 +4980,9 @@ void HText_startStblTR(HText *me, int alignment)
 {
     if (!me || !me->stbl)
 	return;
-    if (Stbl_addRowToTable(me->stbl, alignment, me->Lines) < 0)
+    if (Stbl_addRowToTable(me->stbl, alignment, me->Lines) < 0) {
 	HText_cancelStbl(me);	/* give up */
+    }
 }
 
 /*	Finish simple table row
@@ -5013,8 +5016,9 @@ void HText_startStblTD(HText *me, int colspan,
     if (Stbl_addCellToTable(me->stbl, colspan, rowspan, alignment, isheader,
 			    me->Lines,
 			    HText_LastLineOffset(me),
-			    HText_LastLineSize(me, FALSE)) < 0)
+			    HText_LastLineSize(me, FALSE)) < 0) {
 	HText_cancelStbl(me);	/* give up */
+    }
 }
 
 /*	Finish simple table cell
@@ -5026,8 +5030,9 @@ void HText_endStblTD(HText *me)
     if (Stbl_finishCellInTable(me->stbl, TRST_ENDCELL_ENDTD,
 			       me->Lines,
 			       HText_LastLineOffset(me),
-			       HText_LastLineSize(me, FALSE)) < 0)
+			       HText_LastLineSize(me, FALSE)) < 0) {
 	HText_cancelStbl(me);	/* give up */
+    }
 }
 
 /*	Remember COL info / Start a COLGROUP and remember info
@@ -5044,8 +5049,9 @@ void HText_startStblCOL(HText *me, int span,
 	CTRACE((tfp, "*** SPAN=%d is too large, ignored!\n", span));
 	span = 1;
     }
-    if (Stbl_addColInfo(me->stbl, span, alignment, isgroup) < 0)
+    if (Stbl_addColInfo(me->stbl, span, alignment, isgroup) < 0) {
 	HText_cancelStbl(me);	/* give up */
+    }
 }
 
 /*	Finish a COLGROUP
@@ -5054,8 +5060,9 @@ void HText_endStblCOLGROUP(HText *me)
 {
     if (!me || !me->stbl)
 	return;
-    if (Stbl_finishColGroup(me->stbl) < 0)
+    if (Stbl_finishColGroup(me->stbl) < 0) {
 	HText_cancelStbl(me);	/* give up */
+    }
 }
 
 /*	Start a THEAD / TFOOT / TBODY - remember its alignment info
@@ -5064,8 +5071,9 @@ void HText_startStblRowGroup(HText *me, int alignment)
 {
     if (!me || !me->stbl)
 	return;
-    if (Stbl_addRowGroup(me->stbl, alignment) < 0)
+    if (Stbl_addRowGroup(me->stbl, alignment) < 0) {
 	HText_cancelStbl(me);	/* give up */
+    }
 }
 
 static void compute_show_number(TextAnchor *a)
@@ -5739,8 +5747,9 @@ void HText_endAppend(HText *text)
     new_line(text);
 
     if (text->halted) {
-	if (text->stbl)
+	if (text->stbl) {
 	    HText_cancelStbl(text);
+	}
 	/*
 	 * If output was stopped because memory was low, and we made
 	 * it to the end of the document, reset those flags and hope
@@ -7916,7 +7925,7 @@ typedef struct _AnchorIndex {
     int size;			/* character-width of field */
     int length;			/* byte-count for field's data */
     int offset;			/* byte-offset in line's data */
-    int filler;			/* character to use for filler */
+    char filler;		/* character to use for filler */
     const char *value;		/* field's value */
 } AnchorIndex;
 
@@ -8065,19 +8074,34 @@ static void freeAnchorIndex(AnchorIndex ** inx, unsigned inx_size)
 }
 
 /*
+ * Return the column (counting from zero) at which a field should be overlaid
+ * on the form.
+ */
+static int FieldFirst(AnchorIndex * p, int wrap)
+{
+    return (wrap ? 0 : (p)->offset);
+}
+
+/*
+ * Return the column (counting from zero) just past the field in a form.
+ */
+static int FieldLast(AnchorIndex * p, int wrap)
+{
+    return ((p)->size - wrap) + FieldFirst(p, wrap);
+}
+
+/*
  * Print the contents of the file in HTMainText to
  * the file descriptor fp.
  * If is_email is TRUE add ">" before each "From " line.
  * If is_reply is TRUE add ">" to the beginning of each
  * line to specify the file is a reply to message.
  */
-#define FieldFirst(p) (this_wrap ? 0 : (p)->offset)
-#define FieldLast(p)  (FieldFirst(p) + (p)->size - this_wrap)
 void print_wwwfile_to_fd(FILE *fp,
 			 int is_email,
 			 int is_reply)
 {
-    int line_num, byte_num, byte_count;
+    int line_num, byte_num, byte_count, byte_next, byte_offset;
     int first = TRUE;
     HTLine *line;
     AnchorIndex **inx;		/* sorted index of input-fields */
@@ -8145,16 +8169,23 @@ void print_wwwfile_to_fd(FILE *fp,
 	/*
 	 * Add data.
 	 */
+	byte_offset = line->offset;
 	byte_count = TrimmedLength(line->data);
-	for (byte_num = 0; byte_num < byte_count; byte_num++) {
-	    int byte_offset = byte_num + line->offset;
-	    int ch = UCH(line->data[byte_num]);
-	    int c2;
+	byte_next = 1;
+	for (byte_num = 0; byte_num < byte_count; byte_num += byte_next) {
+	    int cell_chr, temp_chr;
+	    size_t cell_len, temp_len;
+	    const char *cell_ptr, *temp_ptr, *try_utf8;
 
-	    while (cur != 0 && FieldLast(cur) < byte_offset) {
+	    cell_ptr = &line->data[byte_num];
+	    cell_len = 1;
+	    cell_chr = UCH(*cell_ptr);
+	    byte_next = 1;
+
+	    while (cur != 0 && FieldLast(cur, this_wrap) < byte_offset) {
 		CTRACE2(TRACE_GRIDTEXT,
 			(tfp, "skip field since last %d < %d\n",
-			 FieldLast(cur), byte_offset));
+			 FieldLast(cur, this_wrap), byte_offset));
 		cur = cur->next;
 		in_field = -1;
 	    }
@@ -8162,15 +8193,15 @@ void print_wwwfile_to_fd(FILE *fp,
 		CTRACE2(TRACE_GRIDTEXT,
 			(tfp, "compare %d to [%d..%d]\n",
 			 byte_offset,
-			 FieldFirst(cur),
-			 FieldLast(cur) - 1));
+			 FieldFirst(cur, this_wrap),
+			 FieldLast(cur, this_wrap) - 1));
 	    }
 	    if (cur != 0
-		&& FieldFirst(cur) <= byte_offset
-		&& FieldLast(cur) > byte_offset) {
+		&& FieldFirst(cur, this_wrap) <= byte_offset
+		&& FieldLast(cur, this_wrap) > byte_offset) {
 		int off2 = ((in_field > 0)
 			    ? in_field
-			    : (byte_offset - FieldFirst(cur)));
+			    : (byte_offset - FieldFirst(cur, this_wrap)));
 
 		/*
 		 * On the first time (for each line that the field appears on),
@@ -8178,7 +8209,7 @@ void print_wwwfile_to_fd(FILE *fp,
 		 * the field which will be used to adjust the beginning of the
 		 * continuation line.
 		 */
-		if (byte_offset == FieldFirst(cur)) {
+		if (byte_offset == FieldFirst(cur, this_wrap)) {
 		    next_wrap = 0;
 		    if (cur->size - this_wrap + byte_num > byte_count) {
 			CTRACE((tfp, "size %d, offset %d, length %d\n",
@@ -8193,20 +8224,37 @@ void print_wwwfile_to_fd(FILE *fp,
 		    }
 		}
 
-		c2 = ((off2 < cur->length)
-		      ? cur->value[off2]
-		      : cur->filler);
+		if (off2 >= 0 && off2 < cur->length) {
+		    temp_ptr = &(cur->value[off2]);
+		    temp_len = 1;
+		    try_utf8 = temp_ptr;
+		    temp_chr = (int) UCGetUniFromUtf8String(&try_utf8);
+		    if (temp_chr > 127) {
+			temp_len = (size_t) (try_utf8 - temp_ptr) + 1;
+		    } else {
+			temp_chr = UCH(*temp_ptr);
+			temp_len = 1;
+		    }
+		} else {
+		    temp_ptr = &(cur->filler);
+		    temp_len = 1;
+		    temp_chr = UCH(*temp_ptr);
+		}
 
-		if (ch != c2) {
+		if (cell_chr != temp_chr) {
 		    CTRACE2(TRACE_GRIDTEXT,
-			    (tfp, "line %d %d/%d [%d..%d] map %d %c->%c\n",
+			    (tfp, "line %d %d/%d [%d..%d] map %d %04X->%04X\n",
 			     line_num,
 			     off2, cur->length,
-			     FieldFirst(cur), FieldLast(cur) - 1,
-			     byte_offset, ch, c2));
-		    ch = c2;
+			     FieldFirst(cur, this_wrap),
+			     FieldLast(cur, this_wrap) - 1,
+			     byte_offset, cell_chr, temp_chr));
+		    cell_chr = temp_chr;
+		    cell_ptr = temp_ptr;
+		    cell_len = temp_len;
 		}
-		++off2;
+		off2 += (int) temp_len;
+		byte_offset += (int) temp_len;
 		if ((off2 >= cur->size) &&
 		    (off2 >= cur->length || F_TEXTLIKE(cur->type))) {
 		    in_field = -1;
@@ -8215,26 +8263,37 @@ void print_wwwfile_to_fd(FILE *fp,
 		} else {
 		    in_field = off2;
 		}
+	    } else {
+		byte_offset++;
 	    }
 
-	    if (!IsSpecialAttrChar(ch)) {
+	    if (!IsSpecialAttrChar(cell_chr)) {
 #ifndef NO_DUMP_WITH_BACKSPACES
+		size_t n;
+
 		if (in_b) {
-		    fputc(ch, fp);
-		    fputc('\b', fp);
-		    fputc(ch, fp);
+		    IGNORE_RC(fwrite(cell_ptr, sizeof(char), cell_len, fp));
+
+		    for (n = 0; n < cell_len; ++n) {
+			fputc('\b', fp);
+		    }
+		    IGNORE_RC(fwrite(cell_ptr, sizeof(char), cell_len, fp));
 		} else if (in_u) {
-		    fputc('_', fp);
-		    fputc('\b', fp);
-		    fputc(ch, fp);
+		    for (n = 0; n < cell_len; ++n) {
+			fputc('_', fp);
+		    }
+		    for (n = 0; n < cell_len; ++n) {
+			fputc('\b', fp);
+		    }
+		    IGNORE_RC(fwrite(cell_ptr, sizeof(char), cell_len, fp));
 		} else
 #endif
-		    fputc(ch, fp);
-	    } else if (ch == LY_SOFT_HYPHEN &&
+		    IGNORE_RC(fwrite(cell_ptr, sizeof(char), cell_len, fp));
+	    } else if (cell_chr == LY_SOFT_HYPHEN &&
 		       (byte_num + 1) >= byte_count) {
 		write_hyphen(fp);
 	    } else if (dump_output_immediately && use_underscore) {
-		switch (ch) {
+		switch (cell_chr) {
 		case LY_UNDERLINE_START_CHAR:
 		case LY_UNDERLINE_END_CHAR:
 		    fputc('_', fp);
@@ -8246,7 +8305,7 @@ void print_wwwfile_to_fd(FILE *fp,
 	    }
 #ifndef NO_DUMP_WITH_BACKSPACES
 	    else if (bs) {
-		switch (ch) {
+		switch (cell_chr) {
 		case LY_UNDERLINE_START_CHAR:
 		    if (!in_b)
 			in_u = TRUE;	/*favor bold over underline */
@@ -11773,9 +11832,6 @@ int HText_SubmitForm(FormInfo * submit_item, DocInfo *doc,
 	if (Boundary) {
 	    HTBprintf(&my_query, "\r\n--%s--\r\n", Boundary);
 	}
-	/*
-	 * The data may contain a null - so we use fwrite().
-	 */
 	if (TRACE) {
 	    CTRACE((tfp, "Query %d{", BStrLen(my_query)));
 	    trace_bstring(my_query);
@@ -14724,7 +14780,7 @@ static int LYHandleCache(const char *arg,
 		   x, STR_LYNXCACHE, x, title, address, address);
 	PUTS(buf);
 	if (Size > 0) {
-	    HTSprintf0(&buf, "Size: %" PRI_off_t "  ", Size);
+	    HTSprintf0(&buf, "Size: %" PRI_off_t "  ", CAST_off_t (Size));
 
 	    PUTS(buf);
 	}

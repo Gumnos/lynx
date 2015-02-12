@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTFile.c,v 1.142 2014/02/13 18:30:01 tom Exp $
+ * $LynxId: HTFile.c,v 1.144 2014/12/08 01:38:05 tom Exp $
  *
  *			File Access				HTFile.c
  *			===========
@@ -212,7 +212,7 @@ static char *FormatSize(char **bufp,
 
 	HTSprintf0(bufp, fmt, entry);
     } else {
-	sprintf(fmt, "%" PRI_off_t, entry);
+	sprintf(fmt, "%" PRI_off_t, CAST_off_t (entry));
 
 	StrAllocCopy(*bufp, fmt);
     }
@@ -905,7 +905,7 @@ HTFormat HTFileFormat(const char *filename,
 	HTFormat result;
 
 	StrAllocCopy(newname, filename);
-	*(FindSearch(newname)) = '\0';
+	newname[((const char *) search) - filename] = '\0';
 	result = HTFileFormat(newname, pencoding, pdesc);
 	free(newname);
 	return result;

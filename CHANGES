@@ -1,7 +1,61 @@
--- $LynxId: CHANGES,v 1.746 2014/03/12 18:39:52 tom Exp $
+-- $LynxId: CHANGES,v 1.766 2014/12/21 21:30:08 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2014-12-21 (2.8.9dev.2)
+* correct an inconsistent check for reload using isLYNXCGI() in the
+  options-screen -TD
+* add script after using msginit to create en.po, to work around renaming in
+  Cygwin environment -TD
+* improve overlay of field contents in form for "-dump" option; the change
+  in 2.8.8dev.3 did not take into account UTF-8 values (Debian #770011) -TD
+* correct a bug in the map_string_to_keysym() function introduced in
+  2.8.8dev.17:  as used via the remap() function, this returns the curses
+  code for a special key rather than Lynx's internal code (Debian #769601) -TD
+* add checks when translating from UTF-8 to Unicode, to ensure that only the
+  shortest encoding is accepted.  Other/longer encodings are mapped to the UCS
+  replacement character as in xterm (Debian #763268) -TD
+* modify LYExpandHostForURL() to call HTGetAddrInfo(), allowing DNS lookups
+  for IPv6 to be interrupted, e.g., by typing ^G.  This was a path overlooked
+  in 2.8.8dev.13 (reports by Chad Kline, etc.) -TD
+* drop libgnutls-extra when using --with-gnutls-compat option -TD
+* drop libgcrypt dependency when building with gnutls, using gnutls_rnd()
+  rather than gcry_randomize() (adapted from patch by Andreas Metzler,
+  Debian #753699) -TD
+* fix a reference-after-free in scan_cookie_sublist(), probably fixing RedHat
+  #1120925 (patch by Mike Gorse).
+* update eo.po, id.po from
+    http://translationproject.org/latest/lynx
+* improve workaround for too-long pathnames in LYPrint.c SetupFilename() -TD
+* fix a few inconsistencies between #if / #ifdef, including one for sleep()
+  which broke cross-compiles for MinGW -TD
+* updated/improved configure script macros (TD):
+  + CF_ACVERSION_CHECK:  work around another gratuitous incompatibility
+    introduced in 2.69 (reported by Ross Burton, openembedded.org)
+  + CF_ADD_CFLAGS:  workaround for ash-shell
+  + CF_ADD_LIBS:  workaround in CF_X_TOOLKIT uses pkgconfig, whose files
+    generally are using incomplete dependencies - in turn introducing lots of
+    duplication.  filter out the duplicates.
+  + CF_CHECK_CFLAGS:  workaround for ash-shell
+  + CF_CURSES_FUNCS:  improve workaround for weak-linkage, seems to fix tests
+    with NetBSD 6.1
+  + CF_INTEL_COMPILER:  cleanup the -no-gcc option which was leftover from
+    testing - prcs does not build with this option.
+  + CF_MAKEFLAGS:  workaround for GNU make 4.0 incompatibility with previous
+    releases.
+  + CF_SUBDIR_PATH:  add /usr/pkg and /opt/local to help configuring with
+    pkgsrc and macports -TD
+  + CF_XOPEN_SOURCE:  Minix3.2 ifdef's the POSIX.1-2001 functions inside
+    _NETBSD_SOURCE, even though it was released 2012-02-29 - appease it.  At
+    the same time, turn on the verbose flag to show that most platforms need
+    platform-specific define's to get POSIX (sic).  Also, add case for UnixWare
+    (report/discussion with Mark Ryan).
+  + CF_X_ATHENA:  add --with-Xaw3dxft option
+  + CF_X_TOOLKIT:  add workaround for breakage in XQuartz upgrades
+* add check to ensure that "submit" command from 2.8.8dev.10 is performed
+  in a form (report by Karen Lewellen) -TD
+* update config.guess (2014-03-23), config.sub (2014-07-28)
 
 2014-03-12 (2.8.9dev.1)
 
@@ -187,7 +241,7 @@ Changes since Lynx 2.8 release
 * protect redefined errno values for Windows port from redefinition warnings
   when using MinGW build, since the WSAxxx values are what the configuration
   actually uses -TD
-* modify <address> tag to treat it like <p> when used within a list -TD 
+* modify <address> tag to treat it like <p> when used within a list -TD
 * update fi.po from
     http://translationproject.org/latest/lynx
 * add on/off toggles to options menu for the color-style and default-colors
@@ -636,7 +690,7 @@ Changes since Lynx 2.8 release
 * promote some experimental options to normal, tidy up related EXP_xxx vs
   USE_xxx symbols -TD
   EXP_ASCII_CTYPES is now USE_ASCII_CTYPES
-  EXP_JUSTIFY_ELTS is now USE_JUSTIFY_ELTS 
+  EXP_JUSTIFY_ELTS is now USE_JUSTIFY_ELTS
   EXP_CHARSET_CHOICE is now USE_CHARSET_CHOICE
   The scrollbar, progressbar, sessions and session-cache options are now
   enabled by default.
@@ -664,7 +718,7 @@ Changes since Lynx 2.8 release
 * add <sys/types.h> include in socklen_t configure check (from OpenBSD CVS)
 * eliminate UCPutUtf8ToBuffer() - redundant -TD
 * use memset's to simplify some initialization in HTML.c, extending a change
-  made in 2.8.7dev.10 (prompted by issue in OpenBSD) -TD 
+  made in 2.8.7dev.10 (prompted by issue in OpenBSD) -TD
 * add optional support for IDNA using GNU libidn (Debian #352596) -TD
 * ignore LEFT-TO-RIGHT-MARK (U+200E) in HTML files (Debian #408835) -TD
 * correct check for return-value from gnutls_certificate_verify_peers2(), which

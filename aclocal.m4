@@ -1,4 +1,4 @@
-dnl $LynxId: aclocal.m4,v 1.210 2014/01/11 17:09:11 tom Exp $
+dnl $LynxId: aclocal.m4,v 1.215 2014/12/04 11:27:54 tom Exp $
 dnl Macros for auto-configure script.
 dnl by Thomas E. Dickey <dickey@invisible-island.net>
 dnl and Jim Spath <jspath@mail.bcpl.lib.md.us>
@@ -596,7 +596,7 @@ changequote([,])dnl
   AC_SUBST(GENCAT)
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_ACVERSION_CHECK version: 4 updated: 2013/03/04 19:52:56
+dnl CF_ACVERSION_CHECK version: 5 updated: 2014/06/04 19:11:49
 dnl ------------------
 dnl Conditionally generate script according to whether we're using a given autoconf.
 dnl
@@ -605,7 +605,7 @@ dnl $2 = code to use if AC_ACVERSION is at least as high as $1.
 dnl $3 = code to use if AC_ACVERSION is older than $1.
 define([CF_ACVERSION_CHECK],
 [
-ifdef([AC_ACVERSION], ,[m4_copy([m4_PACKAGE_VERSION],[AC_ACVERSION])])dnl
+ifdef([AC_ACVERSION], ,[ifdef([AC_AUTOCONF_VERSION],[m4_copy([AC_AUTOCONF_VERSION],[AC_ACVERSION])],[m4_copy([m4_PACKAGE_VERSION],[AC_ACVERSION])])])dnl
 ifdef([m4_version_compare],
 [m4_if(m4_version_compare(m4_defn([AC_ACVERSION]), [$1]), -1, [$3], [$2])],
 [CF_ACVERSION_COMPARE(
@@ -622,7 +622,7 @@ define([CF_ACVERSION_COMPARE],
 [ifelse([$8], , ,[$8])],
 [ifelse([$9], , ,[$9])])])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_ADD_CFLAGS version: 10 updated: 2010/05/26 05:38:42
+dnl CF_ADD_CFLAGS version: 11 updated: 2014/07/22 05:32:57
 dnl -------------
 dnl Copy non-preprocessor flags to $CFLAGS, preprocessor flags to $CPPFLAGS
 dnl The second parameter if given makes this macro verbose.
@@ -647,7 +647,7 @@ no)
 		-D*)
 			cf_tst_cflags=`echo ${cf_add_cflags} |sed -e 's/^-D[[^=]]*='\''\"[[^"]]*//'`
 
-			test "${cf_add_cflags}" != "${cf_tst_cflags}" \
+			test "x${cf_add_cflags}" != "x${cf_tst_cflags}" \
 				&& test -z "${cf_tst_cflags}" \
 				&& cf_fix_cppflags=yes
 
@@ -684,7 +684,7 @@ yes)
 
 	cf_tst_cflags=`echo ${cf_add_cflags} |sed -e 's/^[[^"]]*"'\''//'`
 
-	test "${cf_add_cflags}" != "${cf_tst_cflags}" \
+	test "x${cf_add_cflags}" != "x${cf_tst_cflags}" \
 		&& test -z "${cf_tst_cflags}" \
 		&& cf_fix_cppflags=no
 	;;
@@ -811,13 +811,31 @@ if test -n "$1" ; then
 fi
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_ADD_LIBS version: 1 updated: 2010/06/02 05:03:05
+dnl CF_ADD_LIBS version: 2 updated: 2014/07/13 14:33:27
 dnl -----------
-dnl Add one or more libraries, used to enforce consistency.
+dnl Add one or more libraries, used to enforce consistency.  Libraries are
+dnl prepended to an existing list, since their dependencies are assumed to
+dnl already exist in the list.
 dnl
 dnl $1 = libraries to add, with the "-l", etc.
 dnl $2 = variable to update (default $LIBS)
-AC_DEFUN([CF_ADD_LIBS],[ifelse($2,,LIBS,[$2])="$1 [$]ifelse($2,,LIBS,[$2])"])dnl
+AC_DEFUN([CF_ADD_LIBS],[
+cf_add_libs="$1"
+# Filter out duplicates - this happens with badly-designed ".pc" files...
+for cf_add_1lib in [$]ifelse($2,,LIBS,[$2])
+do
+	for cf_add_2lib in $cf_add_libs
+	do
+		if test "x$cf_add_1lib" = "x$cf_add_2lib"
+		then
+			cf_add_1lib=
+			break
+		fi
+	done
+	test -n "$cf_add_1lib" && cf_add_libs="$cf_add_libs $cf_add_1lib"
+done
+ifelse($2,,LIBS,[$2])="$cf_add_libs"
+])dnl
 dnl ---------------------------------------------------------------------------
 dnl CF_ADD_LIB_AFTER version: 3 updated: 2013/07/09 21:27:22
 dnl ----------------
@@ -1388,7 +1406,7 @@ if test ".$system_name" != ".$cf_cv_system_name" ; then
 fi
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_CHECK_CFLAGS version: 2 updated: 2001/12/30 19:09:58
+dnl CF_CHECK_CFLAGS version: 3 updated: 2014/07/22 05:32:57
 dnl ---------------
 dnl Conditionally add to $CFLAGS and $CPPFLAGS values which are derived from
 dnl a build-configuration such as imake.  These have the pitfall that they
@@ -1400,10 +1418,10 @@ CF_VERBOSE(checking additions to CFLAGS)
 cf_check_cflags="$CFLAGS"
 cf_check_cppflags="$CPPFLAGS"
 CF_ADD_CFLAGS($1,yes)
-if test "$cf_check_cflags" != "$CFLAGS" ; then
+if test "x$cf_check_cflags" != "x$CFLAGS" ; then
 AC_TRY_LINK([#include <stdio.h>],[printf("Hello world");],,
 	[CF_VERBOSE(test-compile failed.  Undoing change to \$CFLAGS)
-	 if test "$cf_check_cppflags" != "$CPPFLAGS" ; then
+	 if test "x$cf_check_cppflags" != "x$CPPFLAGS" ; then
 		 CF_VERBOSE(but keeping change to \$CPPFLAGS)
 	 fi
 	 CFLAGS="$cf_check_flags"])
@@ -1565,13 +1583,18 @@ if test "${ac_cv_type_$1:+set}" = set; then
 fi
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_CHECK_SSL_X509 version: 4 updated: 2008/12/11 19:00:39
+dnl CF_CHECK_SSL_X509 version: 5 updated: 2014/11/30 18:19:56
 dnl -----------------
 dnl Check for X509 support in the SSL library.
 define([CF_CHECK_SSL_X509],[
 AC_MSG_CHECKING(for X509 support)
 AC_TRY_LINK(CF__SSL_HEAD [
-#include <openssl/x509.h>],
+#if defined(USE_GNUTLS_INCL)
+#include <gnutls/x509.h>
+#else
+#include <openssl/x509.h>
+#endif
+],
 	[X509_verify_cert_error_string(X509_STORE_CTX_get_error(NULL))],
 	[cf_x509_support=yes],
 	[cf_x509_support=no])
@@ -1745,7 +1768,7 @@ CF_CURSES_HEADER
 CF_TERM_HEADER
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_CURSES_FUNCS version: 17 updated: 2011/05/14 16:07:29
+dnl CF_CURSES_FUNCS version: 18 updated: 2014/07/19 18:44:41
 dnl ---------------
 dnl Curses-functions are a little complicated, since a lot of them are macros.
 AC_DEFUN([CF_CURSES_FUNCS],
@@ -1766,6 +1789,7 @@ do
 			[
 #ifndef ${cf_func}
 long foo = (long)(&${cf_func});
+fprintf(stderr, "testing linkage of $cf_func:%p\n", foo);
 if (foo + 1234 > 5678)
 	${cf_cv_main_return:-return}(foo);
 #endif
@@ -3048,7 +3072,7 @@ rm -rf conftest*
 AC_SUBST(EXTRA_CFLAGS)
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_GNUTLS version: 22 updated: 2012/11/08 20:57:52
+dnl CF_GNUTLS version: 23 updated: 2014/11/30 18:19:56
 dnl ---------
 dnl Check for gnutls library (TLS "is" SSL)
 dnl $1 = the [optional] directory in which the library may be found
@@ -3124,7 +3148,7 @@ AC_DEFUN([CF_GNUTLS],[
 			cf_cv_have_gnutls=yes,
 			cf_cv_have_gnutls=no,
 			,
-			ifelse([$2],,[-lgnutls-openssl -lgnutls-extra -lgnutls -lgcrypt],[-lgnutls -lgcrypt]))
+			ifelse([$2],,[-lgnutls-openssl]))
 
 		CPPFLAGS=$cf_gnutls_CPPFLAGS
 	fi
@@ -3143,7 +3167,10 @@ AC_DEFUN([CF_GNUTLS],[
 		if test -n "$cf_cv_library_path_gnutls" ; then
 			CF_ADD_LIBDIR($cf_cv_library_path_gnutls)
 		fi
-		CF_ADD_LIBS(-lgnutls -lgcrypt)
+		CF_ADD_LIBS(-lgnutls)
+		AC_CHECK_FUNC(gnutls_rnd,
+				[AC_DEFINE(HAVE_GNUTLS_RND)],
+				[CF_ADD_LIBS(-lgcrypt)])
 
 		ifelse([$2],,
 			[if test "$cf_pkg_gnutls" = none ; then
@@ -3287,7 +3314,7 @@ else
 fi
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_INTEL_COMPILER version: 5 updated: 2013/02/10 10:41:05
+dnl CF_INTEL_COMPILER version: 6 updated: 2014/03/17 13:13:07
 dnl -----------------
 dnl Check if the given compiler is really the Intel compiler for Linux.  It
 dnl tries to imitate gcc, but does not return an error when it finds a mismatch
@@ -3316,7 +3343,7 @@ if test "$ifelse([$1],,[$1],GCC)" = yes ; then
 make an error
 #endif
 ],[ifelse([$2],,INTEL_COMPILER,[$2])=yes
-cf_save_CFLAGS="$cf_save_CFLAGS -we147 -no-gcc"
+cf_save_CFLAGS="$cf_save_CFLAGS -we147"
 ],[])
 		ifelse([$3],,CFLAGS,[$3])="$cf_save_CFLAGS"
 		AC_MSG_RESULT($ifelse([$2],,INTEL_COMPILER,[$2]))
@@ -3491,7 +3518,7 @@ AC_MSG_RESULT($cf_cv_locale)
 test $cf_cv_locale = yes && { ifelse($1,,AC_DEFINE(LOCALE,1,[Define to 1 if we have locale support]),[$1]) }
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_MAKEFLAGS version: 14 updated: 2011/03/31 19:29:46
+dnl CF_MAKEFLAGS version: 15 updated: 2014/05/10 16:43:23
 dnl ------------
 dnl Some 'make' programs support ${MAKEFLAGS}, some ${MFLAGS}, to pass 'make'
 dnl options to lower-levels.  It's very useful for "make -n" -- if we have it.
@@ -3510,7 +3537,7 @@ all :
 CF_EOF
 		cf_result=`${MAKE:-make} -k -f cf_makeflags.tmp 2>/dev/null | fgrep -v "ing directory" | sed -e 's,[[ 	]]*$,,'`
 		case "$cf_result" in
-		.*k)
+		.*k|.*kw)
 			cf_result=`${MAKE:-make} -k -f cf_makeflags.tmp CC=cc 2>/dev/null`
 			case "$cf_result" in
 			.*CC=*)	cf_cv_makeflags=
@@ -4542,7 +4569,7 @@ AC_DEFUN([CF_PROG_AR],[
 AC_CHECK_TOOL(AR, ar, ar)
 ])
 dnl ---------------------------------------------------------------------------
-dnl CF_PROG_CC version: 3 updated: 2012/10/06 15:31:55
+dnl CF_PROG_CC version: 4 updated: 2014/07/12 18:57:58
 dnl ----------
 dnl standard check for CC, plus followup sanity checks
 dnl $1 = optional parameter to pass to AC_PROG_CC to specify compiler name
@@ -4552,7 +4579,7 @@ CF_GCC_VERSION
 CF_ACVERSION_CHECK(2.52,
 	[AC_PROG_CC_STDC],
 	[CF_ANSI_CC_REQD])
-CF_CC_ENV_FLAGS 
+CF_CC_ENV_FLAGS
 ])dnl
 dnl ---------------------------------------------------------------------------
 dnl CF_PROG_EXT version: 11 updated: 2012/10/06 08:57:51
@@ -5474,7 +5501,7 @@ if test "$ac_cv_header_termios_h" = yes ; then
 fi
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_SUBDIR_PATH version: 6 updated: 2010/04/21 06:20:50
+dnl CF_SUBDIR_PATH version: 7 updated: 2014/12/04 04:33:06
 dnl --------------
 dnl Construct a search-list for a nonstandard header/lib-file
 dnl	$1 = the variable to return as result
@@ -5484,11 +5511,18 @@ AC_DEFUN([CF_SUBDIR_PATH],
 [
 $1=
 
-CF_ADD_SUBDIR_PATH($1,$2,$3,/usr,$prefix)
 CF_ADD_SUBDIR_PATH($1,$2,$3,$prefix,NONE)
-CF_ADD_SUBDIR_PATH($1,$2,$3,/usr/local,$prefix)
-CF_ADD_SUBDIR_PATH($1,$2,$3,/opt,$prefix)
-CF_ADD_SUBDIR_PATH($1,$2,$3,[$]HOME,$prefix)
+
+for cf_subdir_prefix in \
+	/usr \
+	/usr/local \
+	/usr/pkg \
+	/opt \
+	/opt/local \
+	[$]HOME
+do
+	CF_ADD_SUBDIR_PATH($1,$2,$3,$cf_subdir_prefix,$prefix)
+done
 ])dnl
 dnl ---------------------------------------------------------------------------
 dnl CF_SYSTEM_MAIL_FLAGS version: 4 updated: 2012/11/08 20:57:52
@@ -6432,7 +6466,7 @@ AC_TRY_LINK([
 test $cf_cv_need_xopen_extension = yes && CPPFLAGS="$CPPFLAGS -D_XOPEN_SOURCE_EXTENDED"
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_XOPEN_SOURCE version: 45 updated: 2013/09/07 14:06:25
+dnl CF_XOPEN_SOURCE version: 48 updated: 2014/09/01 12:29:14
 dnl ---------------
 dnl Try to get _XOPEN_SOURCE defined properly that we can use POSIX functions,
 dnl or adapt to the vendor's definitions to get equivalent functionality,
@@ -6483,6 +6517,9 @@ irix[[56]].*) #(vi
 linux*|gnu*|mint*|k*bsd*-gnu) #(vi
 	CF_GNU_SOURCE
 	;;
+minix*) #(vi
+	cf_xopen_source="-D_NETBSD_SOURCE" # POSIX.1-2001 features are ifdef'd with this...
+	;;
 mirbsd*) #(vi
 	# setting _XOPEN_SOURCE or _POSIX_SOURCE breaks <sys/select.h> and other headers which use u_int / u_short types
 	cf_XOPEN_SOURCE=
@@ -6510,6 +6547,11 @@ sco*) #(vi
 	;;
 solaris2.*) #(vi
 	cf_xopen_source="-D__EXTENSIONS__"
+	cf_cv_xopen_source=broken
+	;;
+sysv4.2uw2.*) # Novell/SCO UnixWare 2.x (tested on 2.1.2)
+	cf_XOPEN_SOURCE=
+	cf_POSIX_C_SOURCE=
 	;;
 *)
 	CF_TRY_XOPEN_SOURCE
@@ -6518,7 +6560,7 @@ solaris2.*) #(vi
 esac
 
 if test -n "$cf_xopen_source" ; then
-	CF_ADD_CFLAGS($cf_xopen_source)
+	CF_ADD_CFLAGS($cf_xopen_source,true)
 fi
 
 dnl In anything but the default case, we may have system-specific setting
@@ -6551,7 +6593,7 @@ make an error
 fi
 ])
 dnl ---------------------------------------------------------------------------
-dnl CF_X_ATHENA version: 21 updated: 2013/07/06 21:27:06
+dnl CF_X_ATHENA version: 22 updated: 2014/07/12 18:57:58
 dnl -----------
 dnl Check for Xaw (Athena) libraries
 dnl
@@ -6566,6 +6608,17 @@ AC_ARG_WITH(Xaw3d,
 	[  --with-Xaw3d            link with Xaw 3d library])
 if test "$withval" = yes ; then
 	cf_x_athena=Xaw3d
+	AC_MSG_RESULT(yes)
+else
+	AC_MSG_RESULT(no)
+fi
+
+AC_MSG_CHECKING(if you want to link with Xaw 3d xft library)
+withval=
+AC_ARG_WITH(Xaw3dxft,
+	[  --with-Xaw3dxft         link with Xaw 3d xft library])
+if test "$withval" = yes ; then
+	cf_x_athena=Xaw3dxft
 	AC_MSG_RESULT(yes)
 else
 	AC_MSG_RESULT(no)
@@ -6770,14 +6823,27 @@ CF_TRY_PKG_CONFIG(Xext,,[
 		[CF_ADD_LIB(Xext)])])
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_X_TOOLKIT version: 21 updated: 2012/10/04 06:57:36
+dnl CF_X_TOOLKIT version: 22 updated: 2014/07/13 14:33:27
 dnl ------------
 dnl Check for X Toolkit libraries
-dnl
 AC_DEFUN([CF_X_TOOLKIT],
 [
 AC_REQUIRE([AC_PATH_XTRA])
 AC_REQUIRE([CF_CHECK_CACHE])
+
+# OSX is schizoid about who owns /usr/X11 (old) versus /opt/X11 (new), and (and
+# in some cases has installed dummy files in the former, other cases replaced
+# it with a link to the new location).  This complicates the configure script. 
+# Check for that pitfall, and recover using pkg-config
+#
+# If none of these are set, the configuration is almost certainly broken.
+if test -z "${X_CFLAGS}${X_PRE_LIBS}${X_LIBS}${X_EXTRA_LIBS}"
+then
+	CF_TRY_PKG_CONFIG(x11,,[AC_MSG_WARN(unable to find X11 library)])
+	CF_TRY_PKG_CONFIG(ice,,[AC_MSG_WARN(unable to find ICE library)])
+	CF_TRY_PKG_CONFIG(sm,,[AC_MSG_WARN(unable to find SM library)])
+	CF_TRY_PKG_CONFIG(xt,,[AC_MSG_WARN(unable to find Xt library)])
+fi
 
 cf_have_X_LIBS=no
 

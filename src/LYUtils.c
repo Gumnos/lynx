@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYUtils.c,v 1.266 2014/03/09 14:27:06 tom Exp $
+ * $LynxId: LYUtils.c,v 1.272 2014/12/22 00:22:55 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTCP.h>
@@ -42,6 +42,8 @@ extern int kbhit(void);		/* FIXME: use conio.h */
 #if !defined(kbhit) && defined(_WCONIO_DEFINED)
 #define kbhit() _kbhit()	/* reasonably recent conio.h */
 #endif
+#elif defined(__minix)
+#include <termios.h>		/* for struct winsize */
 
 #endif /* __MINGW32__ */
 
@@ -1782,7 +1784,8 @@ static int DontCheck(void)
 	struct timeval tv;
 
 	gettimeofday(&tv, (struct timezone *) 0);
-	next = tv.tv_usec / 100000L;	/* 0.1 seconds is a compromise */
+	next = (tv.tv_sec * 10);
+	next += (tv.tv_usec / 100000L);		/* 0.1 seconds is a compromise */
     }
 #else
     next = time((time_t *) 0);
@@ -4584,7 +4587,7 @@ int win32_check_interrupt(void)
     return FALSE;
 }
 
-#if (!defined(__MINGW32__) && !defined(sleep)) || (defined(__MINGW32__) && !HAVE_SLEEP)
+#if (!defined(__MINGW32__) && !defined(sleep)) || (defined(__MINGW32__) && !defined(HAVE_SLEEP))
 void sleep(unsigned sec)
 {
     unsigned int i, j;
@@ -4632,13 +4635,6 @@ BOOLEAN LYExpandHostForURL(char **AllocatedString,
     char *Fragment = NULL;
     BOOLEAN GotHost = FALSE;
     BOOLEAN Startup = (BOOL) (helpfilepath == NULL);
-
-#ifdef INET6
-    struct addrinfo hints, *res;
-    int error;
-    char *begin;
-    char *end = NULL;
-#endif /* INET6 */
 
     /*
      * If it's a NULL or zero-length string, or if it begins with a slash or
@@ -4703,22 +4699,7 @@ BOOLEAN LYExpandHostForURL(char **AllocatedString,
 	fprintf(stdout, "%s '%s'%s\r\n", WWW_FIND_MESSAGE, host, FIRST_SEGMENT);
     }
 #ifdef INET6
-    begin = host;
-    if (host[0] == '[' && ((end = strrchr(host, ']')))) {
-	/*
-	 * cut '[' and ']' from the IPv6 address, e.g. [::1]
-	 */
-	begin = host + 1;
-	*end = '\0';
-    }
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = PF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    error = getaddrinfo(begin, "80", &hints, &res);
-    if (end)
-	*end = ']';
-
-    if (!error && res)
+    if (HTGetAddrInfo(host, 80) != NULL)
 #else
     if (LYGetHostByName(host) != NULL)
 #endif /* INET6 */
@@ -7856,7 +7837,7 @@ void get_clip_release()
 char *w32_strerror(DWORD ercode)
 {
 /*  __declspec(thread) necessary if you will use multiple threads */
-#ifdef __CYGWIN__
+#if defined(__CYGWIN__) || defined(__MINGW32__)
     static char msg_buff[256];
 
 #else
