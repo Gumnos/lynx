@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTMIME.c,v 1.67 2008/12/14 18:46:52 tom Exp $
+ * $LynxId: HTMIME.c,v 1.69 2009/01/02 23:04:02 tom Exp $
  *
  *			MIME Message Parse			HTMIME.c
  *			==================
@@ -791,7 +791,7 @@ static int dispatchField(HTStream *me)
 	me->anchor->content_length = atoi(me->value);
 	if (me->anchor->content_length < 0)
 	    me->anchor->content_length = 0;
-	CTRACE((tfp, "        Converted to integer: '%d'\n",
+	CTRACE((tfp, "        Converted to integer: '%ld'\n",
 		me->anchor->content_length));
 	break;
     case miCONTENT_LOCATION:
@@ -2501,7 +2501,6 @@ int HTrjis(char **t,
  */
 /*
  * RJIS ( Recover JIS code from broken file )
- * $Header: rjis.c,v 0.2 92/09/04 takahasi Exp $
  * Copyright (C) 1992 1994
  * Hironobu Takahashi (takahasi@tiny.or.jp)
  *

@@ -1,4 +1,4 @@
-dnl $LynxId: configure.in,v 1.181 2008/12/31 20:58:39 tom Exp $
+dnl $LynxId: configure.in,v 1.186 2009/02/01 16:12:31 tom Exp $
 dnl
 dnl Process this file with autoconf to produce a configure script.
 dnl
@@ -7,7 +7,7 @@ dnl by T.E.Dickey <dickey@invisible-island.net>
 dnl and Jim Spath <jspath@mail.bcpl.lib.md.us>
 dnl
 dnl ---------------------------------------------------------------------------
-dnl Copyright 1997-2007,2008 by Thomas E. Dickey
+dnl Copyright 1997-2008,2009 by Thomas E. Dickey
 dnl 
 dnl Permission to use, copy, modify, and distribute this software and its
 dnl documentation for any purpose and without fee is hereby granted,
@@ -29,7 +29,7 @@ dnl ---------------------------------------------------------------------------
 dnl
 dnl ask PRCS to plug-in the project-version for the configure-script.
 dnl $Format: "AC_REVISION($ProjectVersion$)"$
-AC_REVISION(2.8.7dev.12)
+AC_REVISION(2.8.7dev.13)
 
 # Save the original $CFLAGS so we can distinguish whether the user set those
 # in the environment, or whether autoconf added -O and -g options:
@@ -62,7 +62,7 @@ AC_ARG_WITH(system-type,
 PACKAGE=lynx
 dnl ask PRCS to plug-in the project-version for the packages.
 # $Format: "VERSION=$ProjectVersion$"$
-VERSION=2.8.7dev.12
+VERSION=2.8.7dev.13
 
 AC_SUBST(PACKAGE)
 AC_SUBST(VERSION)
@@ -103,9 +103,8 @@ AC_ISC_POSIX
 
 CF_BUILD_CC([#],[])
 
-AC_CHECK_TOOL(RANLIB, ranlib, ':')
-AC_CHECK_TOOL(AR, ar, ar)
-CF_SUBST(archiver options,AR_OPTS,rv)
+CF_PROG_RANLIB
+CF_AR_FLAGS
 
 dnl --------------------------------------------------------------------------
 dnl Debug/development/test
@@ -356,7 +355,12 @@ dnl --------------------------------------------------------------------------
 dnl Set of available languages (based on source distribution)
 if test -z "$ALL_LINGUAS" ; then
 	ALL_LINGUAS=`test -d $srcdir/po && cd $srcdir/po && echo *.po|sed -e 's/\.po//g' -e 's/*//'`
-	ALL_LINGUAS="$ALL_LINGUAS en"
+	AM_PATH_PROG_WITH_TEST(MSGINIT, msginit,
+		[$ac_dir/$ac_word --no-translator --version /dev/null >/dev/null 2>&1], :)
+	if test "$MSGINIT" != ":" ; then
+		CF_VERBOSE(adding en.po)
+		ALL_LINGUAS="$ALL_LINGUAS en"
+	fi
 fi
 
 CF_BUNDLED_INTL(makefile,disable)
@@ -536,6 +540,8 @@ slang)
 	dft_color_style=no
 	;;
 esac
+
+CF_CURSES_CHTYPE
 
 AC_MSG_CHECKING(if you want the wide-curses features)
 CF_ARG_ENABLE(widec, 
@@ -845,7 +851,7 @@ CF_ARG_ENABLE(addrlist-page,
 AC_MSG_RESULT($use_addrlist_page)
 test $use_addrlist_page != no && AC_DEFINE(EXP_ADDRLIST_PAGE)
 
-AC_MSG_CHECKING(if experimental ascii case-conversion)
+AC_MSG_CHECKING(if experimental ascii case-conversion should be used)
 CF_ARG_ENABLE(ascii-ctypes,
 [  --enable-ascii-ctypes   use experimental ascii case-conversion],
 	[use_ascii_ctypes=$enableval],

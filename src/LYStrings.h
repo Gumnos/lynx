@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYStrings.h,v 1.69 2008/09/07 22:59:14 tom Exp $
+ * $LynxId: LYStrings.h,v 1.72 2009/01/25 19:49:28 tom Exp $
  */
 #ifndef LYSTRINGS_H
 #define LYSTRINGS_H
@@ -16,10 +16,10 @@ extern "C" {
 	,RECALL_MAIL
     } RecallType;
 
-#define IS_UTF8_TTY (LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8)
-#define IS_CJK_TTY  (HTCJK != NOCJK)
+#define IS_UTF8_TTY (BOOLEAN) (LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8)
+#define IS_CJK_TTY  (BOOLEAN) (HTCJK != NOCJK)
 
-#define is8bits(ch) (UCH(ch) >= 128)	/* isascii(ch) is not POSIX */
+#define is8bits(ch) (BOOLEAN) (UCH(ch) >= 128)	/* isascii(ch) is not POSIX */
 
 /*  UPPER8(ch1,ch2) is an extension of (TOUPPER(ch1) - TOUPPER(ch2))  */
     extern int UPPER8(int ch1,
@@ -47,6 +47,8 @@ extern "C" {
 			int hidden,
 			size_t bufsize,
 			RecallType recall);
+    extern int LYscanFloat(const char *source, float *result);
+    extern int LYscanFloat2(const char **source, float *result);
     extern char *LYstrsep(char **stringp,
 			  const char *delim);
     extern char *LYstrstr(char *chptr,

@@ -1,5 +1,7 @@
-
-/* MODULE							HTAAProt.c
+/*
+ * $LynxId: HTAAProt.c,v 1.30 2009/02/01 21:19:48 tom Exp $
+ *
+ * MODULE							HTAAProt.c
  *		PROTECTION FILE PARSING MODULE
  *
  * AUTHORS:
@@ -646,7 +648,7 @@ static void save_uid_info(const char *name, int user)
  * ON EXIT:
  *      returns the user name, or an empty string if not found.
  */
-const char *HTAA_UidToName(int uid)
+const char *HTAA_UidToName(int uid GCC_UNUSED)
 {
 #ifndef NOUSERS
     struct passwd *pw;
@@ -659,7 +661,7 @@ const char *HTAA_UidToName(int uid)
 	    return data->name;
     }
 
-    if ((pw = getpwuid(uid)) != 0
+    if ((pw = getpwuid((uid_t) uid)) != 0
 	&& pw->pw_name != 0) {
 	CTRACE((tfp, "%s(%d) returned (%s:%d:...)\n",
 		"HTAA_UidToName: getpwuid",
@@ -680,7 +682,7 @@ const char *HTAA_UidToName(int uid)
  * ON EXIT:
  *      returns the user id, or NONESUCH if not found.
  */
-int HTAA_NameToUid(const char *name)
+int HTAA_NameToUid(const char *name GCC_UNUSED)
 {
 #ifndef NOUSERS
     struct passwd *pw;
@@ -713,7 +715,7 @@ int HTAA_NameToUid(const char *name)
  * ON EXIT:
  *      returns the group name, or an empty string if not found.
  */
-const char *HTAA_GidToName(int gid)
+const char *HTAA_GidToName(int gid GCC_UNUSED)
 {
 #ifndef NOUSERS
     struct group *gr;
@@ -726,7 +728,7 @@ const char *HTAA_GidToName(int gid)
 	    return data->name;
     }
 
-    if ((gr = getgrgid(gid)) != 0
+    if ((gr = getgrgid((gid_t) gid)) != 0
 	&& gr->gr_name != 0) {
 	CTRACE((tfp, "%s(%d) returned (%s:%d:...)\n",
 		"HTAA_GidToName: getgrgid",
@@ -747,7 +749,7 @@ const char *HTAA_GidToName(int gid)
  * ON EXIT:
  *      returns the group id, or NONESUCH if not found.
  */
-int HTAA_NameToGid(const char *name)
+int HTAA_NameToGid(const char *name GCC_UNUSED)
 {
 #ifndef NOUSERS
     struct group *gr;

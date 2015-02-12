@@ -1,7 +1,47 @@
--- $LynxId: CHANGES,v 1.352 2008/12/31 23:27:54 tom Exp $
+-- $LynxId: CHANGES,v 1.373 2009/02/01 23:51:04 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2009-02-01 (2.8.7dev.13)
+* modify definitions in LYStructs.h for union to cast to a void* rather than
+  a long, to help with 64-bit ports -TD
+* modify CF_SSL configure macro to check for -ldl needed for recent OpenSSL
+  versions -TD
+* modify CF_SSL configure macro to build with msys for mingw configuration -TD
+* modify scanning of floats from lynx.cfg to allow Lynx to read POSIX values
+  in non-POSIX locales -TD
+* modify configure script to check for msginit, needed to generate "en" po
+  file, and omit that target if msginit is not available, letting lynx build
+  with older gettext versions -TD
+* improve drawing of menus for multibyte characters by changing the way the
+  number of fill-characters is computed in LYpaddstr -TD
+* fix some uses of gettext in options menu and info page where a translated
+  string might contain angle-brackets or ampersand -TD
+* modify AM_WITH_NLS configure macro to add the iconv library dependency for
+  intl library when checking for the latter -DK
+* fix breakage of display of UTF-8 in UCTransUniChar() from cleanup in dev.12
+  (report by TG) -TD
+* rename variable defined by CF_PATHSP to PATH_SEPARATOR, use this consistently
+  to ease use in later autoconf versions (prompted by patch by DK) -TD
+* fix a typo in CF_ADD_LIBDIR which broke check for libintl (report by
+  Jose H Espinosa) -TD
+* modify configure script to append to CFLAGS or CPPFLAGS rather than prepend,
+  to better match the user's intent -DK, TD
+* modify UCSetBoxChars() to let line-drawing work with PDCurses, as well as
+  any fancy-curses implementation that is running in ASCII or Latin-1 -TD
+* add a configure check for curses type "chtype" -TD
+* fix for an ASCII dependency in LYKeymap.c -PG
+* update fr.po, id.po, nl.pl, sv.po, tr.po, vi.po from
+    http://translationproject.org/latest/lynx/
+* change configure script to check for "ar" archiver options, from tin bug
+  report for FreeBSD 8.0 which requires a "-" before the options -TD
+* update config.guess (2008-12-19), config.sub (2008-12-11)
+* use putenv() in preference to unsetenv() in LYReadCFG.c, noting that it is
+  a deprecated BSD interface -TD
+* miscellaneous fixes for gcc type-conversion warnings -TD
+* remove trailing comma from enumeration UCStatus which causes strict-compiler
+  warning -TD
 
 2008-12-31 (2.8.7dev.12)
 * add configure option --enable-ascii-ctypes to enable EXP_ASCII_CTYPES -TD

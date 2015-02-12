@@ -1,4 +1,4 @@
-/* $LynxId: LYUtils.h,v 1.78 2008/12/29 01:33:26 tom Exp $ */
+/* $LynxId: LYUtils.h,v 1.80 2009/02/01 23:28:26 tom Exp $ */
 #ifndef LYUTILS_H
 #define LYUTILS_H
 
@@ -141,7 +141,7 @@ extern "C" {
     extern const char *Home_Dir(void);
     extern const char *LYGetHiliteStr(int cur, int count);
     extern const char *LYSysShell(void);
-    extern const char *index_to_restriction(int inx);
+    extern const char *index_to_restriction(unsigned inx);
     extern const char *wwwName(const char *pathname);
     extern int HTCheckForInterrupt(void);
     extern int LYConsoleInputFD(BOOLEAN need_selectable);
@@ -286,6 +286,10 @@ extern "C" {
 
 #else
 #define LYRelaxFilePermissions(name)	/* nothing */
+#endif
+
+#if defined(_WINDOWS)
+    extern int win32_check_interrupt(void);
 #endif
 
 /*

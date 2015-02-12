@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYCharUtils.c,v 1.93 2008/12/29 21:22:28 tom Exp $
+ * $LynxId: LYCharUtils.c,v 1.96 2009/01/19 23:56:35 tom Exp $
  *
  *  Functions associated with LYCharSets.c and the Lynx version of HTML.c - FM
  *  ==========================================================================
@@ -113,7 +113,10 @@ void LYEntify(char **str,
      * Allocate space and convert.  - FM
      */
     q = typecallocn(char,
-		    (strlen(*str) + (4 * amps) + (3 * lts) + (3 * gts) + 1));
+		    (strlen(*str)
+		     + (unsigned)(4 * amps)
+		     + (unsigned)(3 * lts)
+		     + (unsigned)(3 * gts) + 1));
     if ((cp = q) == NULL)
 	outofmem(__FILE__, "LYEntify");
     for (p = *str; *p; p++) {
@@ -226,6 +229,62 @@ void LYEntify(char **str,
 }
 
 /*
+ * Callers to LYEntifyTitle/LYEntifyValue do not look at the 'target' param.
+ * Optimize things a little by avoiding the memory allocation if not needed,
+ * as is usually the case.
+ */
+static BOOL MustEntify(const char *source)
+{
+    BOOL result;
+
+#ifdef CJK_EX
+    if (IS_CJK_TTY && strchr(source, '\033') != 0) {
+	result = TRUE;
+    } else
+#endif
+    {
+	size_t length = strlen(source);
+	size_t reject = strcspn(source, "<&>");
+
+	result = (length != reject);
+    }
+
+    return result;
+}
+
+/*
+ * Wrappers for LYEntify() which do not assume that the source was allocated,
+ * e.g., output from gettext().
+ */
+const char *LYEntifyTitle(char **target, const char *source)
+{
+    const char *result = 0;
+
+    if (MustEntify(source)) {
+	StrAllocCopy(*target, source);
+	LYEntify(target, TRUE);
+	result = *target;
+    } else {
+	result = source;
+    }
+    return result;
+}
+
+const char *LYEntifyValue(char **target, const char *source)
+{
+    const char *result = 0;
+
+    if (MustEntify(source)) {
+	StrAllocCopy(*target, source);
+	LYEntify(target, FALSE);
+	result = *target;
+    } else {
+	result = source;
+    }
+    return result;
+}
+
+/*
  *  This function trims characters <= that of a space (32),
  *  including HT_NON_BREAK_SPACE (1) and HT_EN_SPACE (2),
  *  but not ESC, from the heads of strings. - FM
@@ -261,7 +320,7 @@ void LYTrimTail(char *str)
     if (isEmpty(str))
 	return;
 
-    i = strlen(str) - 1;
+    i = (int) strlen(str) - 1;
     while (i >= 0) {
 	if (WHITE(str[i]))
 	    str[i] = '\0';
@@ -1532,7 +1591,7 @@ char **LYUCFullyTranslateString(char **str,
 		state = S_recover;
 		break;
 	    } else {
-		code = lcode;
+		code = (UCode_t) lcode;
 		if ((code == 1) ||
 		    (code > 127 && code < 156)) {
 		    /*
@@ -2074,7 +2133,7 @@ char *LYParseTagParam(char *from,
 	}
 	if (strlen(string) < len)
 	    return NULL;
-    } while (strncasecomp(string, name, len) != 0);
+    } while (strncasecomp(string, name, (int) len) != 0);
     string += len;
     while (*string != '\0' && (isspace(UCH(*string)) || *string == '=')) {
 	string++;

@@ -1,4 +1,4 @@
-/* $LynxId: LYKeymap.c,v 1.65 2008/01/08 00:19:25 tom Exp $ */
+/* $LynxId: LYKeymap.c,v 1.68 2009/01/25 18:34:57 tom Exp $ */
 #include <HTUtils.h>
 #include <LYUtils.h>
 #include <LYGlobalDefs.h>
@@ -17,7 +17,7 @@
 #include <rot13_kb.h>
 #endif
 
-#define PUTS(buf)    (*target->isa->put_block)(target, buf, strlen(buf))
+#define PUTS(buf)    (*target->isa->put_block)(target, buf, (int) strlen(buf))
 
 #ifdef EXP_KEYBOARD_LAYOUT
 int current_layout = 0;		/* Index into LYKbLayouts[]   */
@@ -1139,7 +1139,7 @@ Kcmd *LYStringToKcmd(const char *name)
 		result = revmap + j;
 		break;
 	    } else if (!exact
-		       && !strncasecomp(revmap[j].name, name, need)) {
+		       && !strncasecomp(revmap[j].name, name, (int) need)) {
 		if (maybe == 0) {
 		    maybe = revmap + j;
 		} else {
@@ -1171,16 +1171,17 @@ char *LYKeycodeToString(int c,
     }
 
     if (!named) {
-	if (c > ' '
-	    && c < 0177)
+	if (c <= 0377
+	    && TOASCII(c) > TOASCII(' ')
+	    && TOASCII(c) < 0177)
 	    sprintf(buf, "%c", c);
 	else if (upper8
-		 && c > ' '
+		 && TOASCII(c) > TOASCII(' ')
 		 && c <= 0377
 		 && c <= LYlowest_eightbit[current_char_set])
 	    sprintf(buf, "%c", c);
-	else if (c < ' ')
-	    sprintf(buf, "^%c", c | 0100);
+	else if (TOASCII(c) < TOASCII(' '))
+	    sprintf(buf, "^%c", FROMASCII(TOASCII(c) | 0100));
 	else if (c >= 0400)
 	    sprintf(buf, "key-0x%x", c);
 	else
@@ -1193,7 +1194,7 @@ int LYStringToKeycode(char *src)
 {
     unsigned n;
     int key = -1;
-    int len = strlen(src);
+    int len = (int) strlen(src);
 
     if (len == 1) {
 	key = *src;
@@ -1254,8 +1255,8 @@ static char *pretty_html(int c)
 		if (c == table[n].code) {
 		    found = TRUE;
 		    strcpy(dst, table[n].name);
-		    adj += strlen(dst) - 1;
-		    dst += strlen(dst);
+		    adj += (int) strlen(dst) - 1;
+		    dst += (int) strlen(dst);
 		    break;
 		}
 	    }
@@ -1381,7 +1382,7 @@ int lkcstring_to_lkc(const char *src)
     else if (strlen(src) == 2 && *src == '^')
 	c = src[1] & 037;
     else if (strlen(src) >= 2 && isdigit(UCH(*src))) {
-	if (sscanf(src, "%i", &c) != 1)
+	if (sscanf(src, "%d", &c) != 1)
 	    return (-1);
 #ifdef USE_KEYMAPS
     } else {

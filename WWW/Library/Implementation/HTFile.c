@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTFile.c,v 1.116 2008/12/31 01:47:53 tom Exp $
+ * $LynxId: HTFile.c,v 1.119 2009/02/01 21:17:39 tom Exp $
  *
  *			File Access				HTFile.c
  *			===========
@@ -252,7 +252,7 @@ static void LYListFmtParse(const char *fmtstr,
 #define PBIT(a, n, s)  (s) ? psbits[((a) >> (n)) & 0x7] : \
 	pbits[((a) >> (n)) & 0x7]
 #endif
-#ifdef S_ISVTX
+#if defined(S_ISVTX) && !defined(_WINDOWS)
     static const char *ptbits[] =
     {"--T", "--t", "-wT", "-wt",
      "r-T", "r-t", "rwT", "rwt", 0};
@@ -1390,7 +1390,7 @@ CompressFileType HTContentToCompressType(HTParentAnchor *anchor)
  *	1.	No code for non-unix systems.
  *	2.	Isn't there a quicker way?
  */
-BOOL HTEditable(const char *filename)
+BOOL HTEditable(const char *filename GCC_UNUSED)
 {
 #ifndef NO_GROUPS
     GETGROUPS_T groups[NGROUPS];
@@ -1791,9 +1791,6 @@ static void do_readme(HTStructured * target, const char *localname)
     fp = fopen(readme_file_name, "r");
 
     if (fp) {
-	HTStructuredClass targetClass;
-
-	targetClass = *target->isa;	/* (Can't init agregate in K&R) */
 	START(HTML_PRE);
 	while ((ch = fgetc(fp)) != EOF) {
 	    PUTC((char) ch);
@@ -1881,12 +1878,10 @@ static int print_local_dir(DIR *dp, char *localname,
     char *pathname = NULL;
     char *tail = NULL;
     char *p;
-    BOOL present[HTML_A_ATTRIBUTES];
     char *tmpfilename = NULL;
     BOOL need_parent_link = FALSE;
     BOOL preformatted = FALSE;
     int status;
-    int i;
     struct stat *actual_info;
 
 #ifdef DISP_PARTIAL
@@ -1916,9 +1911,6 @@ static int print_local_dir(DIR *dp, char *localname,
 
     target = HTML_new(anchor, format_out, sink);
     targetClass = *target->isa;	/* Copy routine entry points */
-
-    for (i = 0; i < HTML_A_ATTRIBUTES; i++)
-	present[i] = (BOOL) (i == HTML_A_HREF);
 
     /*
      * The need_parent_link flag will be set if an "Up to <parent>" link was
@@ -2918,10 +2910,10 @@ int HTLoadFile(const char *addr,
 	    }
 	    /* end if localname is a directory */
 	    if (S_ISREG(dir_info.st_mode)) {
-#ifdef INT_MAX
-		if (dir_info.st_size <= INT_MAX)
+#ifdef LONG_MAX
+		if (dir_info.st_size <= LONG_MAX)
 #endif
-		    anchor->content_length = dir_info.st_size;
+		    anchor->content_length = (long) dir_info.st_size;
 	    }
 
 	}			/* end if file stat worked */
