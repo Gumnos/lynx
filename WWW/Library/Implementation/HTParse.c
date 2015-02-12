@@ -21,6 +21,8 @@
 #endif /* __MINGW32__ */
 #endif
 
+#define MAX_URI_SIZE 8192
+
 #define HEX_ESCAPE '%'
 
 struct struct_parts {
@@ -255,7 +257,8 @@ char *HTParse(const char *aName,
     char *result = NULL;
     char *tail = NULL;		/* a pointer to the end of the 'result' string */
     char *return_value = NULL;
-    unsigned len, len1, len2;
+    size_t len, len1, len2;
+    size_t need;
     char *name = NULL;
     char *rel = NULL;
     char *p, *q;
@@ -290,7 +293,13 @@ char *HTParse(const char *aName,
     len2 = strlen(relatedName) + 1;
     len = len1 + len2 + 8;	/* Lots of space: more than enough */
 
-    result = tail = (char *) LYalloca(len * 2 + len1 + len2);
+    need = (len * 2 + len1 + len2);
+    if (need > MAX_URI_SIZE ||
+	len1 > MAX_URI_SIZE ||
+	len2 > MAX_URI_SIZE)
+	return StrAllocCopy(return_value, "");
+
+    result = tail = (char *) LYalloca(need);
     if (result == NULL) {
 	outofmem(__FILE__, "HTParse");
     }
@@ -674,21 +683,26 @@ const char *HTParseAnchor(const char *aName)
 	 * keeping in mind scan() peculiarities on schemes:
 	 */
 	struct struct_parts given;
+	size_t need = ((unsigned) ((p - aName) + (int) strlen(p) + 1));
+	char *name;
 
-	char *name = (char *) LYalloca((unsigned) ((p - aName)
-						   + (int) strlen(p) + 1));
+	if (strlen(aName) > MAX_URI_SIZE) {
+	    p += strlen(p);
+	} else {
+	    name = (char *) LYalloca(need);
 
-	if (name == NULL) {
-	    outofmem(__FILE__, "HTParseAnchor");
-	}
-	strcpy(name, aName);
-	scan(name, &given);
-	LYalloca_free(name);
+	    if (name == NULL) {
+		outofmem(__FILE__, "HTParseAnchor");
+	    }
+	    strcpy(name, aName);
+	    scan(name, &given);
+	    LYalloca_free(name);
 
-	p++;			/*next to '#' */
-	if (given.anchor == NULL) {
-	    for (; *p; p++)	/*scroll to end '\0' */
-		;
+	    p++;		/*next to '#' */
+	    if (given.anchor == NULL) {
+		for (; *p; p++)	/*scroll to end '\0' */
+		    ;
+	    }
 	}
     }
     return p;

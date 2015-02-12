@@ -3,6 +3,10 @@
 Changes since Lynx 2.8 release
 ===============================================================================
 
+2010-06-21 (2.8.7rel.2)
+* add limit-check for too-long URIs in href's (RedHat #605286) -TD
+* fix a few places still referring to "2-8-6" -TD 
+
 2009-07-05 (2.8.7rel.1)
 * update metrics for 2.8.7 release.
 * fix ifdef'ing for cfg_bad_html (report by Gabor Z Papp) -TD
