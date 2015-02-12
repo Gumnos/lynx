@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYUpload.c,v 1.38 2013/05/03 10:53:50 tom Exp $
+ * $LynxId: LYUpload.c,v 1.40 2013/11/28 11:22:34 tom Exp $
  *
  *  Routines to upload files to the local filesystem.
  *  Created by: Rick Mallett, Carleton University
@@ -88,7 +88,7 @@ int LYUpload(char *line)
 	_statusline(FILENAME_PROMPT);
       retry:
 	*tmpbuf = '\0';
-	if (LYGetStr(tmpbuf, VISIBLE, sizeof(tmpbuf), NORECALL) < 0)
+	if (LYGetStr(tmpbuf, FALSE, sizeof(tmpbuf), NORECALL) < 0)
 	    goto cancelled;
 
 	if (*tmpbuf == '\0')
@@ -97,7 +97,7 @@ int LYUpload(char *line)
 	if (strstr(tmpbuf, "../") != NULL) {
 	    HTAlert(gettext("Illegal redirection \"../\" found! Request ignored."));
 	    goto cancelled;
-	} else if (strchr(tmpbuf, '/') != NULL) {
+	} else if (StrChr(tmpbuf, '/') != NULL) {
 	    HTAlert(gettext("Illegal character \"/\" found! Request ignored."));
 	    goto cancelled;
 	} else if (tmpbuf[0] == '~') {

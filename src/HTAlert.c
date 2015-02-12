@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTAlert.c,v 1.99 2013/05/03 08:41:08 tom Exp $
+ * $LynxId: HTAlert.c,v 1.101 2013/11/28 11:17:04 tom Exp $
  *
  *	Displaying messages and getting input for Lynx Browser
  *	==========================================================
@@ -656,7 +656,7 @@ char *HTPrompt(const char *Msg, const char *deflt)
     BStrCopy0(data, deflt ? deflt : "");
 
     if (!dump_output_immediately)
-	(void) LYgetBString(&data, VISIBLE, 0, NORECALL);
+	(void) LYgetBString(&data, FALSE, 0, NORECALL);
 
     StrAllocCopy(rep, data->str);
 
@@ -676,7 +676,7 @@ char *HTPromptPassword(const char *Msg)
     if (!dump_output_immediately) {
 	_statusline(Msg ? Msg : PASSWORD_PROMPT);
 	BStrCopy0(data, "");
-	(void) LYgetBString(&data, HIDDEN, 0, NORECALL);
+	(void) LYgetBString(&data, TRUE, 0, NORECALL);
 	StrAllocCopy(result, data->str);
 	BStrFree(data);
     } else {
@@ -940,7 +940,7 @@ BOOL HTConfirmCookie(domain_entry * de, const char *server,
 		char *p = gettext("Y/N/A/V");	/* placeholder for comment */
 		const char *s = "YNAV\007\003";		/* see ADVANCED_COOKIE_CONFIRMATION */
 
-		if (strchr(s, ch) == 0
+		if (StrChr(s, ch) == 0
 		    && isalpha(ch)
 		    && (p = strrchr(prompt, L_PAREN)) != 0) {
 

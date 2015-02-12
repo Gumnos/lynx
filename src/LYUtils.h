@@ -1,4 +1,4 @@
-/* $LynxId: LYUtils.h,v 1.91 2012/02/09 18:55:26 tom Exp $ */
+/* $LynxId: LYUtils.h,v 1.96 2013/11/28 11:22:53 tom Exp $ */
 #ifndef LYUTILS_H
 #define LYUTILS_H
 
@@ -29,24 +29,31 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
 #ifdef VMS
 #define HTSYS_name(path)   HTVMS_name("", path)
 #define HTSYS_purge(path)  HTVMS_purge(path)
 #define HTSYS_remove(path) HTVMS_remove(path)
 #endif				/* VMS */
+
 #if defined(USE_DOS_DRIVES)
 #define HTSYS_name(path) HTDOS_name(path)
 #endif
+
 #ifndef HTSYS_name
 #define HTSYS_name(path) path
 #endif
+
 #ifndef HTSYS_purge
 #define HTSYS_purge(path)	/* nothing */
 #endif
+
 #ifndef HTSYS_remove
 #define HTSYS_remove(path) remove(path)
 #endif
+
 #define LYIsPipeCommand(s) ((s)[0] == '|')
+
 #ifdef VMS
 #define TTY_DEVICE "tt:"
 #define NUL_DEVICE "nl:"
@@ -76,23 +83,30 @@ extern "C" {
 #endif				/* __CYGWIN__ */
 #endif				/* DOSPATH */
 #endif				/* VMS */
+
 /* See definitions in src/LYCharVals.h.  The hardcoded values...
    This prohibits binding C-c and C-g.  Maybe it is better to remove this? */
 #define LYCharIsINTERRUPT_HARD(ch)	\
   ((ch) == LYCharINTERRUPT1 || ch == LYCharINTERRUPT2)
+
 #define LYCharIsINTERRUPT(ch)		\
   (LYCharIsINTERRUPT_HARD(ch) || LKC_TO_LAC(keymap,ch) == LYK_INTERRUPT)
+
 #define LYCharIsINTERRUPT_NO_letter(ch)	\
   (LYCharIsINTERRUPT(ch) && !isprint(ch))
+
 #if defined(USE_DOS_DRIVES)
-#define PATHSEP_STR "\\"
+#define PATH_SEPARATOR ";"
+#define FILE_SEPARATOR "\\"
 #define LYIsPathSep(ch) ((ch) == '/' || (ch) == '\\')
 #define LYIsDosDrive(s) (isalpha(UCH((s)[0])) && (s)[1] == ':')
 #else
-#define PATHSEP_STR "/"
+#define PATH_SEPARATOR ":"
+#define FILE_SEPARATOR "/"
 #define LYIsPathSep(ch) ((ch) == '/')
 #define LYIsDosDrive(s) FALSE	/* really nothing */
 #endif
+
 #ifdef USE_ADDRLIST_PAGE
 #define LYIsListpageTitle(name) \
     (!strcmp((name), LIST_PAGE_TITLE) || \
@@ -101,10 +115,12 @@ extern "C" {
 #define LYIsListpageTitle(name) \
     (!strcmp((name), LIST_PAGE_TITLE))
 #endif
+
 #define LYIsTilde(ch)     ((ch) == '~')
 #define LYIsHtmlSep(ch) ((ch) == '/')
-#define findPoundSelector(address) strchr(address, '#')
+#define findPoundSelector(address) StrChr(address, '#')
 #define restorePoundSelector(pound) if ((pound) != NULL) *(pound) = '#'
+
     extern BOOL strn_dash_equ(const char *p1, const char *p2, int len);
     extern BOOLEAN LYAddSchemeForURL(char **AllocatedString, const char *default_scheme);
     extern BOOLEAN LYCachedTemp(char *result, char **cached);
@@ -135,6 +151,7 @@ extern "C" {
     extern char *Current_Dir(char *pathname);
     extern char *LYAbsOrHomePath(char **fname);
     extern char *LYAddPathToSave(char *fname);
+    extern char *LYFindConfigFile(const char *nominal, const char *dftfile);
     extern char *LYGetEnv(const char *name);
     extern char *LYLastPathSep(const char *path);
     extern char *LYPathLeaf(char *pathname);
@@ -227,7 +244,7 @@ extern "C" {
     extern int xsystem(char *cmd);
 #endif
 
-/* Keeping track of User Interface Pages: */
+    /* Keeping track of User Interface Pages: */
     typedef enum {
 	UIP_UNKNOWN = -1
 	,UIP_HISTORY = 0
@@ -302,18 +319,18 @@ extern "C" {
     extern int win32_check_interrupt(void);
 #endif
 
-/*
- *  Whether or not the status line must be shown.
- */
+    /*
+     * Whether or not the status line must be shown.
+     */
     extern BOOLEAN mustshow;
 
 #define _statusline(msg)	mustshow = TRUE, statusline(msg)
 
-/*
- *  For is_url().
- *
- *  Universal document id types (see LYCheckForProxyURL)
- */
+    /*
+     * For is_url().
+     *
+     * Universal document id types (see LYCheckForProxyURL)
+     */
     typedef enum {
 	NOT_A_URL_TYPE = 0,
 	UNKNOWN_URL_TYPE = 1,	/* must be nonzero */
@@ -358,6 +375,7 @@ extern "C" {
 	LYNXCOOKIE_URL_TYPE,
 	LYNXDIRED_URL_TYPE,
 	LYNXDOWNLOAD_URL_TYPE,
+	LYNXEDITMAP_URL_TYPE,
 	LYNXHIST_URL_TYPE,
 	LYNXIMGMAP_URL_TYPE,
 	LYNXKEYMAP_URL_TYPE,
@@ -439,9 +457,13 @@ extern "C" {
 #define isWAIS_URL(addr)     !strncasecomp(addr, STR_WAIS_URL, LEN_WAIS_URL)
 
 /* internal URLs */
+#ifdef USE_CACHEJAR
 #define STR_LYNXCACHE        "LYNXCACHE:"
 #define LEN_LYNXCACHE        10
 #define isLYNXCACHE(addr)    !strncasecomp(addr, STR_LYNXCACHE, LEN_LYNXCACHE)
+#else
+#define isLYNXCACHE(addr)    FALSE
+#endif
 
 #define STR_LYNXCFG          "LYNXCFG:"
 #define LEN_LYNXCFG          8
@@ -472,6 +494,10 @@ extern "C" {
 #define STR_LYNXDOWNLOAD     "LYNXDOWNLOAD:"
 #define LEN_LYNXDOWNLOAD     13
 #define isLYNXDOWNLOAD(addr) !strncasecomp(addr, STR_LYNXDOWNLOAD, LEN_LYNXDOWNLOAD)
+
+#define STR_LYNXEDITMAP      "LYNXEDITMAP:"
+#define LEN_LYNXEDITMAP      11
+#define isLYNXEDITMAP(addr)  !strncasecomp(addr, STR_LYNXEDITMAP, LEN_LYNXEDITMAP)
 
 #define STR_LYNXHIST         "LYNXHIST:"
 #define LEN_LYNXHIST         9

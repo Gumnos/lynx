@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMainLoop.c,v 1.217 2013/05/05 20:36:20 tom Exp $
+ * $LynxId: LYMainLoop.c,v 1.230 2013/11/28 11:20:34 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTAccess.h>
@@ -750,14 +750,14 @@ static BOOL do_check_recall(int ch,
 	 */
 	LYTrimAllStartfile((*user_input)->str);
 	if (isBEmpty(*user_input) &&
-	    !(recall && (ch == UPARROW || ch == DNARROW))) {
+	    !(recall && (ch == UPARROW_KEY || ch == DNARROW_KEY))) {
 	    BStrCopy0((*user_input), *old_user_input);
 	    FREE(*old_user_input);
 	    HTInfoMsg(CANCELLED);
 	    ret = FALSE;
 	    break;
 	}
-	if (recall && ch == UPARROW) {
+	if (recall && ch == UPARROW_KEY) {
 	    if (*FirstURLRecall) {
 		/*
 		 * Use last URL in the list.  - FM
@@ -788,7 +788,7 @@ static BOOL do_check_recall(int ch,
 		} else {
 		    _statusline(EDIT_A_PREV_GOTO);
 		}
-		if ((ch = LYgetBString(user_input, VISIBLE, 0, recall)) < 0) {
+		if ((ch = LYgetBString(user_input, FALSE, 0, recall)) < 0) {
 		    /*
 		     * User cancelled the Goto via ^G.  Restore
 		     * user_input and break.  - FM
@@ -801,7 +801,7 @@ static BOOL do_check_recall(int ch,
 		}
 		continue;
 	    }
-	} else if (recall && ch == DNARROW) {
+	} else if (recall && ch == DNARROW_KEY) {
 	    if (*FirstURLRecall) {
 		/*
 		 * Use the first URL in the list.  - FM
@@ -830,7 +830,7 @@ static BOOL do_check_recall(int ch,
 		} else {
 		    _statusline(EDIT_A_PREV_GOTO);
 		}
-		if ((ch = LYgetBString(user_input, VISIBLE, 0, recall)) < 0) {
+		if ((ch = LYgetBString(user_input, FALSE, 0, recall)) < 0) {
 		    /*
 		     * User cancelled the Goto via ^G.  Restore
 		     * user_input and break.  - FM
@@ -937,7 +937,7 @@ static int DoTraversal(int c,
 	if (lookup_link(links[curdoc.link].lname)) {
 	    if (more_links ||
 		(curdoc.link > -1 && curdoc.link < nlinks - 1)) {
-		c = DNARROW;
+		c = DNARROW_KEY;
 	    } else {
 		if (STREQ(curdoc.title, "Entry into main screen") ||
 		    (nhist <= 0)) {
@@ -947,7 +947,7 @@ static int DoTraversal(int c,
 		    }
 		    c = -1;
 		} else {
-		    c = LTARROW;
+		    c = LTARROW_KEY;
 		}
 	    }
 	} else {
@@ -955,7 +955,7 @@ static int DoTraversal(int c,
 			 links[curdoc.link].lname);
 	    if (!isLYNXIMGMAP(traversal_link_to_add))
 		*crawl_ok = TRUE;
-	    c = RTARROW;
+	    c = RTARROW_KEY;
 	}
     } else {			/* no good right link, so only down and left arrow ok */
 	if (rlink_exists /* && !rlink_rejected */ )
@@ -963,7 +963,7 @@ static int DoTraversal(int c,
 	    add_to_reject_list(links[curdoc.link].lname);
 	if (more_links ||
 	    (curdoc.link > -1 && curdoc.link < nlinks - 1)) {
-	    c = DNARROW;
+	    c = DNARROW_KEY;
 	} else {
 	    /*
 	     * curdoc.title doesn't always work, so bail out if the history
@@ -977,7 +977,7 @@ static int DoTraversal(int c,
 		}
 		c = -1;
 	    } else {
-		c = LTARROW;
+		c = LTARROW_KEY;
 	    }
 	}
     }
@@ -1101,9 +1101,7 @@ static int handle_LYK_ACTIVATE(int *c,
 		 * FM
 		 */
 		if (isLYNXCOOKIE(links[curdoc.link].l_form->submit_action) ||
-#ifdef USE_CACHEJAR
 		    isLYNXCACHE(links[curdoc.link].l_form->submit_action) ||
-#endif
 #ifdef DIRED_SUPPORT
 #ifdef OK_PERMIT
 		    (isLYNXDIRED(links[curdoc.link].l_form->submit_action) &&
@@ -1118,6 +1116,7 @@ static int handle_LYK_ACTIVATE(int *c,
 #endif /* DIRED_SUPPORT */
 		    isLYNXDOWNLOAD(links[curdoc.link].l_form->submit_action) ||
 		    isLYNXHIST(links[curdoc.link].l_form->submit_action) ||
+		    isLYNXEDITMAP(links[curdoc.link].l_form->submit_action) ||
 		    isLYNXKEYMAP(links[curdoc.link].l_form->submit_action) ||
 		    isLYNXIMGMAP(links[curdoc.link].l_form->submit_action) ||
 		    isLYNXPRINT(links[curdoc.link].l_form->submit_action) ||
@@ -1275,13 +1274,10 @@ static int handle_LYK_ACTIVATE(int *c,
 	     */
 	    if (no_file_url && isFILE_URL(links[curdoc.link].lname)) {
 		if (!isFILE_URL(curdoc.address) &&
-		    !((isLYNXKEYMAP(curdoc.address) ||
-#ifndef USE_CACHEJAR
-		       isLYNXCOOKIE(curdoc.address)) &&
-#else
+		    !((isLYNXEDITMAP(curdoc.address) ||
+		       isLYNXKEYMAP(curdoc.address) ||
 		       isLYNXCOOKIE(curdoc.address) ||
 		       isLYNXCACHE(curdoc.address)) &&
-#endif
 		      !StrNCmp(links[curdoc.link].lname,
 			       helpfilepath,
 			       strlen(helpfilepath)))) {
@@ -1476,10 +1472,7 @@ static int handle_LYK_ACTIVATE(int *c,
 	    }
 #endif /* DIRED_SUPPORT  && !__DJGPP__ */
 	    if (isLYNXCOOKIE(curdoc.address)
-#ifdef USE_CACHEJAR
-		|| isLYNXCACHE(curdoc.address)
-#endif
-		) {
+		|| isLYNXCACHE(curdoc.address)) {
 		HTuncache_current_document();
 	    }
 	}
@@ -1649,9 +1642,7 @@ static void handle_LYK_ADD_BOOKMARK(BOOLEAN *refresh_screen,
 #endif /* DIRED_SUPPORT */
 	!LYIsUIPage(curdoc.address, UIP_DOWNLOAD_OPTIONS) &&
 	!isLYNXCOOKIE(curdoc.address) &&
-#ifdef USE_CACHEJAR
 	!isLYNXCACHE(curdoc.address) &&
-#endif
 	!LYIsUIPage(curdoc.address, UIP_OPTIONS_MENU) &&
 	((nlinks <= 0) ||
 	 (links[curdoc.link].lname != NULL &&
@@ -1660,9 +1651,7 @@ static void handle_LYK_ADD_BOOKMARK(BOOLEAN *refresh_screen,
 	  !isLYNXDIRED(links[curdoc.link].lname) &&
 	  !isLYNXDOWNLOAD(links[curdoc.link].lname) &&
 	  !isLYNXCOOKIE(links[curdoc.link].lname) &&
-#ifdef USE_CACHEJAR
 	  !isLYNXCACHE(links[curdoc.link].lname) &&
-#endif
 	  !isLYNXPRINT(links[curdoc.link].lname)))) {
 	if (nlinks > 0) {
 	    if (curdoc.post_data == NULL &&
@@ -1806,7 +1795,7 @@ static int handle_LYK_COMMAND(bstring **user_input)
 
     BStrCopy0((*user_input), "");
     _statusline(": ");
-    if (LYgetBString(user_input, VISIBLE, 0, RECALL_CMD) >= 0) {
+    if (LYgetBString(user_input, FALSE, 0, RECALL_CMD) >= 0) {
 	src = LYSkipBlanks((*user_input)->str);
 	tmp = LYSkipNonBlanks(src);
 	*tmp = 0;
@@ -1856,7 +1845,7 @@ static void handle_LYK_COMMENT(BOOLEAN *refresh_screen,
 			/*
 			 * It's a ~user URL so guess user@host.  - FM
 			 */
-			if ((cp = strchr((temp + 1), '/')) != NULL)
+			if ((cp = StrChr((temp + 1), '/')) != NULL)
 			    *cp = '\0';
 			StrAllocCopy(address, STR_MAILTO_URL);
 			StrAllocCat(address, (temp + 1));
@@ -1907,11 +1896,11 @@ static void handle_LYK_COMMENT(BOOLEAN *refresh_screen,
 		    }
 		}
 
-		if (strchr(*owner_address_p, ':') != NULL)
+		if (StrChr(*owner_address_p, ':') != NULL)
 		    /*
 		     * Send a reply.  The address is after the colon.
 		     */
-		    reply_by_mail(strchr(*owner_address_p, ':') + 1,
+		    reply_by_mail(StrChr(*owner_address_p, ':') + 1,
 				  curdoc.address,
 				  NonNull(kp), id);
 		else
@@ -2276,9 +2265,7 @@ static int handle_LYK_DOWNLOAD(int *cmd,
 	    }
 
 	} else if (isLYNXCOOKIE(links[curdoc.link].lname) ||
-#ifdef USE_CACHEJAR
 		   isLYNXCACHE(links[curdoc.link].lname) ||
-#endif
 		   isLYNXDIRED(links[curdoc.link].lname) ||
 		   isLYNXDOWNLOAD(links[curdoc.link].lname) ||
 		   isLYNXPRINT(links[curdoc.link].lname) ||
@@ -2430,7 +2417,7 @@ static int handle_LYK_DWIMEDIT(int *cmd,
      */
     if (nlinks > 0 &&
 	LinkIsTextarea(curdoc.link)) {
-	*cmd = LYK_EDIT_TEXTAREA;
+	*cmd = LYK_EDITTEXTAREA;
 	return 2;
     }
 
@@ -2510,7 +2497,7 @@ static int handle_LYK_ECGOTO(int *ch,
      * Offer the current document's URL for editing.  - FM
      */
     _statusline(EDIT_CURDOC_URL);
-    if (((*ch = LYgetBString(user_input, VISIBLE, 0, RECALL_URL)) >= 0) &&
+    if (((*ch = LYgetBString(user_input, FALSE, 0, RECALL_URL)) >= 0) &&
 	!isBEmpty(*user_input) &&
 	strcmp((*user_input)->str, curdoc.address)) {
 	LYTrimAllStartfile((*user_input)->str);
@@ -2624,7 +2611,32 @@ static void handle_LYK_DWIMHELP(const char **cshelpfile)
     if (curdoc.link >= 0 && curdoc.link < nlinks &&
 	!FormIsReadonly(links[curdoc.link].l_form) &&
 	LinkIsTextLike(curdoc.link)) {
-	*cshelpfile = LYLineeditHelpURL();
+	*cshelpfile = STR_LYNXEDITMAP;
+    }
+}
+
+static void handle_LYK_EDITMAP(int *old_c,
+			       int real_c)
+{
+    if (*old_c != real_c) {
+	*old_c = real_c;
+	set_address(&newdoc, STR_LYNXEDITMAP);
+	StrAllocCopy(newdoc.title, CURRENT_EDITMAP_TITLE);
+	LYFreePostData(&newdoc);
+	FREE(newdoc.bookmark);
+	newdoc.isHEAD = FALSE;
+	newdoc.safe = FALSE;
+	newdoc.internal_link = FALSE;
+#if defined(DIRED_SUPPORT) && defined(OK_OVERRIDE)
+	/*
+	 * Remember whether we are in dired menu so we can display the right
+	 * keymap.
+	 */
+	if (!no_dired_support) {
+	    prev_lynx_edit_mode = lynx_edit_mode;
+	}
+#endif /* DIRED_SUPPORT && OK_OVERRIDE */
+	LYforce_no_cache = TRUE;
     }
 }
 
@@ -2753,7 +2765,7 @@ static int handle_LYK_ELGOTO(int *ch,
      * Offer the current link's URL for editing.  - FM
      */
     _statusline(EDIT_CURLINK_URL);
-    if (((*ch = LYgetBString(user_input, VISIBLE, 0, RECALL_URL)) >= 0) &&
+    if (((*ch = LYgetBString(user_input, FALSE, 0, RECALL_URL)) >= 0) &&
 	!isBEmpty(*user_input) &&
 	strcmp((*user_input)->str,
 	       ((links[curdoc.link].type == WWW_FORM_LINK_TYPE)
@@ -3006,7 +3018,7 @@ static BOOLEAN handle_LYK_GOTO(int *ch,
      * Ask the user.
      */
     _statusline(URL_TO_OPEN);
-    if ((*ch = LYgetBString(user_input, VISIBLE, 0, *recall)) < 0) {
+    if ((*ch = LYgetBString(user_input, FALSE, 0, *recall)) < 0) {
 	/*
 	 * User cancelled the Goto via ^G.  Restore user_input and
 	 * break.  - FM
@@ -3523,7 +3535,7 @@ static char *urlencode(char *str)
 		*ptr = '+';
 		ptr++;
 	    } else if (ch > 127 ||
-		       strchr(":/?#[]@!$&'()*+,;=", ch) != 0) {
+		       StrChr(":/?#[]@!$&'()*+,;=", ch) != 0) {
 		*ptr++ = '%';
 		*ptr++ = HEX(ch >> 4);
 		*ptr++ = HEX(ch);
@@ -3565,7 +3577,7 @@ static BOOLEAN check_JUMP_param(char **url_template)
 	if (encoded)
 	    FREE(encoded);
 
-	if (LYgetBString(&input, VISIBLE, 0, recall) < 0) {
+	if (LYgetBString(&input, FALSE, 0, recall) < 0) {
 	    /*
 	     * cancelled via ^G
 	     */
@@ -3651,7 +3663,7 @@ static BOOLEAN handle_LYK_JUMP(int c,
 		*FirstURLRecall = TRUE;
 		if (!strcasecomp(ret, "Go :")) {
 		    if (recall) {
-			*ch = UPARROW;
+			*ch = UPARROW_KEY;
 			return TRUE;
 		    }
 		    FREE(*old_user_input);
@@ -5247,7 +5259,7 @@ void handle_LYK_CHDIR(void)
     }
 
     _statusline(gettext("cd to:"));
-    if (LYgetBString(&buf, VISIBLE, 0, NORECALL) < 0 || isBEmpty(buf)) {
+    if (LYgetBString(&buf, FALSE, 0, NORECALL) < 0 || isBEmpty(buf)) {
 	HTInfoMsg(CANCELLED);
 	return;
     }
@@ -5885,9 +5897,7 @@ int mainloop(void)
 			HTMainText &&
 			nlinks > 0 && curdoc.link < nlinks &&
 			!isLYNXHIST(NonNull(newdoc.address)) &&
-#ifdef USE_CACHEJAR
 			!isLYNXCACHE(NonNull(newdoc.address)) &&
-#endif
 			!isLYNXCOOKIE(NonNull(newdoc.address))) {
 			char *mail_owner = NULL;
 
@@ -6113,7 +6123,7 @@ int mainloop(void)
 			 */
 			cp = NULL;
 			if (temp[len] == '/') {
-			    if (strchr(&temp[(len + 1)], '/')) {
+			    if (StrChr(&temp[(len + 1)], '/')) {
 				HTSprintf0(&cp, ".%s", &temp[len]);
 			    } else {
 				StrAllocCopy(cp, &temp[(len + 1)]);
@@ -6714,7 +6724,7 @@ int mainloop(void)
 
 		if (strlen(p) < (sizeof(sjis_buff) / 10)) {
 		    strcpy(temp_buff, p);
-		    if (strchr(temp_buff, '%')) {
+		    if (StrChr(temp_buff, '%')) {
 			HTUnEscape(temp_buff);
 		    }
 		    str_sjis(sjis_buff, temp_buff);
@@ -7132,7 +7142,7 @@ int mainloop(void)
 	    handle_LYK_SOURCE(&ownerS_address);
 	    break;
 
-	case LYK_CHG_CENTER:	/* ^Q */
+	case LYK_CHANGE_CENTER:	/* ^Q */
 
 	    if (no_table_center) {
 		no_table_center = FALSE;
@@ -7241,9 +7251,9 @@ int mainloop(void)
 		    break;
 		len2 = (int) strlen((const char *) s);
 		e = s + len2;
-		while (s < e && strchr(" \t\n\r", *s))
+		while (s < e && StrChr(" \t\n\r", *s))
 		    s++;
-		while (s < e && strchr(" \t\n\r", e[-1]))
+		while (s < e && StrChr(" \t\n\r", e[-1]))
 		    e--;
 		if (s[0] == '<' && e > s && e[-1] == '>') {
 		    s++;
@@ -7264,11 +7274,11 @@ int mainloop(void)
 		t = (unsigned char *) buf;
 
 		while (s < e) {
-		    if (strchr(" \t\n\r", *s)) {
+		    if (StrChr(" \t\n\r", *s)) {
 			int nl2 = 0;	/* Keep whitespace without NL - file names! */
 			unsigned char *s1 = s;
 
-			while (strchr(" \t\n\r", *s)) {
+			while (StrChr(" \t\n\r", *s)) {
 			    if (!nl2 && *s == '\n')
 				nl2 = 1;
 			    s++;
@@ -7564,15 +7574,15 @@ int mainloop(void)
 		goto new_cmd;
 	    break;
 
-	case LYK_EDIT_TEXTAREA:	/* use external editor on a TEXTAREA - KED */
+	case LYK_EDITTEXTAREA:	/* use external editor on a TEXTAREA - KED */
 	    handle_LYK_EDIT_TEXTAREA(&refresh_screen, &old_c, real_c);
 	    break;
 
-	case LYK_GROW_TEXTAREA:	/* add new lines to bottom of TEXTAREA - KED */
+	case LYK_GROWTEXTAREA:	/* add new lines to bottom of TEXTAREA - KED */
 	    handle_LYK_GROW_TEXTAREA(&refresh_screen);
 	    break;
 
-	case LYK_INSERT_FILE:	/* insert file in TEXTAREA, above cursor - KED */
+	case LYK_INSERTFILE:	/* insert file in TEXTAREA, above cursor - KED */
 	    handle_LYK_INSERT_FILE(&refresh_screen, &old_c, real_c);
 	    break;
 
@@ -7673,6 +7683,10 @@ int mainloop(void)
 
 	case LYK_TOGGLE_HELP:
 	    handle_LYK_TOGGLE_HELP();
+	    break;
+
+	case LYK_EDITMAP:
+	    handle_LYK_EDITMAP(&old_c, real_c);
 	    break;
 
 	case LYK_KEYMAP:
@@ -8009,8 +8023,8 @@ static void form_noviceline(int disabled)
     if (!disabled) {
 	LYaddstr(FORM_NOVICELINE_ONE);
     }
-    LYmove(LYlines - 1, 0);
-    LYclrtoeol();
+    LYParkCursor();
+
     if (disabled)
 	return;
     if (EditBinding(FROMASCII('\025')) == LYE_ERASE) {

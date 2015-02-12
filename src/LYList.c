@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYList.c,v 1.51 2013/04/30 22:09:43 tom Exp $
+ * $LynxId: LYList.c,v 1.53 2013/10/03 07:46:14 tom Exp $
  *
  *			Lynx Document Reference List Support	      LYList.c
  *			====================================
@@ -12,6 +12,7 @@
 #include <HTAlert.h>
 #include <LYUtils.h>
 #include <GridText.h>
+#include <HTParse.h>
 #include <LYList.h>
 #include <LYMap.h>
 #include <LYClean.h>
@@ -286,11 +287,19 @@ static int print_refs(FILE *fp, int titles, int refs)
 			continue;
 		    fprintf(fp, "%4d. ", value);
 		}
-		address = HTAnchor_address(dest);
-		fprintf(fp, "%s%s\n",
-			((HTAnchor *) parent != dest) && title ? "in " : "",
-			(title ? title : address));
-		FREE(address);
+		if (((HTAnchor *) parent != dest) && title) {
+		    fprintf(fp, "in ");
+		}
+		if (title) {
+		    fprintf(fp, "%s\n", title);
+		} else {
+		    address = HTAnchor_short_address(dest);
+		    if (LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8) {
+			(void) HTUnEscape(address);
+		    }
+		    fprintf(fp, "%s\n", address);
+		    FREE(address);
+		}
 	    }
 	}
 	if (counter > result)

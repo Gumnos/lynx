@@ -1,4 +1,4 @@
-/* $LynxId: LYGetFile.c,v 1.89 2013/05/01 00:21:02 tom Exp $ */
+/* $LynxId: LYGetFile.c,v 1.92 2013/11/28 11:18:56 tom Exp $ */
 #include <HTUtils.h>
 #include <HTTP.h>
 #include <HTAnchor.h>		/* Anchor class */
@@ -144,7 +144,7 @@ int getfile(DocInfo *doc, int *target)
 	strlen(temp) > 3) {
 	char *cp1;
 
-	if ((cp1 = strchr(temp, '@')) == NULL)
+	if ((cp1 = StrChr(temp, '@')) == NULL)
 	    cp1 = temp;
 	if ((cp = strrchr(cp1, ':')) != NULL) {
 	    long int value;
@@ -189,6 +189,7 @@ int getfile(DocInfo *doc, int *target)
 	    if (!(url_type == HTTP_URL_TYPE ||
 		  url_type == HTTPS_URL_TYPE ||
 		  url_type == LYNXHIST_URL_TYPE ||
+		  url_type == LYNXEDITMAP_URL_TYPE ||
 		  url_type == LYNXKEYMAP_URL_TYPE ||
 		  url_type == LYNXIMGMAP_URL_TYPE ||
 		  url_type == LYNXCOOKIE_URL_TYPE ||
@@ -225,6 +226,7 @@ int getfile(DocInfo *doc, int *target)
 	    if (!(0 == StrNCmp(startrealm, WWWDoc.address,
 			       strlen(startrealm)) ||
 		  url_type == LYNXHIST_URL_TYPE ||
+		  url_type == LYNXEDITMAP_URL_TYPE ||
 		  url_type == LYNXKEYMAP_URL_TYPE ||
 		  url_type == LYNXIMGMAP_URL_TYPE ||
 		  url_type == LYNXCOOKIE_URL_TYPE ||
@@ -380,8 +382,8 @@ int getfile(DocInfo *doc, int *target)
 		LYNoRefererForThis = TRUE;
 	    }
 	    if (LYNoRefererForThis == FALSE &&
-		(cp = strchr(ref_url, '?')) != NULL &&
-		strchr(cp, '=') != NULL) {
+		(cp = StrChr(ref_url, '?')) != NULL &&
+		StrChr(cp, '=') != NULL) {
 		/*
 		 * Don't send a Referer header if the URL is the reply from a
 		 * form with method GET, in case the content has personal data
@@ -542,7 +544,7 @@ int getfile(DocInfo *doc, int *target)
 			title = "";
 		    }
 		}
-		cp = strchr(doc->address, ':') + 1;
+		cp = StrChr(doc->address, ':') + 1;
 		reply_by_mail(cp,
 			      ((HTMainAnchor && !LYUserSpecifiedURL)
 			       ? (char *) HTMainAnchor->address
@@ -560,6 +562,7 @@ int getfile(DocInfo *doc, int *target)
 	     * allowed.
 	     */
 	} else if (local_host_only &&
+		   url_type != LYNXEDITMAP_URL_TYPE &&
 		   url_type != LYNXKEYMAP_URL_TYPE &&
 		   url_type != LYNXIMGMAP_URL_TYPE &&
 		   url_type != LYNXCOOKIE_URL_TYPE &&
@@ -586,7 +589,7 @@ int getfile(DocInfo *doc, int *target)
 	    if (!telnet_ok) {
 		HTUserMsg(TELNET_DISABLED);
 		return (NULLFILE);
-	    } else if (no_telnet_port && strchr(doc->address + 7, ':')) {
+	    } else if (no_telnet_port && StrChr(doc->address + 7, ':')) {
 		HTUserMsg(TELNET_PORT_SPECS_DISABLED);
 		return (NULLFILE);
 		/*
@@ -657,7 +660,7 @@ int getfile(DocInfo *doc, int *target)
 	     * already attached then do this.  Otherwise just load it!
 	     */
 	} else if (url_type == INDEX_GOPHER_URL_TYPE &&
-		   strchr(doc->address, '?') == NULL) {
+		   StrChr(doc->address, '?') == NULL) {
 	    int status;
 
 	    /*
@@ -715,7 +718,7 @@ int getfile(DocInfo *doc, int *target)
 	    /*
 	     * If tuple's Path=GET%20/...  convert to an http URL.
 	     */
-	    if ((cp = strchr(doc->address + 9, '/')) != NULL &&
+	    if ((cp = StrChr(doc->address + 9, '/')) != NULL &&
 		0 == StrNCmp(++cp, "hGET%20/", 8)) {
 		StrAllocCopy(tmp, "http://");
 		CTRACE((tfp, "getfile: URL '%s'\n",
@@ -725,7 +728,7 @@ int getfile(DocInfo *doc, int *target)
 		/*
 		 * If the port is defaulted, it should stay 70.
 		 */
-		if (strchr(tmp + 6, ':') == NULL) {
+		if (StrChr(tmp + 6, ':') == NULL) {
 		    StrAllocCat(tmp, "70/");
 		    tmp[strlen(tmp) - 4] = ':';
 		}
@@ -1138,7 +1141,7 @@ int follow_link_number(int c,
     /*
      * Get the number, possibly with a letter suffix, from the user.
      */
-    if (LYgetBString(&temp, VISIBLE, sizeof(temp), NORECALL) < 0 ||
+    if (LYgetBString(&temp, FALSE, sizeof(temp), NORECALL) < 0 ||
 	isBEmpty(temp)) {
 	HTInfoMsg(CANCELLED);
 	return (DO_NOTHING);
@@ -1337,7 +1340,7 @@ void add_trusted(char *str,
 	first = FALSE;
     }
 
-    path = strchr(src, '\t');
+    path = StrChr(src, '\t');
     if (path) {
 	*path++ = '\0';
 	after_tab = path;
@@ -1395,11 +1398,11 @@ BOOLEAN exec_ok(const char *source,
     /*
      * Security:  reject on relative path.
      */
-    if ((cp = strchr(linktext, '[')) != NULL) {
+    if ((cp = StrChr(linktext, '[')) != NULL) {
 	char *cp1;
 
-	if (((cp1 = strchr(cp, '-')) != NULL) &&
-	    strchr(cp1, ']') != NULL) {
+	if (((cp1 = StrChr(cp, '-')) != NULL) &&
+	    StrChr(cp1, ']') != NULL) {
 	    while (cp1[1] == '-')
 		cp1++;
 	    if (cp1[1] == ']' ||
@@ -1426,7 +1429,7 @@ BOOLEAN exec_ok(const char *source,
     else
 	allowed_extra_chars = " _-:./@~$+=\t";
     for (cp = linktext; *cp != '\0'; cp++) {
-	if (!isalnum(UCH(*cp)) && !strchr(allowed_extra_chars, *cp)) {
+	if (!isalnum(UCH(*cp)) && !StrChr(allowed_extra_chars, *cp)) {
 	    char *buf = 0;
 
 	    HTSprintf0(&buf,
@@ -1513,7 +1516,7 @@ static int fix_httplike_urls(DocInfo *doc, UrlTypes type)
     } else if (type == NCFTP_URL_TYPE) {
 	char *path = NULL;
 	char *first = doc->address;
-	char *second = strchr(first, ':');
+	char *second = StrChr(first, ':');
 
 	CTRACE((tfp, "fix_httplike_urls: URL '%s'\n", doc->address));
 	if (second == 0)
@@ -1538,7 +1541,7 @@ static int fix_httplike_urls(DocInfo *doc, UrlTypes type)
 	}
 	if (type == HTTP_URL_TYPE ||
 	    type == HTTPS_URL_TYPE) {
-	    if ((slash - 2) != strchr(doc->address, ':')) {
+	    if ((slash - 2) != StrChr(doc->address, ':')) {
 		/*
 		 * Turns out we were not looking at the right slash after all,
 		 * there must have been more than one "://" which is valid at
@@ -1547,7 +1550,7 @@ static int fix_httplike_urls(DocInfo *doc, UrlTypes type)
 		 */
 		return (0);
 	    }
-	    if (strchr(doc->address, '?')) {
+	    if (StrChr(doc->address, '?')) {
 		/*
 		 * If there is a question mark that appears to be part of the
 		 * hostname, don't append anything either.  Leave it to HTParse

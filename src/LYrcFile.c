@@ -1,4 +1,4 @@
-/* $LynxId: LYrcFile.c,v 1.90 2012/11/14 01:06:06 tom Exp $ */
+/* $LynxId: LYrcFile.c,v 1.92 2013/11/28 11:22:53 tom Exp $ */
 #include <HTUtils.h>
 #include <HTFTP.h>
 #include <LYUtils.h>
@@ -434,7 +434,7 @@ file lists such as FTP directories.  The options are:\n\
     PARSE_ARY(RC_KBLAYOUT,              current_layout,     LYKbLayoutNames, NULL),
 #endif
     PARSE_ENU(RC_KEYPAD_MODE,           keypad_mode,        tbl_keypad_mode, NULL),
-    PARSE_ARY(RC_LINEEDIT_MODE,         current_lineedit,   LYLineeditNames, N_("\
+    PARSE_ARY(RC_LINEEDIT_MODE,         current_lineedit,   LYEditorNames, N_("\
 lineedit_mode specifies the key binding used for inputting strings in\n\
 prompts and forms.  If lineedit_mode is set to \"Default Binding\" then\n\
 the following control characters are used for moving and deleting:\n\
@@ -731,7 +731,7 @@ BOOL LYsetRcValue(const char *name, const char *param)
 	    sprintf(MBM_line, "multi_bookmark%c", LYindex2MBM(n));
 
 	    if (!strcasecomp(name, MBM_line)) {
-		if ((notes = strchr(value, ',')) != 0) {
+		if ((notes = StrChr(value, ',')) != 0) {
 		    *notes++ = '\0';
 		    LYTrimTrailing(value);
 		    notes = LYSkipBlanks(notes);
@@ -798,7 +798,7 @@ void read_rc(FILE *fp)
 	/*
 	 * Parse the "name=value" strings.
 	 */
-	if ((value = strchr(name, '=')) == 0) {
+	if ((value = StrChr(name, '=')) == 0) {
 	    CTRACE((tfp, "LYrcFile: missing '=' %s\n", name));
 	    continue;
 	}
@@ -1054,7 +1054,7 @@ BOOL will_save_rc(const char *name)
 int enable_lynxrc(char *value)
 {
     Config_Type *tbl;
-    char *colon = strchr(value, ':');
+    char *colon = StrChr(value, ':');
 
     if (colon != 0) {
 	*colon++ = 0;

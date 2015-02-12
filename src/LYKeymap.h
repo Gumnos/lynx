@@ -1,4 +1,4 @@
-/* $LynxId: LYKeymap.h,v 1.48 2012/02/12 18:29:34 tom Exp $ */
+/* $LynxId: LYKeymap.h,v 1.53 2013/10/20 22:11:03 tom Exp $ */
 #ifndef LYKEYMAP_H
 #define LYKEYMAP_H
 
@@ -35,7 +35,7 @@ extern "C" {
  * (which is supposed to be 'int'), that would be okay, but not as clean
  * for type-checking.
  */
-    typedef unsigned short LYKeymap_t;
+    typedef short LYKeymap_t;
 
 #define KEYMAP_SIZE 661
     extern LYKeymap_t keymap[KEYMAP_SIZE];	/* main keymap matrix */
@@ -45,7 +45,7 @@ extern "C" {
     extern int current_layout;
     extern LYKbLayout_t *LYKbLayouts[];
     extern const char *LYKbLayoutNames[];
-    extern int LYSetKbLayout(char *layout_id);
+    extern BOOLEAN LYSetKbLayout(char *layout_id);
 #endif
 
 #if defined(DIRED_SUPPORT) && defined(OK_OVERRIDE)
@@ -185,6 +185,7 @@ extern "C" {
 	,LYK_DO_NOTHING
 	,LYK_TOGGLE_HELP
 	,LYK_JUMP
+	,LYK_EDITMAP
 	,LYK_KEYMAP
 	,LYK_LIST
 	,LYK_TOOLBAR
@@ -199,9 +200,9 @@ extern "C" {
 	,LYK_ELGOTO
 	,LYK_CHANGE_LINK
 	,LYK_DWIMEDIT
-	,LYK_EDIT_TEXTAREA
-	,LYK_GROW_TEXTAREA
-	,LYK_INSERT_FILE
+	,LYK_EDITTEXTAREA
+	,LYK_GROWTEXTAREA
+	,LYK_INSERTFILE
 
 #ifdef USE_ADDRLIST_PAGE
 	,LYK_ADDRLIST
@@ -234,10 +235,10 @@ extern "C" {
 #define LYK_TAG_LINK      LYK_UNKNOWN
 #endif				/* DIRED_SUPPORT */
 
-	,LYK_CHG_CENTER
+	,LYK_CHANGE_CENTER
 
 #ifdef KANJI_CODE_OVERRIDE
-	,LYK_CHG_KCODE
+	,LYK_CHANGE_KCODE
 #endif
 
 #ifdef SUPPORT_CHDIR

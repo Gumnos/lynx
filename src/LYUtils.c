@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYUtils.c,v 1.242 2013/07/29 00:33:32 tom Exp $
+ * $LynxId: LYUtils.c,v 1.262 2013/11/29 00:04:25 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTCP.h>
@@ -250,6 +250,35 @@ static int w32_get_reg_sz(HKEY hkey, const char *name, char *value, unsigned len
     }
     return result;
 }
+
+static char *w32_get_shell_folder(const char *name)
+{
+    static HKEY rootkey = HKEY_CURRENT_USER;
+
+    char *result = 0;
+    HKEY hkey;
+    char buffer[LY_MAXPATH];
+
+    if (RegOpenKeyEx(rootkey,
+		     W32_STRING("Software"
+				"\\Microsoft"
+				"\\Windows"
+				"\\CurrentVersion"
+				"\\Explorer"
+				"\\Shell Folders"),
+		     0,
+		     KEY_READ,
+		     &hkey) == ERROR_SUCCESS) {
+	if (w32_get_reg_sz(hkey, name, buffer, sizeof(buffer)) == ERROR_SUCCESS) {
+
+	    result = strdup(buffer);
+	    (void) RegCloseKey(hkey);
+	}
+
+	(void) RegCloseKey(hkey);
+    }
+    return non_empty(result) ? result : 0;
+}
 #endif
 
 /*
@@ -378,7 +407,7 @@ void LYFreeHilites(int first, int last)
 void LYSetHilite(int cur,
 		 const char *text)
 {
-    links[cur].list.hl_base.hl_text = (char *) text;
+    links[cur].list.hl_base.hl_text = DeConst(text);
     links[cur].list.hl_len = (short) ((text != NULL) ? 1 : 0);
     FREE(links[cur].list.hl_info);
 }
@@ -1106,11 +1135,6 @@ void LYhighlight(int flag,
     BOOL utf_flag = (BOOL) IS_UTF8_TTY;
     BOOL hl1_drawn = NO;
 
-#ifdef USE_COLOR_STYLE
-    BOOL hl2_drawn = FALSE;	/* whether links[cur].l_hightext2 is already drawn
-
-				   properly */
-#endif
     tmp[0] = tmp[1] = tmp[2] = '\0';
 
     /*
@@ -1178,7 +1202,6 @@ void LYhighlight(int flag,
 
 #ifdef USE_COLOR_STYLE
 	} else if (flag == FALSE) {
-	    hl2_drawn = TRUE;
 	    redraw_lines_of_link(cur);
 	    CTRACE2(TRACE_STYLE,
 		    (tfp, "STYLE.highlight.off: NOFIX branch @(%d,%d).\n",
@@ -1200,50 +1223,45 @@ void LYhighlight(int flag,
 	/*
 	 * Display a second line as well.
 	 */
-#ifdef USE_COLOR_STYLE
-	if (hl2_drawn == FALSE)
-#endif
-	{
-	    for (hi_count = 1;
-		 (hi_string = LYGetHiliteStr(cur, hi_count)) != NULL
-		 && LYP + hi_count <= display_lines;
-		 ++hi_count) {
-		int row = LYP + hi_count + title_adjust;
+	for (hi_count = 1;
+	     (hi_string = LYGetHiliteStr(cur, hi_count)) != NULL
+	     && LYP + hi_count <= display_lines;
+	     ++hi_count) {
+	    int row = LYP + hi_count + title_adjust;
 
-		hi_offset = LYGetHilitePos(cur, hi_count);
-		if (hi_offset < 0)
-		    continue;
-		lynx_stop_link_color(flag == TRUE, links[cur].inUnderline);
-		LYmove(row, hi_offset);
+	    hi_offset = LYGetHilitePos(cur, hi_count);
+	    if (hi_offset < 0)
+		continue;
+	    lynx_stop_link_color(flag == TRUE, links[cur].inUnderline);
+	    LYmove(row, hi_offset);
 
 #ifdef USE_COLOR_STYLE
-		CTRACE2(TRACE_STYLE,
-			(tfp, "STYLE.highlight.line2: @(%d,%d), style=%d.\n",
-			 row, hi_offset,
-			 flag == TRUE ? s_alink : s_a));
-		LynxChangeStyle(flag == TRUE ? s_alink : s_a, ABS_ON);
+	    CTRACE2(TRACE_STYLE,
+		    (tfp, "STYLE.highlight.line2: @(%d,%d), style=%d.\n",
+		     row, hi_offset,
+		     flag == TRUE ? s_alink : s_a));
+	    LynxChangeStyle(flag == TRUE ? s_alink : s_a, ABS_ON);
 #else
-		lynx_start_link_color(flag == TRUE, links[cur].inUnderline);
+	    lynx_start_link_color(flag == TRUE, links[cur].inUnderline);
 #endif
 
-		for (i = 0; (tmp[0] = hi_string[i]) != '\0'
-		     && (i + hi_offset) < LYcols; i++) {
-		    if (!IsSpecialAttrChar(hi_string[i])) {
-			/*
-			 * For CJK strings, by Masanobu Kimura.
-			 */
-			if (IS_CJK_TTY && is8bits(tmp[0])) {
-			    tmp[1] = hi_string[++i];
-			    LYaddstr(tmp);
-			    tmp[1] = '\0';
-			} else {
-			    LYaddstr(tmp);
-			}
+	    for (i = 0; (tmp[0] = hi_string[i]) != '\0'
+		 && (i + hi_offset) < LYcols; i++) {
+		if (!IsSpecialAttrChar(hi_string[i])) {
+		    /*
+		     * For CJK strings, by Masanobu Kimura.
+		     */
+		    if (IS_CJK_TTY && is8bits(tmp[0])) {
+			tmp[1] = hi_string[++i];
+			LYaddstr(tmp);
+			tmp[1] = '\0';
+		    } else {
+			LYaddstr(tmp);
 		    }
 		}
 	    }
-	    lynx_stop_link_color(flag == TRUE, links[cur].inUnderline);
 	}
+	lynx_stop_link_color(flag == TRUE, links[cur].inUnderline);
 #ifdef SHOW_WHEREIS_TARGETS
 	for (hi_count = target1_drawn ? 1 : 0;
 	     LYGetHiliteStr(cur, hi_count) != NULL;
@@ -1397,7 +1415,7 @@ void statusline(const char *text)
 
     /* "LYNXDOWNLOAD://Method=-1/File=%s/SugFile=%s%s\">Save to disk</a>\n" */
     LYStrNCpy(text_buff, text, sizeof(text_buff) - 1);
-    p = strchr(text_buff, '\n');
+    p = StrChr(text_buff, '\n');
     if (p)
 	*p = '\0';
 
@@ -1604,8 +1622,7 @@ void noviceline(int more_flag GCC_UNUSED)
     LYclrtoeol();
     LYaddstr(NOVICE_LINE_ONE);
 
-    LYmove(LYlines - 1, 0);
-    LYclrtoeol();
+    LYParkCursor();
 #if defined(DIRED_SUPPORT ) && defined(OK_OVERRIDE)
     if (lynx_edit_mode && !no_dired_support)
 	LYaddstr(DIRED_NOVICELINE);
@@ -2052,7 +2069,7 @@ BOOLEAN LYisLocalFile(const char *filename)
 	return NO;
     }
 
-    if ((cp = strchr(host, ':')) != NULL)
+    if ((cp = StrChr(host, ':')) != NULL)
 	*cp = '\0';
 
     if ((acc_method = HTParse(filename, "", PARSE_ACCESS))) {
@@ -2088,7 +2105,7 @@ BOOLEAN LYisLocalHost(const char *filename)
 	return NO;
     }
 
-    if ((cp = strchr(host, ':')) != NULL)
+    if ((cp = StrChr(host, ':')) != NULL)
 	*cp = '\0';
 
     if ((LYSameFilename(host, "localhost") ||
@@ -2170,7 +2187,7 @@ BOOLEAN LYisLocalAlias(const char *filename)
 	return NO;
     }
 
-    if ((cp = strchr(host, ':')) != NULL)
+    if ((cp = StrChr(host, ':')) != NULL)
 	*cp = '\0';
 
     while (NULL != (alias = (char *) HTList_nextObject(cur))) {
@@ -2214,8 +2231,8 @@ UrlTypes LYCheckForProxyURL(char *filename)
      * Check for a colon, and if present,
      * see if we have proxying set up.
      */
-    if ((cp1 = strchr((cp + 1), ':')) != NULL) {
-	if ((cp2 = strchr((cp + 1), '/')) != NULL && cp2 < cp1)
+    if ((cp1 = StrChr((cp + 1), ':')) != NULL) {
+	if ((cp2 = StrChr((cp + 1), '/')) != NULL && cp2 < cp1)
 	    return (NOT_A_URL_TYPE);
 	*cp1 = '\0';
 	cp2 = NULL;
@@ -2275,16 +2292,14 @@ static BOOLEAN compare_type(char *tst,
 	&& CompareType(tst, cmp, len))
 
 /*
- *  Must recognize a URL and return the type.
- *  If recognized, based on a case-insensitive
- *  analysis of the scheme field, ensures that
- *  the scheme field has the expected case.
+ * Must recognize a URL and return the type.  If recognized, based on a
+ * case-insensitive analysis of the scheme field, ensures that the scheme field
+ * has the expected case.
  *
- *  Returns 0 (not a URL) for a NULL argument,
- *  one which lacks a colon.
+ * Returns 0 (not a URL) for a NULL argument, one which lacks a colon.
  *
- *  Chains to LYCheckForProxyURL() if a colon
- *  is present but the type is not recognized.
+ * Chains to LYCheckForProxyURL() if a colon is present but the type is not
+ * recognized.
  */
 UrlTypes is_url(char *filename)
 {
@@ -2303,7 +2318,7 @@ UrlTypes is_url(char *filename)
      * Can't be a URL if it lacks a colon and if it starts with '[' it's
      * probably IPv6 adress.
      */
-    if (NULL == strchr(cp, ':') || cp[0] == '[')
+    if (NULL == StrChr(cp, ':') || cp[0] == '[')
 	return (result);
 
     /*
@@ -2340,92 +2355,56 @@ UrlTypes is_url(char *filename)
 	    } else if (CompareType(cp, STR_LYNXPROG, LEN_LYNXPROG)) {
 		/*
 		 * Special External Lynx type to handle execution of commands,
-		 * scripts or programs with do not require a pause to read
+		 * scripts or programs which do not require a pause to read
 		 * screen upon completion.
 		 */
 		result = LYNXPROG_URL_TYPE;
 
 	    } else if (CompareType(cp, STR_LYNXCGI, LEN_LYNXCGI)) {
-		/*
-		 * Special External Lynx type to handle cgi scripts.
-		 */
 		result = LYNXCGI_URL_TYPE;
 
 	    } else if (CompareType(cp, STR_LYNXPRINT, LEN_LYNXPRINT)) {
-		/*
-		 * Special Internal Lynx type.
-		 */
 		result = LYNXPRINT_URL_TYPE;
 
 	    } else if (CompareType(cp, STR_LYNXOPTIONS, LEN_LYNXOPTIONS)) {
-		/*
-		 * Special Internal Lynx type.
-		 */
 		result = LYNXOPTIONS_URL_TYPE;
 
 	    } else if (CompareType(cp, STR_LYNXCFG, LEN_LYNXCFG)) {
-		/*
-		 * Special Internal Lynx type.
-		 */
 		result = LYNXCFG_URL_TYPE;
 
 	    } else if (CompareType(cp, STR_LYNXMESSAGES, LEN_LYNXMESSAGES)) {
-		/*
-		 * Special Internal Lynx type.
-		 */
 		result = LYNXMESSAGES_URL_TYPE;
 
 	    } else if (CompareType(cp, STR_LYNXCFLAGS, LEN_LYNXCFLAGS)) {
-		/*
-		 * Special Internal Lynx type.
-		 */
 		result = LYNXCOMPILE_OPTS_URL_TYPE;
 
 	    } else if (CompareType(cp, STR_LYNXDOWNLOAD, LEN_LYNXDOWNLOAD)) {
-		/*
-		 * Special Internal Lynx type.
-		 */
 		result = LYNXDOWNLOAD_URL_TYPE;
 
 	    } else if (CompareType(cp, STR_LYNXDIRED, LEN_LYNXDIRED)) {
-		/*
-		 * Special Internal Lynx type.
-		 */
 		result = LYNXDIRED_URL_TYPE;
 
+	    } else if (CompareType(cp, STR_LYNXEDITMAP, LEN_LYNXEDITMAP)) {
+		result = LYNXEDITMAP_URL_TYPE;
+
 	    } else if (CompareType(cp, STR_LYNXHIST, LEN_LYNXHIST)) {
-		/*
-		 * Special Internal Lynx type.
-		 */
 		result = LYNXHIST_URL_TYPE;
 
 #ifdef USE_CACHEJAR
 	    } else if (CompareType(cp, STR_LYNXCACHE, LEN_LYNXCACHE)) {
-		/* 
-		 * Special Internal Lynx type.
-		 */
 		result = LYNXCACHE_URL_TYPE;
 #endif
-
 	    } else if (CompareType(cp, STR_LYNXKEYMAP, LEN_LYNXKEYMAP)) {
-		/*
-		 * Special Internal Lynx type.
-		 */
 		result = LYNXKEYMAP_URL_TYPE;
 
 	    } else if (CompareType(cp, STR_LYNXIMGMAP, LEN_LYNXIMGMAP)) {
-		/*
-		 * Special Internal Lynx type.
-		 */
 		/* force lower/uppercase of next part */
 		(void) is_url(&cp[LEN_LYNXIMGMAP]);
 		result = LYNXIMGMAP_URL_TYPE;
 
 	    } else if (CompareType(cp, STR_LYNXCOOKIE, LEN_LYNXCOOKIE)) {
-		/*
-		 * Special Internal Lynx type.
-		 */
 		result = LYNXCOOKIE_URL_TYPE;
+
 	    }
 	    break;
 #ifndef DISABLE_NEWS
@@ -2522,7 +2501,7 @@ UrlTypes is_url(char *filename)
 
 	default:
 	    if (limit >= 3
-		&& ((cp1 = strchr(cp + 3, ':')) == NULL
+		&& ((cp1 = StrChr(cp + 3, ':')) == NULL
 		    || !DoubleHtmlSep(cp1 + 1))) {
 		/*
 		 * If it doesn't contain "://", and it's not one of the the
@@ -2553,7 +2532,7 @@ UrlTypes is_url(char *filename)
 		case 'g':
 		    if (CompareType(cp, STR_GOPHER_URL, LEN_GOPHER_URL)) {
 			if (strlen(cp) >= 11
-			    && (cp1 = strchr(cp + 11, '/')) != NULL) {
+			    && (cp1 = StrChr(cp + 11, '/')) != NULL) {
 
 			    if (TOUPPER(*(cp1 + 1)) == 'H' || *(cp1 + 1) == 'w')
 				/* if this is a gopher html type */
@@ -2671,7 +2650,7 @@ BOOLEAN LYFixCursesOnForAccess(const char *addr,
 	     isRLOGIN_URL(addr) ||
 	     isTN3270_URL(addr) ||
 	     (!isGOPHER_URL(addr) &&
-	      (cp1 = strchr(addr + 11, '/')) != NULL &&
+	      (cp1 = StrChr(addr + 11, '/')) != NULL &&
 	      (*(cp1 + 1) == 'T' || *(cp1 + 1) == '8')))) {
 	    /*
 	     * If actual access that will be done is ok with curses off, then
@@ -2725,12 +2704,12 @@ BOOLEAN LYCanDoHEAD(const char *address)
 	char *temp = HTParse(address, "", PARSE_PATH);
 	char *cp = strrchr(temp, '/');
 
-	if (strchr((cp ? cp : temp), '@') != NULL) {
+	if (StrChr((cp ? cp : temp), '@') != NULL) {
 	    FREE(temp0);
 	    FREE(temp);
 	    return TRUE;
 	}
-	if (cp && isdigit(UCH(cp[1])) && strchr(cp, '-') == NULL) {
+	if (cp && isdigit(UCH(cp[1])) && StrChr(cp, '-') == NULL) {
 	    FREE(temp0);
 	    FREE(temp);
 	    return TRUE;
@@ -2837,13 +2816,93 @@ BOOLEAN LYCanWriteFile(const char *filename)
 BOOLEAN LYCanReadFile(const char *filename)
 {
     FILE *fp;
+    BOOLEAN result = FALSE;
 
     if (non_empty(filename)) {
 	if ((fp = fopen(filename, "r")) != 0) {
-	    return LYCloseInput(fp);
+	    result = LYCloseInput(fp);
 	}
     }
-    return FALSE;
+    return result;
+}
+
+char *LYFindConfigFile(const char *nominal, const char *dftfile)
+{
+    char *result = 0;
+    char *path = 0;
+    char *head = 0;
+    char *leaf;
+    char *item;
+
+    if (non_empty(nominal)) {
+	StrAllocCopy(result, nominal);
+
+	/*
+	 * Look for it in as-is - first expanding any tilde.
+	 */
+	LYTildeExpand(&result, TRUE);
+	if (!LYCanReadFile(result)) {
+	    const char *cfg_path;
+	    char *list = 0;
+	    BOOLEAN found = FALSE;
+
+	    /*
+	     * Now try in the config-path.
+	     */
+	    if ((cfg_path = LYGetEnv("LYNX_CFG_PATH")) == NULL)
+		cfg_path = LYNX_CFG_PATH;
+
+	    StrAllocCopy(list, cfg_path);
+	    path = list;
+	    while ((item = LYstrsep(&path, PATH_SEPARATOR)) != 0) {
+		if (isEmpty(item))
+		    continue;
+		HTSprintf0(&result, "%s%s%s", item, FILE_SEPARATOR, nominal);
+		LYTildeExpand(&result, TRUE);
+		if (LYCanReadFile(result)) {
+		    found = TRUE;
+		    break;
+		}
+	    }
+	    FREE(list);
+
+	    if (!found) {
+		/*
+		 * If not found, try finding it in the same directory as the
+		 * compiled-in location of the default file.
+		 */
+		StrAllocCopy(head, dftfile);
+		if (strcmp(nominal, dftfile) &&
+		    (leaf = LYPathLeaf(head)) != head) {
+
+		    head[leaf - head] = '\0';
+		    StrAllocCopy(result, head);
+		    StrAllocCat(result, nominal);
+
+		    if (!LYCanReadFile(result)) {
+			FREE(result);
+		    }
+		}
+#ifdef USE_PROGRAM_DIR
+		else {
+		    /*
+		     * Finally, try in the same directory as the executable.
+		     */
+		    StrAllocCopy(result, program_dir);
+		    LYAddPathSep(&result);
+		    StrAllocCat(result, nominal);
+		    LYTildeExpand(&result, TRUE);
+		    if (!LYCanReadFile(result)) {
+			FREE(result);
+		    }
+		}
+#endif
+	    }
+	}
+
+    }
+    FREE(head);
+    return result;
 }
 
 /*
@@ -3248,7 +3307,7 @@ void change_sug_filename(char *fname)
     /*
      * Trim off VMS device and/or directory specs, if present.
      */
-    if ((cp = strchr(fname, '[')) != NULL &&
+    if ((cp = StrChr(fname, '[')) != NULL &&
 	(cp1 = strrchr(cp, ']')) != NULL && strlen(cp1) > 1) {
 	cp1++;
 	for (cp = fname; *cp1 != '\0'; cp1++) {
@@ -3341,18 +3400,18 @@ void change_sug_filename(char *fname)
     if ((dot = strrchr(fname, '.')) != NULL) {
 	if (TOUPPER(fname[j]) == 'Z') {
 	    if ((fname[j - 1] == '.') &&
-		(((cp = strchr(fname, '.')) != NULL) && cp < dot)) {
+		(((cp = StrChr(fname, '.')) != NULL) && cp < dot)) {
 		*dot = '_';
 		dot = strrchr(fname, '.');
 	    } else if (((TOUPPER(fname[j - 1]) == 'G') &&
 			fname[j - 2] == '.') &&
-		       (((cp = strchr(fname, '.')) != NULL) && cp < dot)) {
+		       (((cp = StrChr(fname, '.')) != NULL) && cp < dot)) {
 		*dot = '-';
 		dot = strrchr(fname, '.');
 	    }
 	}
 	cp = fname;
-	while ((cp = strchr(cp, '.')) != NULL && cp < dot) {
+	while ((cp = StrChr(cp, '.')) != NULL && cp < dot) {
 	    *cp = '_';
 	}
 
@@ -3521,7 +3580,7 @@ static int fmt_tempname(char *result,
     if (strlen(leaf) > 8)
 	leaf[8] = 0;
     if (strlen(suffix) > 4 || *suffix != '.') {
-	const char *tail = strchr(suffix, '.');
+	const char *tail = StrChr(suffix, '.');
 
 	if (tail == 0)
 	    tail = suffix + strlen(suffix);
@@ -3556,28 +3615,28 @@ int number2arrows(int number)
 	number = END_KEY;
 	break;
     case '2':
-	number = DNARROW;
+	number = DNARROW_KEY;
 	break;
     case '3':
-	number = PGDOWN;
+	number = PGDOWN_KEY;
 	break;
     case '4':
-	number = LTARROW;
+	number = LTARROW_KEY;
 	break;
     case '5':
 	number = DO_NOTHING;
 	break;
     case '6':
-	number = RTARROW;
+	number = RTARROW_KEY;
 	break;
     case '7':
-	number = HOME;
+	number = HOME_KEY;
 	break;
     case '8':
-	number = UPARROW;
+	number = UPARROW_KEY;
 	break;
     case '9':
-	number = PGUP;
+	number = PGUP_KEY;
 	break;
     }
 
@@ -4090,7 +4149,7 @@ void LYConvertToURL(char **AllocatedString,
 	     * assume the rest of the path, if any, has SHELL syntax.
 	     */
 	    StrAllocCat(*AllocatedString, HTVMS_wwwName(Home_Dir()));
-	    if ((cp = strchr(old_string, '/')) != NULL) {
+	    if ((cp = StrChr(old_string, '/')) != NULL) {
 		/*
 		 * Append rest of path, if present, skipping "user" if "~user"
 		 * was entered, simplifying, and eliminating any residual
@@ -4112,12 +4171,12 @@ void LYConvertToURL(char **AllocatedString,
 	    /*
 	     * We found the file.  Convert to a URL pathspec.
 	     */
-	    if ((cp = strchr(file_name, ';')) != NULL) {
+	    if ((cp = StrChr(file_name, ';')) != NULL) {
 		*cp = '\0';
 	    }
 	    LYLowerCase(file_name);
 	    StrAllocCat(*AllocatedString, HTVMS_wwwName(file_name));
-	    if ((cp = strchr(old_string, ';')) != NULL) {
+	    if ((cp = StrChr(old_string, ';')) != NULL) {
 		StrAllocCat(*AllocatedString, cp);
 	    }
 	    if (fragment != NULL) {
@@ -4148,8 +4207,8 @@ void LYConvertToURL(char **AllocatedString,
 		 * if we can't rule out a bad VMS path.
 		 */
 		fragment = NULL;
-		if (strchr(old_string, '[') ||
-		    ((cp = strchr(old_string, ':')) != NULL &&
+		if (StrChr(old_string, '[') ||
+		    ((cp = StrChr(old_string, ':')) != NULL &&
 		     !isdigit(UCH(cp[1]))) ||
 		    !LYExpandHostForURL(&old_string,
 					URLDomainPrefixes,
@@ -4185,8 +4244,8 @@ void LYConvertToURL(char **AllocatedString,
 	    restorePoundSelector(fragment);
 	    fragment = NULL;
 
-	    if (strchr(old_string, '[') ||
-		((cp = strchr(old_string, ':')) != NULL &&
+	    if (StrChr(old_string, '[') ||
+		((cp = StrChr(old_string, ':')) != NULL &&
 		 !isdigit(UCH(cp[1]))) ||
 		!LYExpandHostForURL(&old_string,
 				    URLDomainPrefixes,
@@ -4308,7 +4367,7 @@ void LYConvertToURL(char **AllocatedString,
 		/* especially when we really have file://localhost/   */
 		/* at the beginning.  To avoid any confusion we allow */
 		/* escaping the path if URL specials % or # present.  */
-		if (strchr(temp, '#') == NULL && strchr(temp, '%') == NULL)
+		if (StrChr(temp, '#') == NULL && StrChr(temp, '%') == NULL)
 		    StrAllocCopy(cp, temp);
 		else
 		    cp = HTEscape(temp, URL_PATH);
@@ -4365,8 +4424,8 @@ void LYConvertToURL(char **AllocatedString,
 			    old_string, *AllocatedString));
 		    is_local = TRUE;
 
-		} else if (strchr(curdir, '#') != NULL ||
-			   strchr(curdir, '%') != NULL) {
+		} else if (StrChr(curdir, '#') != NULL ||
+			   StrChr(curdir, '%') != NULL) {
 		    /*
 		     * If PWD has some unusual characters, construct a filename
 		     * in temp where those are escaped.  This is mostly to
@@ -4479,7 +4538,7 @@ void LYConvertToURL(char **AllocatedString,
 	     * lead slash.  - FM
 	     */
 	    StrAllocCat(*AllocatedString, wwwName(Home_Dir()));
-	    if ((cp = strchr((old_string + 1), '/')) != NULL) {
+	    if ((cp = StrChr((old_string + 1), '/')) != NULL) {
 		/*
 		 * Append rest of path, if present, skipping "user" if "~user"
 		 * was entered, simplifying, and eliminating any residual
@@ -4603,7 +4662,7 @@ BOOLEAN LYExpandHostForURL(char **AllocatedString,
      * filling in the Host[:port] field.  - FM
      */
     StrAllocCopy(Str, *AllocatedString);
-    if ((Path = strchr(Str, '/')) != NULL) {
+    if ((Path = StrChr(Str, '/')) != NULL) {
 	/*
 	 * Have a path.  Any fragment should already be included in Path.  - FM
 	 */
@@ -4622,7 +4681,7 @@ BOOLEAN LYExpandHostForURL(char **AllocatedString,
      * field after filling in the host field.  - FM
      */
     if ((StrColon = strrchr(Str, ':')) != NULL &&
-	isdigit(UCH(StrColon[1])) && strchr(StrColon, ']') == NULL) {
+	isdigit(UCH(StrColon[1])) && StrChr(StrColon, ']') == NULL) {
 	if (StrColon == Str) {
 	    goto cleanup;
 	}
@@ -4823,7 +4882,7 @@ BOOLEAN LYExpandHostForURL(char **AllocatedString,
      * the original string with the expanded Host[:port] field included.  - FM
      */
     if (GotHost) {
-	if (StrColon && strchr(Host, ':') == NULL) {
+	if (StrColon && StrChr(Host, ':') == NULL) {
 	    *StrColon = ':';
 	    StrAllocCat(Host, StrColon);
 	}
@@ -5131,6 +5190,7 @@ static char *CheckDir(char *path)
 	    || !S_ISDIR(stat_info.st_mode))) {
 	path = NULL;
     }
+    CTRACE((tfp, "CheckDir(%s) %s\n", path, path ? "OK" : "ERR"));
     return path;
 }
 
@@ -5147,16 +5207,24 @@ static char *HomeEnv(void)
 	char *leaf;
 	static char *temp = NULL;
 
-	/* Windows 2000 */
-	if ((result = LYGetEnv("USERPROFILE")) != 0) {
-	    HTSprintf0(&temp, "%s%sMy Documents", result, PATHSEP_STR);
-	    result = CheckDir(temp);
+	result = w32_get_shell_folder("Personal");
+	if (result == 0) {
+	    /* Windows Vista/7 */
+	    if ((head = LYGetEnv("USERPROFILE")) != 0) {
+		HTSprintf0(&temp, "%s%sDocuments", head, FILE_SEPARATOR);
+		result = CheckDir(temp);
+		if (result == 0) {
+		    /* Windows 2000 */
+		    HTSprintf0(&temp, "%s%sMy Documents", head, FILE_SEPARATOR);
+		    result = CheckDir(temp);
+		}
+	    }
 	}
 	/* NT4 */
 	if (result == 0) {
 	    if ((head = LYGetEnv("HOMEDRIVE")) != 0) {
 		if ((leaf = LYGetEnv("HOMEPATH")) != 0) {
-		    HTSprintf0(&temp, "%s%s%s", head, PATHSEP_STR, leaf);
+		    HTSprintf0(&temp, "%s%s%s", head, FILE_SEPARATOR, leaf);
 		    result = CheckDir(temp);
 		}
 	    }
@@ -5172,12 +5240,12 @@ static char *HomeEnv(void)
 	    result = CheckDir(LYGetEnv("TMP"));
 	if (result == 0) {
 	    if ((head = LYGetEnv("SystemDrive")) != 0) {
-		HTSprintf0(&temp, "%s%s", head, PATHSEP_STR);
+		HTSprintf0(&temp, "%s%s", head, FILE_SEPARATOR);
 		result = CheckDir(temp);
 	    }
 	}
 	if (result == 0)
-	    result = CheckDir("C:" PATHSEP_STR);
+	    result = CheckDir("C:" FILE_SEPARATOR);
     }
 #endif
 
@@ -5255,7 +5323,7 @@ char *LYPathLeaf(char *pathname)
     int n;
 
     for (leaf = 0, n = strlen(pathname) - 1; n >= 0; n--) {
-	if (strchr("\\/:", pathname[n]) != 0) {
+	if (StrChr("\\/:", pathname[n]) != 0) {
 	    leaf = pathname + n + 1;
 	    break;
 	}
@@ -5319,7 +5387,7 @@ BOOLEAN LYPathOffHomeOK(char *fbuffer,
     if (LYIsTilde(cp[0])) {
 	if (LYIsPathSep(cp[1])) {
 	    if (cp[2] != '\0') {
-		if (strchr((cp + 2), '/') != NULL) {
+		if (StrChr((cp + 2), '/') != NULL) {
 		    /*
 		     * Convert "~/subdir(s)/file" to "./subdir(s)/file".  - FM
 		     */
@@ -5338,10 +5406,10 @@ BOOLEAN LYPathOffHomeOK(char *fbuffer,
 		return (FALSE);
 	    }
 	} else if ((*(cp + 1) != '\0') &&
-		   (cp1 = strchr((cp + 1), '/')) != NULL) {
+		   (cp1 = StrChr((cp + 1), '/')) != NULL) {
 	    cp = (cp1 - 1);
 	    if (*(cp + 2) != '\0') {
-		if (strchr((cp + 2), '/') != NULL) {
+		if (StrChr((cp + 2), '/') != NULL) {
 		    /*
 		     * Convert "~user/subdir(s)/file" to "./subdir(s)/file". 
 		     * If user is someone else, we covered a spoof.  Otherwise,
@@ -5373,7 +5441,7 @@ BOOLEAN LYPathOffHomeOK(char *fbuffer,
     /*
      * Check for VMS path specs, and reject if still present.  - FM
      */
-    if (strchr(cp, ':') != NULL || strchr(cp, ']') != NULL) {
+    if (StrChr(cp, ':') != NULL || StrChr(cp, ']') != NULL) {
 	FREE(file);
 	return (FALSE);
     }
@@ -5396,7 +5464,7 @@ BOOLEAN LYPathOffHomeOK(char *fbuffer,
      * Check if it has a pointless "./".  - FM
      */
     if (!StrNCmp(cp, "./", 2)) {
-	if (strchr((cp + 2), '/') == NULL) {
+	if (StrChr((cp + 2), '/') == NULL) {
 	    cp += 2;
 	}
     }
@@ -5417,7 +5485,7 @@ BOOLEAN LYPathOffHomeOK(char *fbuffer,
      * Load what we have at this point into fbuffer, trimming if too long, and
      * claim it's OK.  - FM
      */
-    if (fbuffer_size > 3 && StrNCmp(cp, "./", 2) && strchr(cp, '/')) {
+    if (fbuffer_size > 3 && StrNCmp(cp, "./", 2) && StrChr(cp, '/')) {
 	/*
 	 * We have a subdirectory and no lead "./", so prefix it to make the
 	 * situation clear.  - FM
@@ -5705,7 +5773,7 @@ extern char **environ;
  */
 int putenv(const char *string)
 {
-    char *name_end = strchr(string, '=');
+    char *name_end = StrChr(string, '=');
     register size_t size;
     register char **ep;
 
@@ -5798,7 +5866,7 @@ static BOOL IsOurSymlink(const char *name)
 	    if (cutoff != 0) {
 		HTSprintf0(&clone, "%.*s%s%s",
 			   (int) (cutoff - name),
-			   name, PATHSEP_STR, buffer);
+			   name, FILE_SEPARATOR, buffer);
 		FREE(buffer);
 		buffer = clone;
 	    }
@@ -5891,7 +5959,7 @@ static FILE *OpenHiddenFile(const char *name, const char *mode)
 {
     FILE *fp = 0;
     struct stat data;
-    BOOLEAN binary = (BOOLEAN) (strchr(mode, 'b') != 0);
+    BOOLEAN binary = (BOOLEAN) (StrChr(mode, 'b') != 0);
 
 #if defined(O_CREAT) && defined(O_EXCL)		/* we have fcntl.h or kindred? */
     /*
@@ -6560,34 +6628,37 @@ BOOL LYIsUIPage3(const char *url,
 {
     unsigned int i;
     size_t l;
+    BOOL result = NO;
 
-    if (!url)
-	return NO;
-    for (i = 0; i < TABLESIZE(ly_uip); i++) {
-	if (ly_uip[i].type == type) {
-	    if (!ly_uip[i].url) {
-		return NO;
-	    } else if ((flagparam & UIP_P_FRAG) ?
-		       (!StrNCmp(ly_uip[i].url, url, (l = strlen(ly_uip[i].url)))
-			&& (url[l] == '\0' || url[l] == '#')) :
-		       !strcmp(ly_uip[i].url, url)) {
-		return YES;
-	    } else if (ly_uip[i].flags & UIP_F_MULTI) {
-		char *p;
-		HTList *l0 = ly_uip[i].alturls;
+    if (url) {
+	for (i = 0; i < TABLESIZE(ly_uip); i++) {
+	    if (ly_uip[i].type == type) {
+		if (!ly_uip[i].url) {
+		    break;
+		} else if ((flagparam & UIP_P_FRAG) ?
+			   (!StrNCmp(ly_uip[i].url, url, (l = strlen(ly_uip[i].url)))
+			    && (url[l] == '\0' || url[l] == '#')) :
+			   !strcmp(ly_uip[i].url, url)) {
+		    result = YES;
+		} else if (ly_uip[i].flags & UIP_F_MULTI) {
+		    char *p;
+		    HTList *l0 = ly_uip[i].alturls;
 
-		while ((p = (char *) HTList_nextObject(l0)) != NULL) {
-		    if ((flagparam & UIP_P_FRAG) ?
-			(!StrNCmp(p, url, (l = strlen(p)))
-			 && (url[l] == '\0' || url[l] == '#')) :
-			!strcmp(p, url))
-			return YES;
+		    while ((p = (char *) HTList_nextObject(l0)) != NULL) {
+			if ((flagparam & UIP_P_FRAG)
+			    ? (!StrNCmp(p, url, (l = strlen(p))) &&
+			       (url[l] == '\0' || url[l] == '#'))
+			    : !strcmp(p, url)) {
+			    result = YES;
+			    break;
+			}
+		    }
 		}
+		break;
 	    }
-	    return NO;
 	}
     }
-    return NO;
+    return result;
 }
 
 void LYRegisterUIPage(const char *url,
@@ -6704,14 +6775,14 @@ BOOLEAN LYValidateFilename(bstring **result,
 	    FREE(cp1);
 	}
 #ifdef VMS
-	if (strchr((*given)->str, '/') != NULL) {
+	if (StrChr((*given)->str, '/') != NULL) {
 	    BStrCopy0(*result, HTVMS_name("", (*given)->str));
 	    BStrCopy(*given, *result);
 	}
 	if ((*given)->str[0] != '/'
-	    && strchr((*given)->str, ':') == NULL) {
+	    && StrChr((*given)->str, ':') == NULL) {
 	    BStrCopy0(*result, "sys$disk:");
-	    if (strchr((*given)->str, ']') == NULL)
+	    if (StrChr((*given)->str, ']') == NULL)
 		BStrCat0(*result, "[]");
 	    BStrCat(*result, (*given));
 	} else {
@@ -6722,7 +6793,7 @@ BOOLEAN LYValidateFilename(bstring **result,
 #ifndef __EMX__
 	if (!LYisAbsPath((*given)->str)) {
 #if defined(__DJGPP__) || defined(_WINDOWS)
-	    if (strchr((*result)->str, ':') != NULL)
+	    if (StrChr((*result)->str, ':') != NULL)
 		cp = NULL;
 	    else
 #endif /*  __DJGPP__ || _WINDOWS */
@@ -6879,7 +6950,7 @@ void WriteInternalTitle(FILE *fp0, const char *Title)
     fprintf(fp0, "<html>\n<head>\n");
     LYAddMETAcharsetToFD(fp0, -1);
     if (LYIsListpageTitle(Title)) {
-	if (strchr(HTLoadedDocumentURL(), '"') == NULL) {
+	if (StrChr(HTLoadedDocumentURL(), '"') == NULL) {
 	    char *Address = NULL;
 
 	    /*
@@ -6958,7 +7029,7 @@ void LYAddPathSep(char **path)
 	&& ((temp = *path) != 0)
 	&& (len = strlen(temp)) != 0
 	&& !LYIsPathSep(temp[len - 1])) {
-	StrAllocCat(*path, PATHSEP_STR);
+	StrAllocCat(*path, FILE_SEPARATOR);
     }
 }
 
@@ -6974,7 +7045,7 @@ void LYAddPathSep0(char *path)
 	&& (len = strlen(path)) != 0
 	&& (len < LY_MAXPATH - 2)
 	&& !LYIsPathSep(path[len - 1])) {
-	strcat(path, PATHSEP_STR);
+	strcat(path, FILE_SEPARATOR);
     }
 }
 
@@ -7212,7 +7283,7 @@ int LYSystem(char *command)
 	while (*p == ' ')
 	    p++;
 
-	if (strchr(p, '\\') == NULL) {
+	if (StrChr(p, '\\') == NULL) {
 	    /* for Windows Application */
 	    cygwin_conv_to_full_win32_path(p, win32_name);
 	    sprintf(new_command, "%.*s \"%.*s\"",
@@ -7423,6 +7494,7 @@ void LYsetXDisplay(char *new_display)
 #else
 	static char *display_putenv_command;
 
+	display_putenv_command = NULL;	/* yes, this is a leak - cannot fix */
 	HTSprintf0(&display_putenv_command, "DISPLAY=%s", new_display);
 	putenv(display_putenv_command);
 #endif /* VMS */
@@ -7611,8 +7683,8 @@ char *get_clip_grab(void)
 	paste_buf[off + len] = '\0';
 	if (len < PASTE_BUFFER - 1)
 	    break;
-	if (strchr(paste_buf + off, '\r')
-	    || strchr(paste_buf + off, '\n'))
+	if (StrChr(paste_buf + off, '\r')
+	    || StrChr(paste_buf + off, '\n'))
 	    break;
 	paste_buf = typeRealloc(char, paste_buf, size += PASTE_BUFFER - 1);
 
@@ -7884,10 +7956,10 @@ void LYSyslog(char *arg)
 
 	if (is_url(arg)) {	/* proto://user:password@host/path:port */
 	    /*      ^this colon                 */
-	    if ((colon1 = strchr(arg, ':')) != 0
+	    if ((colon1 = StrChr(arg, ':')) != 0
 		&& !StrNCmp(colon1, "://", 3)
-		&& (colon2 = strchr(colon1 + 3, ':')) != 0
-		&& (atsign = strchr(colon1, '@')) != 0
+		&& (colon2 = StrChr(colon1 + 3, ':')) != 0
+		&& (atsign = StrChr(colon1, '@')) != 0
 		&& (colon2 < atsign)
 		&& looks_like_password(colon2 + 1, atsign - 1)) {
 		char *buf = NULL;
@@ -7937,7 +8009,7 @@ static int is_device(char *fname)
 
     i = 0;
     while (black_list[i] != NULL) {
-	if (stricmp(fname, black_list[i]) == 0) {
+	if (strcasecomp(fname, black_list[i]) == 0) {
 	    return 1;		/* device file */
 	}
 	i++;
@@ -7983,7 +8055,7 @@ int unsafe_filename(const char *fname)
 
     i = 0;
     while (device_list[i] != NULL) {
-	if (stricmp(fname, device_list[i]) == 0) {
+	if (strcasecomp(fname, device_list[i]) == 0) {
 	    return 0;		/* device file (open OK) */
 	}
 	i++;
@@ -8009,7 +8081,7 @@ int unsafe_filename(const char *fname)
 	} else {
 	    char *q;
 
-	    q = strchr(cp, '.');
+	    q = StrChr(cp, '.');
 	    if (q)
 		*q = '\0';
 	    if (is_device(cp)) {

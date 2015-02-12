@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMain.c,v 1.243 2013/05/30 08:58:21 tom Exp $
+ * $LynxId: LYMain.c,v 1.251 2013/11/28 11:20:21 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTP.h>
@@ -212,6 +212,7 @@ BOOLEAN bold_name_anchors = FALSE;
 BOOLEAN LYcase_sensitive = CASE_SENSITIVE_ALWAYS_ON;
 BOOLEAN check_mail = CHECKMAIL;
 BOOLEAN child_lynx = FALSE;
+BOOLEAN dump_links_inline = FALSE;
 BOOLEAN dump_links_only = FALSE;
 BOOLEAN dump_output_immediately = FALSE;
 BOOLEAN dump_to_stderr = FALSE;
@@ -688,6 +689,14 @@ static void FatalProblem(int sig);
 int LYuse_color_style = TRUE;
 char *lynx_lss_file = NULL;	/* from config-file, etc. */
 static char *lynx_lss_file2 = NULL;	/* from command-line options */
+const char *default_color_styles = "\
+lynx.lss;\
+blue-background.lss;\
+bright-blue.lss;\
+midnight.lss;\
+mild-colors.lss;\
+opaque.lss\
+";
 #endif
 
 #ifdef USE_DEFAULT_COLORS
@@ -946,9 +955,9 @@ static void append_ssl_version(char **target,
     if (*separator == ' ')
 	StrAllocCat(*target, ",");
     LYStrNCpy(SSLLibraryVersion, LYNX_SSL_VERSION, sizeof(SSLLibraryVersion) - 1);
-    if ((SSLcp = strchr(SSLLibraryVersion, ' ')) != NULL) {
+    if ((SSLcp = StrChr(SSLLibraryVersion, ' ')) != NULL) {
 	*SSLcp++ = *separator;
-	if ((SSLcp = strchr(SSLcp, ' ')) != NULL) {
+	if ((SSLcp = StrChr(SSLcp, ' ')) != NULL) {
 	    *SSLcp = '\0';
 	    StrAllocCat(*target, " ");
 	    StrAllocCat(*target, SSLLibraryVersion);
@@ -1041,6 +1050,8 @@ int main(int argc,
     ftp_lasthost = typecalloc(char);
 #endif
 
+    LYinitEditmap();
+    LYinitKeymap();
 #ifdef USE_CHARSET_CHOICE
     memset((char *) charset_subsets, 0, sizeof(charset_subset_t) * MAXCHARSETS);
 #endif
@@ -1271,7 +1282,7 @@ int main(int argc,
     }
 #ifdef VMS
     LYLowerCase(lynx_temp_space);
-    if (strchr(lynx_temp_space, '/') != NULL) {
+    if (StrChr(lynx_temp_space, '/') != NULL) {
 	if (strlen(lynx_temp_space) == 1) {
 	    StrAllocCopy(lynx_temp_space, "sys$scratch:");
 	} else {
@@ -1281,8 +1292,8 @@ int main(int argc,
 	    FREE(temp);
 	}
     }
-    if (strchr(lynx_temp_space, ':') == NULL &&
-	strchr(lynx_temp_space, ']') == NULL) {
+    if (StrChr(lynx_temp_space, ':') == NULL &&
+	StrChr(lynx_temp_space, ']') == NULL) {
 	StrAllocCat(lynx_temp_space, ":");
     }
 #else
@@ -1527,13 +1538,6 @@ int main(int argc,
     StrAllocCopy(UCAssume_MIMEcharset,
 		 LYCharSet_UC[UCLYhndl_for_unspec].MIMEname);
 
-    /*
-     * Make sure we have the edit map declared.  - FM
-     */
-    if (!LYEditmapDeclared()) {
-	fprintf(stderr, gettext("\nLynx edit map not declared.\n\n"));
-	exit_immediately(EXIT_FAILURE);
-    }
 #ifdef USE_COLOR_TABLE
     /*
      * Set up default foreground and background colors.
@@ -1576,49 +1580,7 @@ int main(int argc,
 
 #if defined(USE_COLOR_STYLE)
     if (!dump_output_immediately) {
-	/*
-	 * A command-line "-lss" always overrides the config-file, even if it is
-	 * an empty string such as -lss="".
-	 */
-	if (lynx_lss_file2 != 0) {
-	    FREE(lynx_lss_file);
-	    lynx_lss_file = lynx_lss_file2;
-	    lynx_lss_file2 = 0;
-	}
-
-	/*
-	 * If no alternate lynx-style file was specified on the command line, see
-	 * if it's in the environment.
-	 */
-	if (!lynx_lss_file) {
-	    if (((cp = LYGetEnv("LYNX_LSS")) != NULL) ||
-		(cp = LYGetEnv("lynx_lss")) != NULL)
-		StrAllocCopy(lynx_lss_file, cp);
-	}
-
-	/*
-	 * If we still don't have a lynx-style file, use the userdefs.h definition.
-	 */
-	if (!lynx_lss_file)
-	    StrAllocCopy(lynx_lss_file, LYNX_LSS_FILE);
-
-	LYTildeExpand(&lynx_lss_file, TRUE);
-#ifdef USE_PROGRAM_DIR
-	if (!isEmpty(lynx_lss_file) && !LYCanReadFile(lynx_lss_file)) {
-	    HTSprintf0(&lynx_lss_file, "%s\\lynx.lss", program_dir);
-	}
-#endif
-
-	/*
-	 * If the lynx-style file is not available, inform the user and exit.
-	 */
-	if (non_empty(lynx_lss_file) && !LYCanReadFile(lynx_lss_file)) {
-	    fprintf(stderr, gettext("\nLynx file \"%s\" is not available.\n\n"),
-		    lynx_lss_file);
-	    exit_immediately(EXIT_FAILURE);
-	} else {
-	    style_readFromFile(lynx_lss_file);
-	}
+	init_color_styles(&lynx_lss_file2, default_color_styles);
     }
 #endif /* USE_COLOR_STYLE */
 
@@ -1818,7 +1780,7 @@ int main(int argc,
 	LYTildeExpand(&lynx_save_space, TRUE);
 #ifdef VMS
 	LYLowerCase(lynx_save_space);
-	if (strchr(lynx_save_space, '/') != NULL) {
+	if (StrChr(lynx_save_space, '/') != NULL) {
 	    if (strlen(lynx_save_space) == 1) {
 		StrAllocCopy(lynx_save_space, "sys$login:");
 	    } else {
@@ -1828,8 +1790,8 @@ int main(int argc,
 		FREE(temp);
 	    }
 	}
-	if (strchr(lynx_save_space, ':') == NULL &&
-	    strchr(lynx_save_space, ']') == NULL) {
+	if (StrChr(lynx_save_space, ':') == NULL &&
+	    StrChr(lynx_save_space, ']') == NULL) {
 	    StrAllocCat(lynx_save_space, ":");
 	}
 #else
@@ -2191,6 +2153,7 @@ int main(int argc,
 		    i + 1, HTList_count(Goto_URLs), startfile));
 	    status = mainloop();
 	    if (!no_list &&
+		!dump_links_inline &&
 		!crawl)		/* For -crawl it has already been done! */
 		printlist(stdout, FALSE);
 	    if (i != 0)
@@ -2199,6 +2162,7 @@ int main(int argc,
 #else
 	status = mainloop();
 	if (!no_list &&
+	    !dump_links_inline &&
 	    !crawl &&		/* For -crawl it has already been done! */
 	    links_are_numbered())
 	    printlist(stdout, FALSE);
@@ -2258,6 +2222,7 @@ int main(int argc,
  *    LYNXKEYMAP, lynxcgi, LYNXIMGMAP, LYNXCOOKIE, LYNXCACHE, LYNXMESSAGES
  */
 #ifdef GLOBALREF_IS_MACRO
+extern GLOBALREF (HTProtocol, LYLynxEditmap);
 extern GLOBALREF (HTProtocol, LYLynxKeymap);
 extern GLOBALREF (HTProtocol, LYLynxCGI);
 extern GLOBALREF (HTProtocol, LYLynxIMGmap);
@@ -2269,6 +2234,7 @@ extern GLOBALREF (HTProtocol, LYLynxCache);
 extern GLOBALREF (HTProtocol, LYLynxStatusMessages);
 
 #else
+GLOBALREF HTProtocol LYLynxEditmap;
 GLOBALREF HTProtocol LYLynxKeymap;
 GLOBALREF HTProtocol LYLynxCGI;
 GLOBALREF HTProtocol LYLynxIMGmap;
@@ -2282,6 +2248,7 @@ GLOBALREF HTProtocol LYLynxStatusMessages;
 
 void LYRegisterLynxProtocols(void)
 {
+    HTRegisterProtocol(&LYLynxEditmap);
     HTRegisterProtocol(&LYLynxKeymap);
     HTRegisterProtocol(&LYLynxCGI);
     HTRegisterProtocol(&LYLynxIMGmap);
@@ -2504,7 +2471,7 @@ static int parse_authentication(char *next_arg,
     if (auth_info != 0) {
 	char *cp;
 
-	if ((cp = strchr(auth_info, ':')) != 0) {	/* Pw */
+	if ((cp = StrChr(auth_info, ':')) != 0) {	/* Pw */
 	    *cp++ = '\0';	/* Terminate ID */
 	    HTUnEscape(cp);
 	    StrAllocCopy(result[1], cp);
@@ -2633,7 +2600,7 @@ static int convert_to_fun(char *next_arg)
 	StrAllocCopy(outformat, next_arg);
 	/* not lowercased, to allow for experimentation - kw */
 	/*LYLowerCase(outformat); */
-	if ((cp1 = strchr(outformat, ';')) != NULL) {
+	if ((cp1 = StrChr(outformat, ';')) != NULL) {
 	    if ((cp2 = LYstrstr(cp1, "charset")) != NULL) {
 		cp2 += 7;
 		while (*cp2 == ' ' || *cp2 == '=' || *cp2 == '"')
@@ -2880,7 +2847,7 @@ static int nocolor_fun(char *next_arg GCC_UNUSED)
 {
     LYShowColor = SHOW_COLOR_NEVER;
 #ifdef USE_SLANG
-    Lynx_Color_Flags &= ~SL_LYNX_USE_COLOR;
+    Lynx_Color_Flags &= ~(unsigned) SL_LYNX_USE_COLOR;
     Lynx_Color_Flags |= SL_LYNX_OVERRIDE_COLOR;
 #endif
     return 0;
@@ -3312,7 +3279,7 @@ static int scrsize_fun(char *next_arg)
     if (next_arg != 0) {
 	char *cp;
 
-	if ((cp = strchr(next_arg, ',')) != 0) {
+	if ((cp = StrChr(next_arg, ',')) != 0) {
 	    *cp++ = '\0';	/* Terminate ID */
 	    scrsize_x = atoi(next_arg);
 	    scrsize_y = atoi(cp);
@@ -3620,6 +3587,10 @@ soon as they are seen)"
    PARSE_INT(
       "link",		4|NEED_INT_ARG,		crawl_count,
       "=NUMBER\nstarting count for lnk#.dat files produced by -crawl"
+   ),
+   PARSE_SET(
+      "list_inline",	4|TOGGLE_ARG,		dump_links_inline,
+      "with -dump, forces it to show links inline with text"
    ),
    PARSE_SET(
       "listonly",	4|TOGGLE_ARG,		dump_links_only,
@@ -4081,7 +4052,7 @@ static void print_help_strings(const char *name,
 	first = pad;
     }
 
-    if (strchr(help, '\n') == 0) {
+    if (StrChr(help, '\n') == 0) {
 	fprintf(stdout, "%s", help);
     } else {
 	while ((c = *help) != 0) {

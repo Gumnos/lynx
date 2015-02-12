@@ -1,5 +1,5 @@
 /*
- * $LynxId: GridText.c,v 1.266 2013/06/12 21:03:36 tom Exp $
+ * $LynxId: GridText.c,v 1.274 2013/11/28 11:16:50 tom Exp $
  *
  *		Character grid hypertext object
  *		===============================
@@ -36,6 +36,7 @@
 #include <LYEdit.h>
 #include <LYPrint.h>
 #include <LYPrettySrc.h>
+#include <LYSearch.h>
 #include <TRSTable.h>
 #include <LYHistory.h>
 #ifdef EXP_CHARTRANS_AUTOSWITCH
@@ -5119,11 +5120,21 @@ static void add_link_number(HText *text, TextAnchor *a, int save_position)
 	&& links_are_numbered()) {
 	char saved_lastchar = text->LastChar;
 	int saved_linenum = text->Lines;
+	HTAnchor *link_dest;
+	char *link_text;
 
 	compute_show_number(a);
 
-	sprintf(marker, "[%d]", a->show_number);
-	HText_appendText(text, marker);
+	if (dump_links_inline
+	    && (link_dest = HTAnchor_followLink(a->anchor)) != 0
+	    && (link_text = HTAnchor_address(link_dest)) != 0) {
+	    HText_appendText(text, "[");
+	    HText_appendText(text, link_text);
+	    HText_appendText(text, "]");
+	} else {
+	    sprintf(marker, "[%d]", a->show_number);
+	    HText_appendText(text, marker);
+	}
 	if (saved_linenum && text->Lines && saved_lastchar != ' ')
 	    text->LastChar = ']';	/* if marker not after space caused split */
 	if (save_position) {
@@ -5997,7 +6008,7 @@ static void HText_trimHightext(HText *text,
 
 		StrnAllocCopy(hi_string,
 			      line_ptr2->data,
-			      (actual_len - hilite_len));
+			      (size_t) (actual_len - hilite_len));
 		actual_len -= (int) strlen(hi_string);
 		/*handle LY_SOFT_NEWLINEs -VH */
 		hi_offset += remove_special_attr_chars(hi_string);
@@ -7646,7 +7657,7 @@ int do_www_search(DocInfo *doc)
     /*
      * Load the default query buffer
      */
-    if ((cp = strchr(doc->address, '?')) != NULL) {
+    if ((cp = StrChr(doc->address, '?')) != NULL) {
 	/*
 	 * This is an index from a previous search.
 	 * Use its query as the default.
@@ -7686,12 +7697,12 @@ int do_www_search(DocInfo *doc)
     QueryNum = QueryTotal;
 
   get_query:
-    if ((ch = LYgetBString(&searchstring, VISIBLE, 0, recall)) < 0 ||
+    if ((ch = LYgetBString(&searchstring, FALSE, 0, recall)) < 0 ||
 	isBEmpty(searchstring) ||
-	ch == UPARROW ||
-	ch == DNARROW) {
+	ch == UPARROW_KEY ||
+	ch == DNARROW_KEY) {
 
-	if (recall && ch == UPARROW) {
+	if (recall && ch == UPARROW_KEY) {
 	    if (PreviousSearch) {
 		/*
 		 * Use the second to last query in the list.  -FM
@@ -7723,7 +7734,7 @@ int do_www_search(DocInfo *doc)
 		}
 		goto get_query;
 	    }
-	} else if (recall && ch == DNARROW) {
+	} else if (recall && ch == DNARROW_KEY) {
 	    if (PreviousSearch) {
 		/*
 		 * Use the first query in the list.  -FM
@@ -7788,7 +7799,7 @@ int do_www_search(DocInfo *doc)
 	    /*
 	     * Show the URL with the new query.
 	     */
-	    if ((cp = strchr(doc->address, '?')) != NULL)
+	    if ((cp = StrChr(doc->address, '?')) != NULL)
 		*cp = '\0';
 	    StrAllocCopy(tmpaddress, doc->address);
 	    StrAllocCat(tmpaddress, "?");
@@ -8322,6 +8333,7 @@ void print_crawl_to_fd(FILE *fp, char *thelink,
      * Add the References list if appropriate
      */
     if ((no_list == FALSE) &&
+	(dump_links_inline == FALSE) &&
 	links_are_numbered()) {
 	printlist(fp, FALSE);
     }
@@ -8399,94 +8411,33 @@ static void adjust_search_result(DocInfo *doc, int tentative_result,
     }
 }
 
+/*
+ * see also link_has_target
+ */
 static BOOL anchor_has_target(TextAnchor *a, char *target)
 {
-    OptionType *option;
-    char *stars = NULL, *sp;
-    const char *cp;
+    char *text = NULL;
+    const char *last = "?";
     int count;
 
     /*
-     * Search the hightext strings, taking the LYcase_sensitive setting into
-     * account.  -FM
+     * Combine the parts of the link's text using the highlighting information,
+     * and compare the target against that.
      */
-    for (count = 0;; ++count) {
-	if ((cp = LYGetHiTextStr(a, count)) == NULL)
+    for (count = 0; count < 10; ++count) {
+	const char *part = LYGetHiTextStr(a, count);
+
+	if (part == NULL || part == last) {
+	    if (text != NULL && LYno_attr_strstr(text, target)) {
+		return TRUE;
+	    }
 	    break;
-	if (LYno_attr_strstr(cp, target))
-	    return TRUE;
+	}
+	StrAllocCat(text, part);
+	last = part;
     }
 
-    /*
-     * Search the relevant form fields, taking the
-     * LYcase_sensitive setting into account.  -FM
-     */
-    if ((a->input_field != NULL && a->input_field->value != NULL) &&
-	a->input_field->type != F_HIDDEN_TYPE) {
-	if (a->input_field->type == F_PASSWORD_TYPE) {
-	    /*
-	     * Check the actual, hidden password, and then
-	     * the displayed string.  -FM
-	     */
-	    if (LYno_attr_strstr(a->input_field->value, target)) {
-		return TRUE;
-	    }
-	    StrAllocCopy(stars, a->input_field->value);
-	    for (sp = stars; *sp != '\0'; sp++)
-		*sp = '*';
-	    if (LYno_attr_strstr(stars, target)) {
-		FREE(stars);
-		return TRUE;
-	    }
-	    FREE(stars);
-	} else if (a->input_field->type == F_OPTION_LIST_TYPE) {
-	    /*
-	     * Search the option strings that are displayed
-	     * when the popup is invoked.  -FM
-	     */
-	    option = a->input_field->select_list;
-	    while (option != NULL) {
-		if (LYno_attr_strstr(option->name, target)) {
-		    return TRUE;
-		}
-		option = option->next;
-	    }
-	} else if (a->input_field->type == F_RADIO_TYPE) {
-	    /*
-	     * Search for checked or unchecked parens.  -FM
-	     */
-	    if (a->input_field->num_value) {
-		cp = checked_radio;
-	    } else {
-		cp = unchecked_radio;
-	    }
-	    if (LYno_attr_strstr(cp, target)) {
-		return TRUE;
-	    }
-	} else if (a->input_field->type == F_CHECKBOX_TYPE) {
-	    /*
-	     * Search for checked or unchecked square brackets.  -FM
-	     */
-	    if (a->input_field->num_value) {
-		cp = checked_box;
-	    } else {
-		cp = unchecked_box;
-	    }
-	    if (LYno_attr_strstr(cp, target)) {
-		return TRUE;
-	    }
-	} else {
-	    /*
-	     * Check the values intended for display.  May have been found
-	     * already via the hightext search, but make sure here that the
-	     * entire value is searched.  -FM
-	     */
-	    if (LYno_attr_strstr(a->input_field->value, target)) {
-		return TRUE;
-	    }
-	}
-    }
-    return FALSE;
+    return field_has_target(a->input_field, target);
 }
 
 static TextAnchor *line_num_to_anchor(int line_num)
@@ -8566,6 +8517,7 @@ static int www_search_forward(int start_line,
 	} else if (line == HTMainText->last_line) {
 	    count = 0;
 	    wrapped++;
+	    a = HTMainText->first_anchor;
 	}
 	line = line->next;
 	count++;
@@ -8608,6 +8560,7 @@ static int www_search_backward(int start_line,
 	} else if (line == FirstHTLine(HTMainText)) {
 	    count = line_num_in_text(HTMainText, LastHTLine(HTMainText)) + 1;
 	    wrapped++;
+	    a = HTMainText->last_anchor;
 	}
 	line = line->prev;
 	count--;
@@ -10542,7 +10495,7 @@ static double get_trans_q(int cs_from,
 
     if (!givenmime || !(*givenmime))
 	return 0.0;
-    if ((p = strchr(givenmime, ';')) != NULL) {
+    if ((p = StrChr(givenmime, ';')) != NULL) {
 	*p++ = '\0';
     }
     if (!strcmp(givenmime, "*"))
@@ -11671,7 +11624,7 @@ int HText_SubmitForm(FormInfo * submit_item, DocInfo *doc,
 		     * default.  -FM
 		     */
 		    if (Boundary) {
-			*(strchr(escaped1, '=') + 1) = '\0';
+			*(StrChr(escaped1, '=') + 1) = '\0';
 			HTBprintf(&my_query,
 				  "%s\"%s.x\"\r\n\r\n0\r\n--%s\r\n%s\"%s.y\"\r\n\r\n0",
 				  escaped1,
@@ -12564,7 +12517,7 @@ static int increment_tagged_htline(HTLine *ht, TextAnchor *a, int *lx_val,
 			val += incr;
 			sprintf(lx, "%d", val);
 			new_n = (int) strlen(lx);
-			if ((r = strchr(ht->next->data, ']')) == 0) {
+			if ((r = StrChr(ht->next->data, ']')) == 0) {
 			    r = "";
 			}
 			strcat(lx, r);
@@ -13042,7 +12995,7 @@ static int finish_ExtEditForm(LinkInfo * form_link, TextAnchor *start_anchor,
 	}
 	line[len0] = '\0';
 
-	if ((cp = strchr(lp, '\n')) != 0)
+	if ((cp = StrChr(lp, '\n')) != 0)
 	    len = (int) (cp - lp);
 	else
 	    len = (int) strlen(lp);
@@ -13050,7 +13003,7 @@ static int finish_ExtEditForm(LinkInfo * form_link, TextAnchor *start_anchor,
 	if (wanted_fieldlen_wrap < 0 &&
 	    !wrapalert &&
 	    len0 + len >= display_size &&
-	    (cp = strchr(lp, ' ')) != NULL &&
+	    (cp = StrChr(lp, ' ')) != NULL &&
 	    (cp - lp) < display_size - 1) {
 
 	    LYFixCursesOn("ask for confirmation:");
@@ -13684,7 +13637,7 @@ int HText_InsertFile(LinkInfo * form_link)
 
     while (*lp) {
 
-	if ((cp = strchr(lp, '\n')) != 0)
+	if ((cp = StrChr(lp, '\n')) != 0)
 	    len = (int) (cp - lp);
 	else
 	    len = (int) strlen(lp);

@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTML.c,v 1.161 2013/06/12 09:18:40 tom Exp $
+ * $LynxId: HTML.c,v 1.164 2013/11/28 11:17:39 tom Exp $
  *
  *		Structured stream to Rich hypertext converter
  *		============================================
@@ -253,18 +253,26 @@ BOOL LYBadHTML(HTStructured * me)
  */
 void LYShowBadHTML(const char *message)
 {
+    if (dump_output_immediately && dump_to_stderr)
+	fprintf(stderr, "%s", message);
+
     switch ((enumBadHtml) cfg_bad_html) {
     case BAD_HTML_IGNORE:
 	break;
     case BAD_HTML_TRACE:
-	CTRACE((tfp, "%s", message));
-	break;
     case BAD_HTML_MESSAGE:
-	CTRACE((tfp, "%s", message));
-	LYstore_message(message);
-	break;
     case BAD_HTML_WARN:
 	CTRACE((tfp, "%s", message));
+	break;
+    }
+
+    switch ((enumBadHtml) cfg_bad_html) {
+    case BAD_HTML_IGNORE:
+    case BAD_HTML_TRACE:
+    case BAD_HTML_WARN:
+	break;
+    case BAD_HTML_MESSAGE:
+	LYstore_message(message);
 	break;
     }
 }
@@ -1034,9 +1042,9 @@ static int HTML_start_element(HTStructured * me, int element_number,
 			    char q = '"';
 
 			    /*0 in dquotes, 1 - in quotes, 2 mixed */
-			    char kind = (char) (!strchr(value[i], '"') ?
+			    char kind = (char) (!StrChr(value[i], '"') ?
 						0 :
-						!strchr(value[i], '\'') ?
+						!StrChr(value[i], '\'') ?
 						q = '\'', 1 :
 						2);
 
@@ -1264,7 +1272,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	     */
 	    temp = HTParse(base, "", PARSE_PATH + PARSE_PUNCTUATION);
 	    if (*temp != '\0') {
-		char *p = strchr(temp, '?');
+		char *p = StrChr(temp, '?');
 
 		if (p)
 		    *p = '\0';
@@ -3532,7 +3540,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	     * LYSeekFragAREAinCur is set.  - FM && KW
 	     */
 	    StrAllocCopy(me->map_address, me->node_anchor->address);
-	    if ((cp = strchr(me->map_address, '#')) != NULL)
+	    if ((cp = StrChr(me->map_address, '#')) != NULL)
 		*cp = '\0';
 	    StrAllocCat(me->map_address, "#");
 	    StrAllocCat(me->map_address, id_string);
@@ -4387,7 +4395,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	    if (!(present && present[HTML_BUTTON_NAME] &&
 		  value[HTML_BUTTON_NAME])) {
 		I.name = "";
-	    } else if (strchr(value[HTML_BUTTON_NAME], '&') == NULL) {
+	    } else if (StrChr(value[HTML_BUTTON_NAME], '&') == NULL) {
 		I.name = value[HTML_BUTTON_NAME];
 	    } else {
 		StrAllocCopy(I_name, value[HTML_BUTTON_NAME]);
@@ -4629,7 +4637,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	    if (!(present && present[HTML_INPUT_NAME] &&
 		  non_empty(value[HTML_INPUT_NAME]))) {
 		I.name = "";
-	    } else if (strchr(value[HTML_INPUT_NAME], '&') == NULL) {
+	    } else if (StrChr(value[HTML_INPUT_NAME], '&') == NULL) {
 		I.name = value[HTML_INPUT_NAME];
 	    } else {
 		StrAllocCopy(I_name, value[HTML_INPUT_NAME]);
@@ -4981,7 +4989,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	    value[HTML_TEXTAREA_NAME]) {
 	    StrAllocCopy(me->textarea_name, value[HTML_TEXTAREA_NAME]);
 	    me->textarea_name_cs = ATTR_CS_IN;
-	    if (strchr(value[HTML_TEXTAREA_NAME], '&') != NULL) {
+	    if (StrChr(value[HTML_TEXTAREA_NAME], '&') != NULL) {
 		UNESCAPE_FIELDNAME_TO_STD(&me->textarea_name);
 	    }
 	} else {
@@ -6296,7 +6304,7 @@ static int HTML_end_element(HTStructured * me, int element_number,
 
 	    HTChunkTerminate(&me->object);
 	    data = me->object.data;
-	    while ((cp = strchr(data, '<')) != NULL) {
+	    while ((cp = StrChr(data, '<')) != NULL) {
 		/*
 		 * Look for nested OBJECTs.  This procedure could get tripped
 		 * up if invalid comments are present in the content, or if an
@@ -6377,7 +6385,7 @@ static int HTML_end_element(HTStructured * me, int element_number,
 		    HTChunkPuts(&me->object, "</OBJECT>");
 		    if (!include)	/* error, should not happen */
 			include = &me->xinclude;
-		    StrnAllocCat(*include, me->object.data, me->object.size);
+		    StrnAllocCat(*include, me->object.data, (size_t) me->object.size);
 		    clear_objectdata(me);
 		    /* an internal fake call to keep our stack happy: */
 		    HTML_start_element(me, HTML_OBJECT, NULL, NULL,
@@ -6884,7 +6892,7 @@ static int HTML_end_element(HTStructured * me, int element_number,
 	    /*
 	     * Load the first text line, or set up for all blank rows.  - FM
 	     */
-	    if ((cp = strchr(data, '\n')) != NULL) {
+	    if ((cp = StrChr(data, '\n')) != NULL) {
 		*cp = '\0';
 		StrAllocCopy(temp, data);
 		*cp = '\n';
@@ -6917,7 +6925,7 @@ static int HTML_end_element(HTStructured * me, int element_number,
 		    if (*data == '\n') {
 			FREE(temp);
 			data++;
-		    } else if ((cp = strchr(data, '\n')) != NULL) {
+		    } else if ((cp = StrChr(data, '\n')) != NULL) {
 			*cp = '\0';
 			StrAllocCopy(temp, data);
 			*cp = '\n';
@@ -6950,7 +6958,7 @@ static int HTML_end_element(HTStructured * me, int element_number,
 		if (*data == '\n') {
 		    FREE(temp);
 		    data++;
-		} else if ((cp = strchr(data, '\n')) != NULL) {
+		} else if ((cp = StrChr(data, '\n')) != NULL) {
 		    *cp = '\0';
 		    StrAllocCopy(temp, data);
 		    *cp = '\n';

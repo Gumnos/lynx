@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYPrint.c,v 1.98 2013/05/04 13:15:47 tom Exp $
+ * $LynxId: LYPrint.c,v 1.102 2013/11/28 11:21:09 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTAccess.h>
@@ -180,9 +180,9 @@ static int RecallFilename(bstring **filename,
     }
     recall = ((*total >= 1) ? RECALL_URL : NORECALL);
 
-    if ((ch = LYgetBString(filename, VISIBLE, 0, recall)) < 0 ||
-	*filename == '\0' || ch == UPARROW || ch == DNARROW) {
-	if (recall && ch == UPARROW) {
+    if ((ch = LYgetBString(filename, FALSE, 0, recall)) < 0 ||
+	*filename == '\0' || ch == UPARROW_KEY || ch == DNARROW_KEY) {
+	if (recall && ch == UPARROW_KEY) {
 	    if (*first) {
 		*first = FALSE;
 		/*
@@ -214,7 +214,7 @@ static int RecallFilename(bstring **filename,
 		}
 		return FN_READ;
 	    }
-	} else if (recall && ch == DNARROW) {
+	} else if (recall && ch == DNARROW_KEY) {
 	    if (*first) {
 		*first = FALSE;
 		/*
@@ -504,7 +504,7 @@ static void send_file_to_mail(DocInfo *newdoc,
 
     _statusline(MAIL_ADDRESS_PROMPT);
     BStrCopy0(user_response, NonNull(personal_mail_address));
-    if (LYgetBString(&user_response, VISIBLE, 0, RECALL_MAIL) < 0 ||
+    if (LYgetBString(&user_response, FALSE, 0, RECALL_MAIL) < 0 ||
 	isBEmpty(user_response)) {
 	CancelPrint(MAIL_REQUEST_CANCELLED);
     }
@@ -548,10 +548,10 @@ static void send_file_to_mail(DocInfo *newdoc,
 	StrAllocCat(subject, newdoc->address);
     }
 #if USE_VMS_MAILER
-    if (strchr(user_response->str, '@') &&
-	!strchr(user_response->str, ':') &&
-	!strchr(user_response->str, '%') &&
-	!strchr(user_response->str, '"')) {
+    if (StrChr(user_response->str, '@') &&
+	!StrChr(user_response->str, ':') &&
+	!StrChr(user_response->str, '%') &&
+	!StrChr(user_response->str, '"')) {
 	char *temp = 0;
 
 	HTSprintf0(&temp, mail_adrs, user_response->str);
@@ -969,7 +969,7 @@ static void send_file_to_screen(DocInfo *newdoc,
     }
 
     BStrCopy0(prompt, "");
-    if (LYgetBString(&prompt, VISIBLE, 0, NORECALL) < 0) {
+    if (LYgetBString(&prompt, FALSE, 0, NORECALL) < 0) {
 	CancelPrint(PRINT_REQUEST_CANCELLED);
     } else {
 	outfile_fp = stdout;

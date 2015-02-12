@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYJump.c,v 1.45 2013/01/05 00:28:46 tom Exp $
+ * $LynxId: LYJump.c,v 1.49 2013/11/28 11:19:08 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTAlert.h>
@@ -234,7 +234,7 @@ char *LYJump(int key)
     }
 
     statusline(jtp->msg);
-    if ((ch = LYgetBString(&buf, VISIBLE, 0, recall)) < 0) {
+    if ((ch = LYgetBString(&buf, FALSE, 0, recall)) < 0) {
 	/*
 	 * User cancelled the Jump via ^G. - FM
 	 */
@@ -248,7 +248,7 @@ char *LYJump(int key)
 	bp++;
     bp = LYSkipBlanks(bp);
     if (*bp == '\0' &&
-	!(recall && (ch == UPARROW || ch == DNARROW))) {
+	!(recall && (ch == UPARROW_KEY || ch == DNARROW_KEY))) {
 	/*
 	 * User cancelled the Jump via a zero-length string. - FM
 	 */
@@ -258,7 +258,7 @@ char *LYJump(int key)
 	return NULL;
     }
 #ifdef PERMIT_GOTO_FROM_JUMP
-    if (strchr(bp, ':') || strchr(bp, '/')) {
+    if (StrChr(bp, ':') || StrChr(bp, '/')) {
 	char *temp = NULL;
 
 	LYJumpFileURL = FALSE;
@@ -275,7 +275,7 @@ char *LYJump(int key)
     }
 #endif /* PERMIT_GOTO_FROM_JUMP */
 
-    if (recall && ch == UPARROW) {
+    if (recall && ch == UPARROW_KEY) {
 	if (FirstShortcutRecall) {
 	    /*
 	     * Use last Shortcut in the list. - FM
@@ -305,7 +305,7 @@ char *LYJump(int key)
 	    } else {
 		_statusline(EDIT_A_PREV_SHORTCUT);
 	    }
-	    if ((ch = LYgetBString(&buf, VISIBLE, 0, recall)) < 0) {
+	    if ((ch = LYgetBString(&buf, FALSE, 0, recall)) < 0) {
 		/*
 		 * User cancelled the jump via ^G.
 		 */
@@ -314,7 +314,7 @@ char *LYJump(int key)
 	    }
 	    goto check_recall;
 	}
-    } else if (recall && ch == DNARROW) {
+    } else if (recall && ch == DNARROW_KEY) {
 	if (FirstShortcutRecall) {
 	    /*
 	     * Use the first Shortcut in the list. - FM
@@ -344,7 +344,7 @@ char *LYJump(int key)
 	    } else {
 		_statusline(EDIT_A_PREV_SHORTCUT);
 	    }
-	    if ((ch = LYgetBString(&buf, VISIBLE, 0, recall)) < 0) {
+	    if ((ch = LYgetBString(&buf, FALSE, 0, recall)) < 0) {
 		/*
 		 * User cancelled the jump via ^G.
 		 */
@@ -448,7 +448,7 @@ static unsigned LYRead_Jumpfile(struct JumpTable *jtp)
     /* quick scan for approximate number of entries */
     nel = 0;
     cp = mp;
-    while ((cp = strchr(cp, '\n')) != NULL) {
+    while ((cp = StrChr(cp, '\n')) != NULL) {
 	nel++;
 	cp++;
     }
@@ -463,7 +463,7 @@ static unsigned LYRead_Jumpfile(struct JumpTable *jtp)
     cp = jtp->mp = mp;
     for (i = 0; i < nel;) {
 	if (StrNCmp(cp, "<!--", 4) == 0 || StrNCmp(cp, "<dl>", 4) == 0) {
-	    cp = strchr(cp, '\n');
+	    cp = StrChr(cp, '\n');
 	    if (cp == NULL)
 		break;
 	    cp++;
@@ -484,12 +484,12 @@ static unsigned LYRead_Jumpfile(struct JumpTable *jtp)
 	    break;
 	cp += 6;
 	jtp->table[i].url = cp;
-	cp = strchr(cp, '"');
+	cp = StrChr(cp, '"');
 	if (cp == NULL)
 	    break;
 	*cp = '\0';
 	cp++;
-	cp = strchr(cp, '\n');
+	cp = StrChr(cp, '\n');
 	if (cp == NULL)
 	    break;
 	cp++;

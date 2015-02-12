@@ -1,4 +1,4 @@
-/* $LynxId: LYCurses.c,v 1.174 2013/07/21 00:40:06 tom Exp $ */
+/* $LynxId: LYCurses.c,v 1.178 2013/11/28 11:52:34 tom Exp $ */
 #include <HTUtils.h>
 #include <HTAlert.h>
 
@@ -56,6 +56,10 @@ int lynx_has_color = FALSE;
 
 #ifdef HAVE_XCURSES
 char *XCursesProgramName = "Lynx";
+#endif
+
+#ifdef PDCURSES
+#undef HAVE_NEWTERM		/* not needed, since /dev/tty is unused */
 #endif
 
 #if defined(USE_COLOR_STYLE) && !defined(USE_COLOR_TABLE)
@@ -647,7 +651,7 @@ static int get_color_pair(int n)
 	&& lynx_color_pairs[n].bg == default_bg)
 	return 0;
 #endif
-    return COLOR_PAIR(n);
+    return (int) COLOR_PAIR(n);
 }
 
 /*
@@ -922,7 +926,7 @@ static SCREEN *LYscreen = NULL;
 
 #define LYDELSCR()		/* ncurses does not need this */
 
-#elif defined(HAVE_NEWTERM) && defined(HAVE_DELSCREEN) && !defined(PDCURSES)
+#elif defined(HAVE_NEWTERM) && defined(HAVE_DELSCREEN)
 
 static SCREEN *LYscreen = NULL;
 
@@ -1407,7 +1411,7 @@ void start_curses(void)
 	    endwin();
 	    exit_immediately(EXIT_FAILURE);
 	}
-#endif
+#endif /* ncurses-keymaps */
 
 	/*
 	 * This is a workaround for a bug in SVr4 curses, observed on Solaris
@@ -1746,13 +1750,15 @@ void stop_curses(void)
 
 /* ifdef's for non-Unix curses or slang */
 #if defined(__MINGW32__)
-    chtype bb;
+    {
+	chtype bb;
 
-    bb = getbkgd(stdscr);
-    bkgdset(0);
-    clear();
-    refresh();
-    bkgdset(bb);
+	bb = getbkgd(stdscr);
+	bkgdset(0);
+	clear();
+	refresh();
+	bkgdset(bb);
+    }
 #if defined(PDCURSES)
     endwin();
 #endif /* PDCURSES */

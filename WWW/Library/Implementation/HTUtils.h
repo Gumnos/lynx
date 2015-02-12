@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTUtils.h,v 1.115 2013/07/28 23:04:57 tom Exp $
+ * $LynxId: HTUtils.h,v 1.119 2013/11/28 11:33:20 tom Exp $
  *
  * Utility macros for the W3 code library
  * MACROS FOR GENERAL USE
@@ -226,8 +226,15 @@ extern off_t LYatoll(const char *value);
 #include <dos.h>
 #endif
 
-#if !defined(__MINGW32__)
-#undef sleep			/* 1998/06/23 (Tue) 16:54:53 */
+#if defined(DECL_SLEEP) && defined(HAVE_CONFIG_H)
+#  undef sleep
+#  if defined(__MINGW32__)
+#    define sleep(n) Sleep((n)*100)
+#  else
+extern void sleep(unsigned __seconds);
+#  endif
+#elif !defined(__MINGW32__)
+#  undef sleep
 extern void sleep(unsigned __seconds);
 #endif
 
@@ -339,6 +346,8 @@ Standard C library for malloc() etc
 #ifndef NULL
 #define NULL ((void *)0)
 #endif
+
+#define DeConst(p)   (void *)(intptr_t)(p)
 
 #define isEmpty(s)   ((s) == 0 || *(s) == 0)
 #define non_empty(s) !isEmpty(s)

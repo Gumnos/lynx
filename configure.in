@@ -1,4 +1,4 @@
-dnl $LynxId: configure.in,v 1.247 2013/05/01 08:54:16 tom Exp $
+dnl $LynxId: configure.in,v 1.252 2013/10/23 22:31:51 tom Exp $
 dnl
 dnl Process this file with autoconf to produce a configure script.
 dnl
@@ -29,7 +29,7 @@ dnl ---------------------------------------------------------------------------
 dnl
 dnl ask PRCS to plug-in the project-version for the configure-script.
 dnl $Format: "AC_REVISION($ProjectVersion$)"$
-AC_REVISION(2.8.8dev.16)
+AC_REVISION(2.8.8dev.17)
 
 # Save the original $CFLAGS so we can distinguish whether the user set those
 # in the environment, or whether autoconf added -O and -g options:
@@ -64,7 +64,7 @@ AC_ARG_PROGRAM
 PACKAGE=lynx
 dnl ask PRCS to plug-in the project-version for the packages.
 # $Format: "VERSION=$ProjectVersion$"$
-VERSION=2.8.8dev.16
+VERSION=2.8.8dev.17
 
 AC_SUBST(PACKAGE)
 AC_SUBST(VERSION)
@@ -549,8 +549,15 @@ ncursesw)
 	cf_wide_curses=yes
 	;;
 pdcurses)
-	cf_cv_ncurses_header=xcurses.h
-	# do this last, since it changes definition of main: CF_PDCURSES_X11
+	case $host_os in
+	mingw*)
+		cf_cv_ncurses_header=curses.h
+		;;
+	*) #(vi
+		cf_cv_ncurses_header=xcurses.h
+		# do this last, since it changes definition of main: CF_PDCURSES_X11
+		;;
+	esac
 	;;
 slang)
 	CF_SLANG_UNIX_DEFS
@@ -612,12 +619,27 @@ LYNX_CFG_FILE,
 SYSCONFDIR/lynx.cfg,
 $sysconfdir/lynx.cfg)
 
-dnl --------------------------------------------------------------------------
-
 AC_MSG_RESULT($LYNX_CFG_FILE)
 
 test "$LYNX_CFG_FILE" = no && LYNX_CFG_FILE=
 AC_DEFINE_UNQUOTED(LYNX_CFG_FILE,"$LYNX_CFG_FILE",[Define to default path for Lynx cfg-file])
+
+dnl --------------------------------------------------------------------------
+
+AC_MSG_CHECKING(for the default configuration-path)
+
+CF_WITH_PATH(cfg-path,
+[  --with-cfg-path{=path}  specify the default configuration directories
+                         ],
+LYNX_CFG_PATH,
+SYSCONFDIR,
+$sysconfdir)
+
+AC_MSG_RESULT($LYNX_CFG_PATH)
+
+test -z "$LYNX_CFG_PATH" && `echo "$LYNX_CFG_FILE" | sed -e 's%/[[^/]]*$%%'`
+test "x$LYNX_CFG_PATH" = xno && LYNX_CFG_PATH=
+AC_DEFINE_UNQUOTED(LYNX_CFG_PATH,"$LYNX_CFG_PATH",[Define to default path for Lynx config-files])
 
 dnl --------------------------------------------------------------------------
 AC_MSG_CHECKING(if htmlized lynx.cfg should be built)
@@ -807,6 +829,14 @@ AC_REPLACE_FUNCS( \
 )
 
 CF_SRAND(lynx_)
+CF_CHECK_FUNCDECLS([
+#ifdef HAVE_STDLIB_H
+#include <stdlib.h>
+#endif
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+], sleep)
 CF_CHECK_FUNCDECLS([#include <string.h>], strstr)
 CF_CHECK_FUNCDECLS([
 #include <stdio.h>
@@ -1444,14 +1474,23 @@ AC_SUBST(COMPRESS_EXT)
 
 if test $cf_cv_screen = pdcurses ; then
 	CF_HELP_MESSAGE(Special Libraries for PDCurses X11:)
-	CF_PDCURSES_X11
+	case $host_os in #(vi
+	mingw*)
+		CF_PDCURSES_W32
+		;;
+	*) #(vi
+		CF_PDCURSES_X11
+		;;
+	esac
 else
 	CF_TERMIO_AND_CURSES(LYCurses.h)
 fi
 
 ### These tests must be run after establishing the curses library.
 if test $cf_cv_screen != slang ; then
-	AC_CHECK_HEADERS($cf_cv_screen/term.h term.h)
+	if test $cf_cv_screen != pdcurses ; then
+		AC_CHECK_HEADERS($cf_cv_screen/term.h term.h)
+	fi
 	CF_ALT_CHAR_SET
 	CF_FANCY_CURSES
 	CF_FUNC_CURSES_VERSION

@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYBookmark.c,v 1.74 2013/05/02 10:43:29 tom Exp $
+ * $LynxId: LYBookmark.c,v 1.76 2013/11/28 11:17:59 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTAlert.h>
@@ -40,7 +40,7 @@ int LYMBM2index(int ch)
 {
     if ((ch = TOUPPER(ch)) > 0) {
 	const char *letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-	const char *result = strchr(letters, ch);
+	const char *result = StrChr(letters, ch);
 
 	if (result != 0
 	    && (result - letters) <= MBM_V_MAXFILES)
@@ -298,7 +298,7 @@ void save_bookmark_link(const char *address,
 	}
 	LYReduceBlanks(string_data->str);
 	LYMBM_statusline(TITLE_PROMPT);
-	LYgetBString(&string_data, VISIBLE, 0, NORECALL);
+	LYgetBString(&string_data, FALSE, 0, NORECALL);
 	if (isBEmpty(string_data)) {
 	    LYMBM_statusline(CANCELLED);
 	    LYSleepMsg();

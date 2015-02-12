@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTTP.c,v 1.128 2013/05/05 19:36:45 tom Exp $
+ * $LynxId: HTTP.c,v 1.133 2013/11/28 11:15:11 tom Exp $
  *
  * HyperText Tranfer Protocol	- Client implementation		HTTP.c
  * ==========================
@@ -416,7 +416,7 @@ int ws_netread(int fd, char *buf, int len)
 static void strip_userid(char *host)
 {
     char *p1 = host;
-    char *p2 = strchr(host, '@');
+    char *p2 = StrChr(host, '@');
     char *fake;
 
     if (p2 != 0) {
@@ -717,7 +717,10 @@ static int HTLoadHTTP(const char *arg,
 	    handle->options |= SSL_OP_NO_TLSv1;
 #if OPENSSL_VERSION_NUMBER >= 0x0090806fL && !defined(OPENSSL_NO_TLSEXT)
 	} else {
-	    SSL_set_tlsext_host_name(handle, ssl_host);
+	    int ret = (int) SSL_set_tlsext_host_name(handle, ssl_host);
+
+	    CTRACE((tfp, "...called SSL_set_tlsext_host_name(%s) ->%d\n",
+		    ssl_host, ret));
 #endif
 	}
 #endif
@@ -775,7 +778,7 @@ static int HTLoadHTTP(const char *arg,
 	    char *msg2;
 
 	    if (ret == 0 && tls_status & GNUTLS_CERT_SIGNER_NOT_FOUND) {
-		msg2 = gettext("self signed certificate");
+		msg2 = gettext("the certificate has no known issuer");
 	    } else if (tls_status & GNUTLS_CERT_SIGNER_NOT_FOUND) {
 		msg2 = gettext("no issuer was found");
 	    } else if (tls_status & GNUTLS_CERT_SIGNER_NOT_CA) {
@@ -843,7 +846,7 @@ static int HTLoadHTTP(const char *arg,
 	    /* start of CommonName */
 	    cert_host += 4;
 	    /* find next part of DistinguishedName */
-	    if ((p = strchr(cert_host, '/')) != NULL) {
+	    if ((p = StrChr(cert_host, '/')) != NULL) {
 		*p = '\0';
 		ssl_dn_start = p;	/* yes this points to the NUL byte */
 	    } else
@@ -1282,31 +1285,29 @@ static int HTLoadHTTP(const char *arg,
 
 		host2 = HTParse(docname, "", PARSE_HOST);
 		path2 = HTParse(docname, "", PARSE_PATH | PARSE_PUNCTUATION);
-		if (host2) {
-		    if ((colon = HTParsePort(host2, &port2)) != NULL) {
-			/* Use non-default port number */
-			*colon = '\0';
-		    }
+		if ((colon = HTParsePort(host2, &port2)) != NULL) {
+		    /* Use non-default port number */
+		    *colon = '\0';
 		}
+
 		/*
 		 * This composeAuth() does file access, i.e., for the ultimate
 		 * target of the request.  - AJL
 		 */
 		auth_proxy = NO;
-		if ((auth = HTAA_composeAuth(host2, port2, path2,
-					     auth_proxy)) != NULL &&
-		    *auth != '\0') {
+		auth = HTAA_composeAuth(host2, port2, path2, auth_proxy);
+		if (auth == NULL) {
+		    CTRACE((tfp, "HTTP: Not sending authorization (yet).\n"));
+		} else if (*auth != '\0') {
 		    /*
-		     * If auth is not NULL nor zero-length, it's an
-		     * Authorization header to be included.  - FM
+		     * We have an Authorization header to be included.
 		     */
 		    HTBprintf(&command, "%s%c%c", auth, CR, LF);
 		    CTRACE((tfp, "HTTP: Sending authorization: %s\n", auth));
-		} else if (auth && *auth == '\0') {
+		} else {
 		    /*
-		     * If auth is a zero-length string, the user either
-		     * cancelled or goofed at the username and password prompt.
-		     * - FM
+		     * The user either cancelled or made a mistake with the
+		     * username and password prompt.
 		     */
 		    if (!(traversal || dump_output_immediately) &&
 			HTConfirm(CONFIRM_WO_PASSWORD)) {
@@ -1327,8 +1328,6 @@ static int HTLoadHTTP(const char *arg,
 			status = HT_NOT_LOADED;
 			goto done;
 		    }
-		} else {
-		    CTRACE((tfp, "HTTP: Not sending authorization (yet).\n"));
 		}
 		/*
 		 * Add 'Cookie:' header, if it's HTTP or HTTPS document being
@@ -1643,7 +1642,7 @@ static int HTLoadHTTP(const char *arg,
 #endif
 	    }
 
-	    eol = strchr(line_buffer + length, LF);
+	    eol = StrChr(line_buffer + length, LF);
 	    /* Do we *really* want to do this? */
 	    if (eol && eol != line_buffer && *(eol - 1) == CR)
 		*(eol - 1) = ' ';

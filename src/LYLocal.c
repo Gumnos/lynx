@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYLocal.c,v 1.125 2013/05/03 08:43:42 tom Exp $
+ * $LynxId: LYLocal.c,v 1.127 2013/11/28 11:19:31 tom Exp $
  *
  *  Routines to manipulate the local filesystem.
  *  Written by: Rick Mallett, Carleton University
@@ -807,7 +807,7 @@ static int modify_tagged(char *testpath)
     _statusline(gettext("Enter new location for tagged items: "));
 
     BStrCopy0(given_target, "");
-    (void) LYgetBString(&given_target, VISIBLE, 0, NORECALL);
+    (void) LYgetBString(&given_target, FALSE, 0, NORECALL);
     if (!isBEmpty(given_target)) {
 	/*
 	 * Replace ~/ references to the home directory.
@@ -1063,7 +1063,7 @@ int local_modify(DocInfo *doc, char **newpath)
 #endif /* OK_PERMIT */
     ans = LYgetch_single();
 
-    if (strchr("NLP", ans) != NULL) {
+    if (StrChr("NLP", ans) != NULL) {
 	cp = HTfullURL_toFile(links[doc->link].lname);
 	if (strlen(cp) >= DIRED_MAXBUF) {
 	    FREE(cp);
@@ -1114,7 +1114,7 @@ static int create_file(char *current_location)
 	if (strstr(tmpbuf->str, "//") != NULL) {
 	    HTAlert(gettext("Illegal redirection \"//\" found! Request ignored."));
 	} else if (strlen(tmpbuf->str) &&
-		   strchr(BadChars(), tmpbuf->str[0]) == NULL) {
+		   StrChr(BadChars(), tmpbuf->str[0]) == NULL) {
 	    StrAllocCopy(testpath, current_location);
 	    LYAddPathSep(&testpath);
 
@@ -1151,7 +1151,7 @@ static int create_directory(char *current_location)
 	if (strstr(tmpbuf->str, "//") != NULL) {
 	    HTAlert(gettext("Illegal redirection \"//\" found! Request ignored."));
 	} else if (strlen(tmpbuf->str) &&
-		   strchr(BadChars(), tmpbuf->str[0]) == NULL) {
+		   StrChr(BadChars(), tmpbuf->str[0]) == NULL) {
 	    StrAllocCopy(testpath, current_location);
 	    LYAddPathSep(&testpath);
 
@@ -1543,7 +1543,7 @@ static int permit_location(char *destpath,
 		     * directories.
 		     */
 		    if (!no_change_exec_perms
-			|| strchr(cp + 5, 'X') == NULL
+			|| StrChr(cp + 5, 'X') == NULL
 			|| S_ISDIR(dir_info.st_mode)) {
 			new_mode |= (mode_t) mask;
 		    }
@@ -2210,7 +2210,7 @@ static int get_filename(const char *prompt,
 
     _statusline(prompt);
 
-    (void) LYgetBString(&buf, VISIBLE, 0, NORECALL);
+    (void) LYgetBString(&buf, FALSE, 0, NORECALL);
     if (strstr(buf->str, "../") != NULL) {
 	HTAlert(gettext("Illegal filename; request ignored."));
 	return FALSE;
@@ -2515,7 +2515,7 @@ void add_menu_item(char *str)
     /*
      * Conditional on tagged != NULL ?
      */
-    if ((cp = strchr(str, ':')) != 0) {
+    if ((cp = StrChr(str, ':')) != 0) {
 	*cp++ = '\0';
 	if (strcasecomp(str, "tag") == 0) {
 	    tmp->cond = DE_TAG;
@@ -2533,17 +2533,17 @@ void add_menu_item(char *str)
 	 * Conditional on matching suffix.
 	 */
 	str = cp;
-	if ((cp = strchr(str, ':')) != 0) {
+	if ((cp = StrChr(str, ':')) != 0) {
 	    *cp++ = '\0';
 	    StrAllocCopy(tmp->sfx, str);
 
 	    str = cp;
-	    if ((cp = strchr(str, ':')) != 0) {
+	    if ((cp = StrChr(str, ':')) != 0) {
 		*cp++ = '\0';
 		StrAllocCopy(tmp->link, str);
 
 		str = cp;
-		if ((cp = strchr(str, ':')) != 0) {
+		if ((cp = StrChr(str, ':')) != 0) {
 		    *cp++ = '\0';
 		    StrAllocCopy(tmp->rest, str);
 

@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYExtern.c,v 1.52 2013/05/04 13:01:06 tom Exp $
+ * $LynxId: LYExtern.c,v 1.54 2013/11/29 00:21:20 tom Exp $
  *
  External application support.
  This feature allows lynx to pass a given URL to an external program.
@@ -78,7 +78,7 @@ static void delete_danger_characters(char *src)
     char *dst;
 
     for (dst = src; *src != '\0'; src++) {
-	if (strchr("<>|%\"", *src) == NULL) {
+	if (StrChr("<>|%\"", *src) == NULL) {
 	    *dst = *src;
 	    dst++;
 	}
@@ -99,14 +99,14 @@ static char *escapeParameter(CONST char *parameter)
     char *needs_escaped_NT = "%&^";
 
     for (i = 0; i < last; ++i) {
-	if (strchr(needs_encoded, parameter[i]) != NULL) {
+	if (StrChr(needs_encoded, parameter[i]) != NULL) {
 	    ++encoded;
 	}
 	if (system_is_NT) {
-	    if (strchr(needs_escaped_NT, parameter[i]) != NULL) {
+	    if (StrChr(needs_escaped_NT, parameter[i]) != NULL) {
 		++escaped;
 	    }
-	} else if (strchr(needs_escaped, parameter[i]) != NULL) {
+	} else if (StrChr(needs_escaped, parameter[i]) != NULL) {
 	    ++escaped;
 	}
     }
@@ -117,18 +117,18 @@ static char *escapeParameter(CONST char *parameter)
 
     n = 0;
     for (i = 0; i < last; i++) {
-	if (strchr(needs_encoded, parameter[i]) != NULL) {
+	if (StrChr(needs_encoded, parameter[i]) != NULL) {
 	    sprintf(result + n, "%%%02X", (unsigned char) parameter[i]);
 	    n += 3;
 	    continue;
 	}
 	if (system_is_NT) {
-	    if (strchr(needs_escaped_NT, parameter[i]) != NULL) {
+	    if (StrChr(needs_escaped_NT, parameter[i]) != NULL) {
 		result[n++] = '^';
 		result[n++] = parameter[i];
 		continue;
 	    }
-	} else if (strchr(needs_escaped, parameter[i]) != NULL) {
+	} else if (StrChr(needs_escaped, parameter[i]) != NULL) {
 	    result[n++] = '%';	/* parameter[i] is '%' */
 	    result[n++] = parameter[i];
 	    continue;
@@ -167,7 +167,7 @@ static char *format_command(char *command,
     char pram_string[LY_MAXPATH];
     char *escaped = NULL;
 
-    if (strnicmp("file://localhost/", param, 17) == 0) {
+    if (strncasecomp("file://localhost/", param, 17) == 0) {
 	/* decode local path parameter for programs to be
 	   able to interpret - TH */
 	LYStrNCpy(pram_string, param, sizeof(pram_string) - 1);
@@ -181,7 +181,7 @@ static char *format_command(char *command,
 
     if (isMAILTO_URL(param)) {
 	format(&cmdbuf, command, param + 7);
-    } else if (strnicmp("telnet://", param, 9) == 0) {
+    } else if (strncasecomp("telnet://", param, 9) == 0) {
 	char host[sizeof(pram_string)];
 	int last_pos;
 
@@ -191,13 +191,13 @@ static char *format_command(char *command,
 	    host[last_pos] = '\0';
 
 	format(&cmdbuf, command, host);
-    } else if (strnicmp("file://localhost/", param, 17) == 0) {
+    } else if (strncasecomp("file://localhost/", param, 17) == 0) {
 	char e_buff[LY_MAXPATH], *p;
 
 	p = param + 17;
 	delete_danger_characters(p);
 	*e_buff = 0;
-	if (strchr(p, ':') == NULL) {
+	if (StrChr(p, ':') == NULL) {
 	    sprintf(e_buff, "%.3s/", windows_drive);
 	}
 	strncat(e_buff, p, sizeof(e_buff) - strlen(e_buff) - 1);
@@ -388,7 +388,7 @@ BOOL run_external(char *param,
 	    }
 	}
 
-	if (strnicmp(cmdbuf, "start ", 6) == 0)
+	if (strncasecomp(cmdbuf, "start ", 6) == 0)
 	    redraw_flag = FALSE;
 	else
 	    redraw_flag = TRUE;

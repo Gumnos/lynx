@@ -1,8 +1,8 @@
-# $LynxId: lynx.spec,v 1.17 2013/04/30 08:32:37 tom Exp $
+# $LynxId: lynx.spec,v 1.19 2013/10/24 00:21:20 tom Exp $
 Summary: A text-based Web browser
 Name: lynx
 Version: 2.8.8
-Release: dev.16
+Release: dev.17
 License: GPLv2
 Group: Applications/Internet
 Source: lynx%{version}%{release}.tgz
@@ -38,6 +38,7 @@ CPPFLAGS="-DMISC_EXP -DEXP_HTTP_HEADERS" \
 	--libdir=%{lynx_etc} \
 	--mandir=%{_mandir} \
 	--sysconfdir=%{lynx_etc} \
+	--with-cfg-path=%{lynx_etc}:%{lynx_doc}/samples \
 	--disable-font-switch \
 	--disable-internal-links \
 	--enable-8bit-toupper \

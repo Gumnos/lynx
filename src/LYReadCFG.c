@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYReadCFG.c,v 1.176 2013/05/30 23:16:56 tom Exp $
+ * $LynxId: LYReadCFG.c,v 1.182 2013/11/29 00:21:45 tom Exp $
  */
 #ifndef NO_RULES
 #include <HTRules.h>
@@ -586,8 +586,8 @@ static int character_set_fun(char *value)
     if (i < 0) {
 #ifdef CAN_AUTODETECT_DISPLAY_CHARSET
 	if (auto_display_charset >= 0
-	    && (!strnicmp(value, "AutoDetect ", 11)
-		|| !strnicmp(value, "AutoDetect-2 ", 13)))
+	    && (!strncasecomp(value, "AutoDetect ", 11)
+		|| !strncasecomp(value, "AutoDetect-2 ", 13)))
 	    current_char_set = auto_display_charset;
 #endif
 	/* do nothing here: so fallback to userdefs.h */
@@ -646,6 +646,14 @@ static int assumed_color_fun(char *buffer)
 static int color_fun(char *value)
 {
     parse_color(value);
+    return 0;
+}
+#endif
+
+#ifdef USE_COLOR_STYLE
+static int lynx_lss_file_fun(char *value)
+{
+    add_to_lss_list(value, NULL);
     return 0;
 }
 #endif
@@ -746,9 +754,9 @@ static int keymap_fun(char *key)
 {
     char *func, *efunc;
 
-    if ((func = strchr(key, ':')) != NULL) {
+    if ((func = StrChr(key, ':')) != NULL) {
 	*func++ = '\0';
-	efunc = strchr(func, ':');
+	efunc = StrChr(func, ':');
 	/* Allow comments on the ends of key remapping lines. - DT */
 	/* Allow third field for line-editor action. - kw */
 	if (efunc == func) {	/* have 3rd field, but 2nd field empty */
@@ -973,20 +981,20 @@ static int suffix_fun(char *value)
     double q = 1.0;
 
     if ((strlen(value) < 3)
-	|| (NULL == (mime_type = strchr(value, ':')))) {
+	|| (NULL == (mime_type = StrChr(value, ':')))) {
 	CTRACE((tfp, "Invalid SUFFIX:%s ignored.\n", value));
 	return 0;
     }
 
     *mime_type++ = '\0';
     if (*mime_type) {
-	if ((parsed = strchr(mime_type, ':')) != NULL) {
+	if ((parsed = StrChr(mime_type, ':')) != NULL) {
 	    *parsed++ = '\0';
-	    if ((sq = strchr(parsed, ':')) != NULL) {
+	    if ((sq = StrChr(parsed, ':')) != NULL) {
 		*sq++ = '\0';
-		if ((description = strchr(sq, ':')) != NULL) {
+		if ((description = StrChr(sq, ':')) != NULL) {
 		    *description++ = '\0';
-		    if ((p = strchr(sq, ':')) != NULL)
+		    if ((p = StrChr(sq, ':')) != NULL)
 			*p = '\0';
 		    LYTrimTail(description);
 		}
@@ -1090,7 +1098,7 @@ static int viewer_fun(char *value)
     mime_type = value;
 
     if ((strlen(value) < 3)
-	|| (NULL == (viewer = strchr(mime_type, ':'))))
+	|| (NULL == (viewer = StrChr(mime_type, ':'))))
 	return 0;
 
     *viewer++ = '\0';
@@ -1256,7 +1264,7 @@ static int parse_html_src_spec(HTlexeme lexeme_code, char *value,
 
 #define BS() html_src_bad_syntax(value,option_name)
 
-    ts2 = strchr(value, ':');
+    ts2 = StrChr(value, ':');
     if (!ts2)
 	BS();
 
@@ -1304,7 +1312,7 @@ static int psrcspec_fun(char *s)
 
     int found;
 
-    e = strchr(s, ':');
+    e = StrChr(s, ':');
     if (!e) {
 	CTRACE((tfp,
 		"bad format of PRETTYSRC_SPEC setting value, ignored %s\n",
@@ -1376,7 +1384,7 @@ static int screen_size_fun(char *value)
 {
     char *cp;
 
-    if ((cp = strchr(value, ',')) != 0) {
+    if ((cp = StrChr(value, ',')) != 0) {
 	*cp++ = '\0';		/* Terminate ID */
 	scrsize_x = atoi(value);
 	scrsize_y = atoi(cp);
@@ -1463,7 +1471,7 @@ static Config_Type Config_Table [] =
      PARSE_FUN(RC_COLOR,                color_fun),
 #endif
 #ifdef USE_COLOR_STYLE
-     PARSE_STR(RC_COLOR_STYLE,          lynx_lss_file),
+     PARSE_FUN(RC_COLOR_STYLE,          lynx_lss_file_fun),
 #endif
      PARSE_PRG(RC_COMPRESS_PATH,        ppCOMPRESS),
      PARSE_PRG(RC_COPY_PATH,            ppCOPY),
@@ -1785,7 +1793,7 @@ void free_lynx_cfg(void)
 	case CONF_ENV:
 	    if (q->str_value != 0) {
 		char *name = *(q->str_value);
-		char *eqls = strchr(name, '=');
+		char *eqls = StrChr(name, '=');
 
 		if (eqls != 0) {
 		    *eqls = 0;
@@ -1867,7 +1875,9 @@ static char *actual_filename(const char *cfg_filename,
 		*LYPathLeaf(my_filename) = '\0';
 		StrAllocCat(my_filename, cfg_filename);
 		if (!LYCanReadFile(my_filename)) {
-		    StrAllocCopy(my_filename, cfg_filename);
+		    StrAllocCopy(my_filename,
+				 LYFindConfigFile(cfg_filename,
+						  dft_filename));
 		}
 	    }
 	}
@@ -2097,7 +2107,7 @@ static void do_read_cfg(const char *cfg_filename,
 	    continue;
 
 	/* Significant lines are of the form KEYWORD:WHATEVER */
-	if ((value = strchr(name, ':')) == 0) {
+	if ((value = StrChr(name, ':')) == 0) {
 	    /* fprintf (stderr, "Bad line-- no :\n"); */
 	    CTRACE((tfp, "LYReadCFG: missing ':' %s\n", name));
 	    continue;
@@ -2115,7 +2125,7 @@ static void do_read_cfg(const char *cfg_filename,
 	 */
 	if ((cp = strrchr(value, ':')) == 0)
 	    cp = value;
-	if ((cp = strchr(cp, '#')) != 0) {
+	if ((cp = StrChr(cp, '#')) != 0) {
 	    cp--;
 	    if (isspace(UCH(*cp)))
 		*cp = 0;
@@ -2187,7 +2197,7 @@ static void do_read_cfg(const char *cfg_filename,
 		    LYLocalFileToURL(&url, my_file);
 		    FREE(my_file);
 		    StrAllocCopy(cp1, value);
-		    if (strchr(value, '&') || strchr(value, '<')) {
+		    if (StrChr(value, '&') || StrChr(value, '<')) {
 			LYEntify(&cp1, TRUE);
 		    }
 
@@ -2276,7 +2286,7 @@ static void do_read_cfg(const char *cfg_filename,
 
 	default:
 	    if (fp0 != 0) {
-		if (strchr(value, '&') || strchr(value, '<')) {
+		if (StrChr(value, '&') || StrChr(value, '<')) {
 		    char *cp1 = NULL;
 
 		    StrAllocCopy(cp1, value);
@@ -2513,7 +2523,7 @@ int lynx_cfg_infopage(DocInfo *newdoc)
 
 	    LYLocalFileToURL(&temp, lynx_cfg_file);
 	    StrAllocCopy(cp1, lynx_cfg_file);
-	    if (strchr(lynx_cfg_file, '&') || strchr(lynx_cfg_file, '<')) {
+	    if (StrChr(lynx_cfg_file, '&') || StrChr(lynx_cfg_file, '<')) {
 		LYEntify(&cp1, TRUE);
 	    }
 	    fprintf(fp0, "\n    #<em>%s <a href=\"%s\">%s</a></em>\n",
