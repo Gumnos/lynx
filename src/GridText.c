@@ -1,5 +1,5 @@
 /*
- * $LynxId: GridText.c,v 1.140 2007/05/13 20:42:37 Takeshi.Hataguchi Exp $
+ * $LynxId: GridText.c,v 1.142 2007/08/02 19:30:32 tom Exp $
  *
  *		Character grid hypertext object
  *		===============================
@@ -50,8 +50,7 @@
 #ifdef USE_COLOR_STYLE
 #include <AttrList.h>
 #include <LYHash.h>
-
-unsigned int cached_styles[CACHEH][CACHEW];
+#include <LYStyle.h>
 
 #endif
 
@@ -80,18 +79,6 @@ unsigned int cached_styles[CACHEH][CACHEW];
 
 static void HText_trimHightext(HText *text, BOOLEAN final,
 			       int stop_before);
-
-#ifdef USE_COLOR_STYLE
-static void LynxResetScreenCache(void)
-{
-    int i, j;
-
-    for (i = 1; (i < CACHEH && i <= display_lines); i++) {
-	for (j = 0; j < CACHEW; j++)
-	    cached_styles[i][j] = 0;
-    }
-}
-#endif /* USE_COLOR_STYLE */
 
 struct _HTStream {		/* only know it as object */
     const HTStreamClass *isa;
@@ -2097,7 +2084,7 @@ static void display_page(HText *text,
 	line_number != text->first_lineno_last_disp_partial ||
 	line_number > text->last_lineno_last_disp_partial)
 #endif /* DISP_PARTIAL */
-	LynxResetScreenCache();
+	ResetCachedStyles();
 #endif /* USE_COLOR_STYLE */
 
 #ifdef DISP_PARTIAL
@@ -7860,7 +7847,7 @@ static int TrimmedLength(char *string)
 {
     int result = strlen(string);
     int adjust = result;
-    int ch;
+    unsigned ch;
 
     while (adjust > 0) {
 	ch = UCH(string[adjust - 1]);
@@ -10396,7 +10383,7 @@ static void UpdateBoundary(char **Boundary,
 	    && !memcmp(want, text + j, have)) {
 	    char temp[2];
 
-	    temp[0] = isdigit(text[have + j]) ? 'a' : '0';
+	    temp[0] = isdigit(UCH(text[have + j])) ? 'a' : '0';
 	    temp[1] = '\0';
 	    StrAllocCat(want, temp);
 	    ++have;

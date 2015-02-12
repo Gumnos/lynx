@@ -1,3 +1,4 @@
+/* $LynxId: LYUtils.c,v 1.163 2007/08/02 20:18:36 tom Exp $ */
 #include <HTUtils.h>
 #include <HTTCP.h>
 #include <HTParse.h>
@@ -5,12 +6,19 @@
 #include <HTCJK.h>
 #include <HTAlert.h>
 
-#ifdef __MINGW32__
-int kbhit(void);		/* FIXME: use conio.h */
+#if defined(__MINGW32__)
 
-#ifdef UNIX
+extern int kbhit(void);		/* FIXME: use conio.h */
+
 #undef UNIX
-#endif /* UNIX */
+
+#elif defined(_WINDOWS)
+
+#include <conio.h>
+#if !defined(kbhit) && defined(_WCONIO_DEFINED)
+#define kbhit() _kbhit()	/* reasonably recent conio.h */
+#endif
+
 #endif /* __MINGW32__ */
 
 #include <LYCurses.h>
@@ -959,25 +967,22 @@ static int find_cached_style(int cur,
 
 	/*
 	 * This is where we try to restore the original style when a link is
-	 * unhighlighted.  The purpose of cached_styles[][] is to save the
-	 * original style just for this case.  If it doesn't have a color
-	 * change saved at just the right position, we look at preceding
-	 * positions in the same line until we find one.
+	 * unhighlighted.  The cached styles array saves the original style
+	 * just for this case.  If it doesn't have a color change saved at just
+	 * the right position, we look at preceding positions in the same line
+	 * until we find one.
 	 */
-	if (CACHE_VALIDATE_YX(LYP, LXP)) {
+	if (ValidCachedStyle(LYP, LXP)) {
 	    CTRACE2(TRACE_STYLE,
 		    (tfp, "STYLE.highlight.off: cached style @(%d,%d): ",
 		     LYP, LXP));
-	    s = cached_styles[LYP][LXP];
+	    s = GetCachedStyle(LYP, LXP);
 	    if (s == 0) {
 		for (x = LXP - 1; x >= 0; x--) {
-		    if (cached_styles[LYP][x]) {
-			if (cached_styles[LYP][x] > 0) {
-			    s = cached_styles[LYP][x];
-			    cached_styles[LYP][LXP] = s;
-			}
-			CTRACE((tfp, "found %u, x_offset=%d.\n",
-				cached_styles[LYP][x], (int) x - LXP));
+		    s = GetCachedStyle(LYP, x);
+		    if (s != 0) {
+			SetCachedStyle(LYP, LXP, s);
+			CTRACE((tfp, "found %d, x_offset=%d.\n", s, x - LXP));
 			break;
 		    }
 		}
@@ -1219,7 +1224,7 @@ void convert_to_spaces(char *string,
     if (!s)
 	return;
 
-    for (; (*s && !isspace(*s)); s++) ;
+    s = LYSkipNonBlanks(s);
     ns = s;
 
     while (*s) {
@@ -5367,8 +5372,7 @@ char *LYTildeExpand(char **pathname,
     if (LYIsTilde(temp[0])) {
 
 	CTRACE((tfp, "LYTildeExpand %s\n", *pathname));
-	if (LYIsPathSep(temp[1])
-	    && temp[2] != '\0') {
+	if (LYIsPathSep(temp[1])) {
 	    char *first = NULL;
 	    char *second = NULL;
 
@@ -5877,17 +5881,34 @@ static BOOL IsOurSymlink(const char *name)
     BOOL result = FALSE;
     int size = LY_MAXPATH;
     int used;
-    char *buffer = malloc(size);
+    char *buffer = typeMallocn(char, size);
 
     if (buffer != 0) {
-	while ((used = readlink(name, buffer, size)) == -1) {
-	    buffer = realloc(buffer, size *= 2);
+	while ((used = readlink(name, buffer, size - 1)) == size - 1) {
+	    buffer = typeRealloc(char, buffer, size *= 2);
+
 	    if (buffer == 0)
 		break;
 	}
-	buffer[used] = '\0';
+	if (used > 0) {
+	    buffer[used] = '\0';
+	} else {
+	    FREE(buffer);
+	}
     }
     if (buffer != 0) {
+	if (!LYisAbsPath(buffer)) {
+	    char *cutoff = LYLastPathSep(name);
+	    char *clone = NULL;
+
+	    if (cutoff != 0) {
+		HTSprintf0(&clone, "%.*s%s%s",
+			   cutoff - name,
+			   name, PATHSEP_STR, buffer);
+		FREE(buffer);
+		buffer = clone;
+	    }
+	}
 	CTRACE2(TRACE_CFG, (tfp, "IsOurSymlink(%s -> %s)\n", name, buffer));
 	result = IsOurFile(buffer);
 	FREE(buffer);

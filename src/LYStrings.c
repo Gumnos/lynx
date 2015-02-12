@@ -1,3 +1,4 @@
+/* $LynxId: LYStrings.c,v 1.128 2007/08/02 19:24:50 tom Exp $ */
 #include <HTUtils.h>
 #include <HTCJK.h>
 #include <UCAux.h>
@@ -1232,45 +1233,49 @@ static char *skip_keysym(char *parse)
  * The first token is the string to define, the second is the name (of the
  * keysym) to define it to.
  */
+#define MY_TRACE(p) CTRACE2(TRACE_CFG, p)
+
 static int setkey_cmd(char *parse)
 {
     char *s, *t;
     int keysym;
     char buf[BUFSIZ];
 
-    CTRACE((tfp, "KEYMAP(PA): in=%s", parse));	/* \n-terminated */
+    MY_TRACE((tfp, "KEYMAP(PA): in=%s", parse));	/* \n-terminated */
     if ((s = skip_keysym(parse)) != 0) {
 	if (isspace(UCH(*s))) {
 	    *s++ = '\0';
 	    s = LYSkipBlanks(s);
 	    if ((t = skip_keysym(s)) == 0) {
-		CTRACE((tfp, "KEYMAP(SKIP) no key expansion found\n"));
+		MY_TRACE((tfp, "KEYMAP(SKIP) no key expansion found\n"));
 		return -1;
 	    }
 	    if (t != s)
 		*t = '\0';
 	    if (map_string_to_keysym(s, &keysym) >= 0) {
 		if (!unescape_string(parse, buf, buf + sizeof(buf) - 1)) {
-		    CTRACE((tfp, "KEYMAP(SKIP) could unescape key\n"));
+		    MY_TRACE((tfp, "KEYMAP(SKIP) could unescape key\n"));
 		    return 0;	/* Trace the failure and continue. */
 		}
 		if (LYTraceLogFP == 0) {
-		    CTRACE((tfp, "KEYMAP(DEF) keysym=%#x\n", keysym));
+		    MY_TRACE((tfp, "KEYMAP(DEF) keysym=%#x\n", keysym));
 		} else {
-		    CTRACE((tfp, "KEYMAP(DEF) keysym=%#x, seq='%s'\n", keysym, buf));
+		    MY_TRACE((tfp, "KEYMAP(DEF) keysym=%#x, seq='%s'\n",
+			      keysym, buf));
 		}
 		return define_key(buf, keysym);
 	    } else {
-		CTRACE((tfp, "KEYMAP(SKIP) could not map to keysym\n"));
+		MY_TRACE((tfp, "KEYMAP(SKIP) could not map to keysym\n"));
 	    }
 	} else {
-	    CTRACE((tfp, "KEYMAP(SKIP) junk after key description: '%s'\n", s));
+	    MY_TRACE((tfp, "KEYMAP(SKIP) junk after key description: '%s'\n", s));
 	}
     } else {
-	CTRACE((tfp, "KEYMAP(SKIP) no key description\n"));
+	MY_TRACE((tfp, "KEYMAP(SKIP) no key description\n"));
     }
     return -1;
 }
+#undef MY_TRACE
 
 static int unsetkey_cmd(char *parse)
 {
@@ -3122,7 +3127,7 @@ int LYEdit1(EDREC * edit, int ch,
 	    while (is8bits(Buf[Pos]))
 		Pos += 2;
 	} else {
-	    while (!is8bits(Buf[Pos]) && isalnum(Buf[Pos]))
+	    while (!is8bits(Buf[Pos]) && isalnum(UCH(Buf[Pos])))
 		Pos++;		/* '\0' is not a/n */
 	}
 	while ((HTCJK == NOCJK || !is8bits(Buf[Pos])) &&
@@ -5724,7 +5729,7 @@ char *LYSafeGets(char **src,
     if (result != 0)
 	*result = 0;
 
-    while (fgets(buffer, sizeof(buffer), fp) != 0) {
+    while (fgets(buffer, sizeof(buffer), fp) != NULL) {
 	if (*buffer)
 	    result = StrAllocCat(result, buffer);
 	if (strchr(buffer, '\n') != 0)

@@ -1,8 +1,10 @@
-/*                                       Utility macros for the W3 code library
-                                  MACROS FOR GENERAL USE
-
-   See also: the system dependent file "www_tcp.h", which is included here.
-
+/*
+ * $LynxId: HTUtils.h,v 1.77 2007/07/01 15:30:33 tom Exp $
+ *
+ * Utility macros for the W3 code library
+ * MACROS FOR GENERAL USE
+ * 
+ * See also:  the system dependent file "www_tcp.h", which is included here.
  */
 
 #ifndef NO_LYNX_TRACE
@@ -57,12 +59,17 @@ char *alloca();
 /* Explicit system-configure */
 #ifdef VMS
 #define NO_SIZECHANGE
+
 #if defined(VAXC) && !defined(__DECC)
 #define NO_UNISTD_H		/* DEC C has unistd.h, but not VAX C */
 #endif
+
 #define NO_KEYPAD
 #define NO_UTMP
+
+#undef NO_FILIO_H
 #define NO_FILIO_H
+
 #define NOUSERS
 #define DISP_PARTIAL		/* experimental */
 #endif
@@ -523,6 +530,10 @@ extern int WWW_TraceMask;
 #define TRACE_TRST      (TRACE_bit(2))
 #define TRACE_CFG       (TRACE_bit(3))
 #define TRACE_BSTRING   (TRACE_bit(4))
+#define TRACE_COOKIES   (TRACE_bit(5))
+#define TRACE_CHARSETS  (TRACE_bit(6))
+#define TRACE_GRIDTEXT  (TRACE_bit(7))
+#define TRACE_TIMING    (TRACE_bit(8))
 
 #if defined(USE_VERTRACE) && !defined(LY_TRACELINE)
 #define LY_TRACELINE __LINE__

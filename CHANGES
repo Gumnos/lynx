@@ -1,8 +1,51 @@
--- $LynxId: CHANGES,v 1.219 2007/05/16 21:51:47 tom Exp $
+-- $LynxId: CHANGES,v 1.242 2007/08/02 21:36:53 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
 
+2007-08-02 (2.8.7dev.6)
+* update cs.po from
+    http://translationproject.org/latest/lynx/
+* add a script for Inno Setup, incorporate/adapt configuration files from
+  an installer created by Claudio Santambrogio -TD
+* use struct dirent64 when it is declared via configure script -TD
+* additional def7_uni.tbl conversions (patch by Tim Larson).
+* quiet a message in HTFWriter.c -RS
+* improve IsOurSymlink() from 2.8.7dev.5 changes, allowing the symbolic link
+  to be relative to the directory -RS, TD
+* rewrote several autoconf macros to use extended searches in non-system
+  locations, i.e., AM_ICONV, AM_WITH_NLS, CF_GNUTLS, CF_SSL, CF_WITH_BZLIB
+  and CF_WITH_ZLIB (prompted by LV comments) -TD
+* modify popup for externals added in 2.8.4dev.20 to number the entries if
+  keypad mode is set to one of the numbered forms -PBM
+* free leaks of LYLeaks.c, to make it simpler to check it with a second
+  tool such as valgrind -TD
+* rewrote cached_styles[][] to use memory allocated to match screen size
+  (report by RS) -TD
+* fix typo in SGML.C -RS
+* correct display_lines when -notitle is used while in novice mode -PBM, TD
+* add -child_relaxed option (patch by Andrew Belov).
+* minor typos from OpenBSD (patch by Daniel Dickman).
+* modify VMS build-scripts to accept "TCPIP" parameter, for TCPIP Services
+  (discussion with Dominic Stephens) -TD
+* add IDE-files for building with Visual Studio 6, 2003 and 2005 Express.
+  These are respectively the files in BUILD-VS6, BUILD-VS2003 and
+  BUILD-VS2005X -TD
+* modify def7_uni.tbl to display U+2212 without a leading blank
+  (Debian #428536) -TD
+* add definition for _FILE_OFFSET_BITS in CF_LARGEFILE, needed for Solaris
+  64-bit compiles (from ncurses) -TD
+* change order of includes (-I options) in makefiles so build-tree is found
+  first (report by PBM) -TD
+* ensure MIME_LIBDIR has a trailing "/" -TD
+* add new -trace-mask codes to cleanup the trace file a little -TD
+* remove redundant call to show_cert_issuer() -TG
+* correct typo in Lynx_users_guide.html (prompted by TG's patch) -TD
+* modify HTDoRead() to add elapsed time to its debug trace -TD
+* fix a case in LYGetfile.c which was broken by 2.8.7dev.3 changes to use
+  LYTildeExpand() to expand embedded "~" -TG
+* updated config.guess (2007-05-17), config.sub (2007-06-28)
+ 
 2007-05-17 (2.8.7dev.5)
 * build/install "en" po file so that GNU gettext LANGUAGE environment variable
   can find the corresponding English message file (request by Chuck Houpt) -TD
@@ -96,7 +139,7 @@ Changes since Lynx 2.8 release
 * modify CF_SRAND to recognize the asymmetric variant of arc4random() -TD
 * updated configure script macros CF_SUBDIR_PATH, CF_XOPEN_SOURCE,
   CF_X_ATHENA_LIBS, CF_X_TOOLKIT -TD
-* updated config.guess, config.sub -TD
+* updated config.guess (2006-12-22), config.sub (2006-12-08)
 
 2006-11-14 (2.8.7dev.4)
 * use RFC-822 encoding for filenames passed via file-upload forms (Debian

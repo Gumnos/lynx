@@ -1,4 +1,7 @@
-/*		FILE WRITER				HTFWrite.h
+/*
+ * $LynxId: HTFWriter.c,v 1.90 2007/08/02 19:40:50 tom Exp $
+ *
+ *		FILE WRITER				HTFWrite.h
  *		===========
  *
  *	This version of the stream object just writes to a C file.
@@ -34,6 +37,7 @@
 #include <LYLeaks.h>
 #include <LYKeymap.h>
 #include <LYGetFile.h>
+#include <LYHistory.h>		/* store statusline messages */
 
 #ifdef USE_PERSISTENT_COOKIES
 #include <LYCookie.h>
@@ -314,8 +318,10 @@ static void HTFWriter_free(HTStream *me)
 		    if (!dump_output_immediately) {
 			/*
 			 * Tell user what's happening.  - FM
+			 * HTInfoMsg2(WWW_USING_MESSAGE, addr);
+			 * but only in the history, not on screen -RS
 			 */
-			HTInfoMsg2(WWW_USING_MESSAGE, addr);
+			LYstore_message2(WWW_USING_MESSAGE, addr);
 		    }
 
 		    if (skip_loadfile) {
@@ -589,7 +595,7 @@ HTStream *HTSaveAndExecute(HTPresentation *pres,
 	return (NULL);
     }
 #if defined(EXEC_LINKS) || defined(EXEC_SCRIPTS)
-    if (pres->quality == 999.0) {	/* exec link */
+    if (pres->quality >= 999.0) {	/* exec link */
 	if (dump_output_immediately) {
 	    LYCancelledFetch = TRUE;
 	    return (NULL);
@@ -1184,7 +1190,7 @@ HTStream *HTCompressed(HTPresentation *pres,
      */
     if (!dump_output_immediately && !traversal
 #if defined(EXEC_LINKS) || defined(EXEC_SCRIPTS)
-	&& (Pres->quality != 999.0 ||
+	&& (Pres->quality < 999.0 ||
 	    (!no_exec &&	/* allowed exec link or script ? */
 	     (local_exec ||
 	      (local_exec_on_local_files &&

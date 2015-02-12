@@ -1,3 +1,4 @@
+/* $LynxId: LYCurses.c,v 1.131 2007/07/24 21:58:34 tom Exp $ */
 #include <HTUtils.h>
 #include <HTAlert.h>
 
@@ -451,8 +452,8 @@ void curses_w_style(WINDOW * win, int style,
 
     if (style == s_normal && dir) {
 	LYAttrset(win, ds->color, ds->mono);
-	if (win == LYwin && CACHE_VALIDATE_YX(YP, XP))
-	    cached_styles[YP][XP] = s_normal;
+	if (win == LYwin)
+	    SetCachedStyle(YP, XP, s_normal);
 	return;
     }
 
@@ -497,8 +498,8 @@ void curses_w_style(WINDOW * win, int style,
 	    && style != s_aedit_arr) {
 	    CTRACE2(TRACE_STYLE, (tfp, "CACHED: <%s> @(%d,%d)\n",
 				  ds->name, YP, XP));
-	    if (win == LYwin && CACHE_VALIDATE_YX(YP, XP))
-		cached_styles[YP][XP] = style;
+	    if (win == LYwin)
+		SetCachedStyle(YP, XP, style);
 	}
 	LYAttrset(win, ds->color, ds->mono);
 	break;
@@ -1421,6 +1422,9 @@ void lynx_nl2crlf(int normal GCC_UNUSED)
 void stop_curses(void)
 {
     if (LYCursesON) {
+#ifdef USE_COLOR_STYLE
+	FreeCachedStyles();
+#endif
 	echo();
     }
 #if defined(PDCURSES) && defined(PDC_BUILD) && PDC_BUILD >= 2401
@@ -2774,6 +2778,20 @@ void lynx_stop_reverse(void)
 void lynx_stop_underline(void)
 {
     stop_underline();
+}
+
+void LYSetDisplayLines(void)
+{
+    if (!no_title) {
+	if (user_mode == NOVICE_MODE)
+	    display_lines = LYlines - 4;
+	else
+	    display_lines = LYlines - 2;
+    } else if (user_mode == NOVICE_MODE) {
+	display_lines = LYlines - 3;
+    } else {
+	display_lines = LYlines - 1;
+    }
 }
 
 /*

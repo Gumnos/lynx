@@ -1,8 +1,11 @@
-dnl $LynxId: configure.in,v 1.153 2007/05/13 23:26:12 tom Exp $
+dnl $LynxId: configure.in,v 1.158 2007/07/30 22:12:37 tom Exp $
+dnl
 dnl Process this file with autoconf to produce a configure script.
+dnl
 dnl created jan/1997
 dnl by T.E.Dickey <dickey@invisible-island.net>
 dnl and Jim Spath <jspath@mail.bcpl.lib.md.us>
+dnl
 dnl ---------------------------------------------------------------------------
 dnl Copyright 1997-2006,2007 by Thomas E. Dickey
 dnl 
@@ -26,7 +29,7 @@ dnl ---------------------------------------------------------------------------
 dnl
 dnl ask PRCS to plug-in the project-version for the configure-script.
 dnl $Format: "AC_REVISION($ProjectVersion$)"$
-AC_REVISION(2.8.7dev.5)
+AC_REVISION(2.8.7dev.6)
 
 # Save the original $CFLAGS so we can distinguish whether the user set those
 # in the environment, or whether autoconf added -O and -g options:
@@ -59,7 +62,7 @@ AC_ARG_WITH(system-type,
 PACKAGE=lynx
 dnl ask PRCS to plug-in the project-version for the packages.
 # $Format: "VERSION=$ProjectVersion$"$
-VERSION=2.8.7dev.5
+VERSION=2.8.7dev.6
 
 AC_SUBST(PACKAGE)
 AC_SUBST(VERSION)
@@ -189,25 +192,8 @@ then
 fi
 fi
 
-AC_MSG_CHECKING(if you want to link with dbmalloc for testing)
-AC_ARG_WITH(dbmalloc,
-	[  --with-dbmalloc         test: use Conor Cahill's dbmalloc library],
-	[with_dbmalloc=$withval],
-	[with_dbmalloc=no])
-AC_MSG_RESULT($with_dbmalloc)
-if test $with_dbmalloc = yes ; then
-	AC_CHECK_LIB(dbmalloc,debug_malloc)
-fi
-
-AC_MSG_CHECKING(if you want to link with dmalloc for testing)
-AC_ARG_WITH(dmalloc,
-	[  --with-dmalloc          test: use Gray Watson's dmalloc library],
-	[with_dmalloc=$withval],
-	[with_dmalloc=no])
-AC_MSG_RESULT($with_dmalloc)
-if test $with_dmalloc = yes ; then
-	AC_CHECK_LIB(dmalloc,dmalloc_debug)
-fi
+CF_WITH_DBMALLOC
+CF_WITH_DMALLOC
 
 dnl --------------------------------------------------------------------------
 dnl Checks for compiler & standard-library characteristics
@@ -606,7 +592,7 @@ CF_WITH_PATH(mime-libdir,
 MIME_LIBDIR,
 [/etc])
 AC_MSG_RESULT($MIME_LIBDIR)
-
+MIME_LIBDIR=`echo "$MIME_LIBDIR" | sed -e 's,/$,,' -e 's,$,/,'`
 AC_DEFINE_UNQUOTED(MIME_LIBDIR,"$MIME_LIBDIR")
 
 dnl --------------------------------------------------------------------------
@@ -835,7 +821,10 @@ CF_ARG_ENABLE(japanese-utf8,
 AC_MSG_RESULT($use_ja_utf8)
 if test $use_ja_utf8 != no ; then
 	AC_DEFINE(EXP_JAPANESEUTF8_SUPPORT)
-	AC_CHECK_LIB(iconv,libiconv_open)
+	AM_ICONV
+	if test "$USE_NLS" != yes ; then
+	  LIBS="$LIBICONV $LIBS"
+	fi
 fi
 
 use_dft_colors=no
@@ -1003,15 +992,19 @@ if test $use_setfont = yes ; then
 	linux*)
 		CF_PATH_PROG(SETFONT, consolechars, setfont)
 		;;
-	*)
-		SETFONT=unknown
+	os2*)
+		SETFONT=built-in
 		CF_VERBOSE(Assume $host_os has font-switching)
 		;;
+	*)
+		SETFONT=unknown
+		CF_VERBOSE(Assume $host_os has no font-switching)
+		;;
 	esac
-	if test -n "$SETFONT" ; then
-		AC_DEFINE(EXP_CHARTRANS_AUTOSWITCH)
-	else
+	if test -z "$SETFONT" ; then
 		AC_MSG_WARN(Cannot find a font-setting program)
+	elif test "$SETFONT" != unknown ; then
+		AC_DEFINE(EXP_CHARTRANS_AUTOSWITCH)
 	fi
 fi
 
@@ -1105,7 +1098,7 @@ AC_ARG_WITH(bzlib,
 AC_MSG_RESULT($use_bzlib)
 
 if test ".$use_bzlib" != ".no" ; then
-	CF_WITH_BZLIB
+	CF_WITH_BZLIB($use_bzlib)
 	AC_DEFINE(USE_BZLIB)
 fi
 
@@ -1118,7 +1111,7 @@ AC_ARG_WITH(zlib,
 AC_MSG_RESULT($use_zlib)
 
 if test ".$use_zlib" != ".no" ; then
-	CF_WITH_ZLIB
+	CF_WITH_ZLIB($use_zlib)
 	AC_DEFINE(USE_ZLIB)
 fi
 
