@@ -1,4 +1,4 @@
-/* $LynxId: LYMain.c,v 1.174 2007/07/02 00:07:27 tom Exp $ */
+/* $LynxId: LYMain.c,v 1.181 2008/02/17 19:30:56 Gisle.Vanem Exp $ */
 #include <HTUtils.h>
 #include <HTTP.h>
 #include <HTParse.h>
@@ -27,6 +27,11 @@
 #include <HTForms.h>
 #include <LYList.h>
 #include <LYJump.h>
+
+#ifdef USE_SESSIONS
+#include <LYSession.h>
+#endif
+
 #include <LYMainLoop.h>
 #include <LYBookmark.h>
 #include <LYCookie.h>
@@ -60,14 +65,6 @@
 
 #include <LYexit.h>
 #include <LYLeaks.h>
-
-#ifdef FNAMES_8_3
-#define COOKIE_FILE "cookies"
-#define TRACE_FILE "LY-TRACE.LOG"
-#else
-#define COOKIE_FILE ".lynx_cookies"
-#define TRACE_FILE "Lynx.trace"
-#endif /* FNAMES_8_3 */
 
 /* ahhhhhhhhhh!! Global variables :-< */
 #ifdef SOCKS
@@ -448,6 +445,19 @@ char *personal_type_map = NULL;	/* .mailcap */
 char *pref_charset = NULL;	/* preferred character set */
 char *proxyauth_info[2] =
 {NULL, NULL};			/* Id:Password for protected proxy servers */
+
+#ifdef USE_SESSIONS
+BOOLEAN LYAutoSession = FALSE;	/* enable/disable auto saving/restoring of
+
+				   session */
+char *LYSessionFile = NULL;	/* the session file from lynx.cfg */
+char *session_file = NULL;	/* the current session file */
+char *sessionin_file = NULL;	/* only resume session from this file */
+char *sessionout_file = NULL;	/* only save session to this file */
+short session_limit = 250;	/* maximal number of entries saved for
+
+				   session file, rest will be ignored */
+#endif /* USE_SESSIONS */
 char *startfile = NULL;		/* the first file */
 char *startrealm = NULL;	/* the startfile realm */
 char *system_mail = NULL;	/* The path for sending mail */
@@ -460,6 +470,7 @@ int size_history;		/* number of allocated history entries */
 
 LinkInfo links[MAXLINKS];
 
+BOOLEAN nomore = FALSE;		/* display -more- string in statusline messages */
 int AlertSecs;			/* time-delay for HTAlert() messages   */
 int DebugSecs;			/* time-delay for HTProgress messages */
 int InfoSecs;			/* time-delay for Information messages */
@@ -511,6 +522,8 @@ char *LYTransferName = NULL;
 char *XLoadImageCommand = NULL;	/* Default image viewer for X */
 BOOLEAN LYNoISMAPifUSEMAP = FALSE;	/* Omit ISMAP link if MAP present? */
 int LYHiddenLinks = HIDDENLINKS_SEPARATE;	/* Show hidden links? */
+
+char *SSL_cert_file = NULL;	/* Default CA CERT file */
 
 int Old_DTD = NO;
 static BOOL DTD_recovery = NO;
@@ -1255,6 +1268,7 @@ int main(int argc,
     StrAllocCopy(URLDomainPrefixes, URL_DOMAIN_PREFIXES);
     StrAllocCopy(URLDomainSuffixes, URL_DOMAIN_SUFFIXES);
     StrAllocCopy(XLoadImageCommand, XLOADIMAGE_COMMAND);
+    StrAllocCopy(SSL_cert_file, SSL_CERT_FILE);
 
 #ifndef DISABLE_BIBP
     StrAllocCopy(BibP_globalserver, BIBP_GLOBAL_SERVER);
@@ -1376,7 +1390,7 @@ int main(int argc,
      * Set up the TRACE log path, and logging if appropriate.  - FM
      */
     if ((cp = LYGetEnv("LYNX_TRACE_FILE")) == 0)
-	cp = TRACE_FILE;
+	cp = FNAME_LYNX_TRACE;
     LYTraceLogPath = typeMallocn(char, LY_MAXPATH);
 
     LYAddPathToHome(LYTraceLogPath, LY_MAXPATH, cp);
@@ -1694,7 +1708,7 @@ int main(int argc,
 	if (LYCookieFile == NULL) {
 	    LYCookieFile = typeMallocn(char, LY_MAXPATH);
 
-	    LYAddPathToHome(LYCookieFile, LY_MAXPATH, COOKIE_FILE);
+	    LYAddPathToHome(LYCookieFile, LY_MAXPATH, FNAME_LYNX_COOKIES);
 	} else {
 	    LYTildeExpand(&LYCookieFile, FALSE);
 	}
@@ -2170,6 +2184,9 @@ int main(int argc,
 #endif
 
 	ena_csi((BOOLEAN) (LYlowest_eightbit[current_char_set] > 155));
+#ifdef USE_SESSIONS
+	RestoreSession();
+#endif /* USE_SESSIONS */
 	status = mainloop();
 	LYCloseCloset(RECALL_URL);
 	LYCloseCloset(RECALL_MAIL);
@@ -2190,13 +2207,17 @@ int main(int argc,
 /*
  * Called by HTAccessInit to register any protocols supported by lynx.
  * Protocols added by lynx:
- *    LYNXKEYMAP, lynxcgi, LYNXIMGMAP, LYNXCOOKIE, LYNXMESSAGES
+ *    LYNXKEYMAP, lynxcgi, LYNXIMGMAP, LYNXCOOKIE, LYNXCACHE, LYNXMESSAGES
  */
 #ifdef GLOBALREF_IS_MACRO
 extern GLOBALREF (HTProtocol, LYLynxKeymap);
 extern GLOBALREF (HTProtocol, LYLynxCGI);
 extern GLOBALREF (HTProtocol, LYLynxIMGmap);
 extern GLOBALREF (HTProtocol, LYLynxCookies);
+
+#ifdef USE_CACHEJAR
+extern GLOBALREF (HTProtocol, LYLynxCache);
+#endif
 extern GLOBALREF (HTProtocol, LYLynxStatusMessages);
 
 #else
@@ -2204,6 +2225,10 @@ GLOBALREF HTProtocol LYLynxKeymap;
 GLOBALREF HTProtocol LYLynxCGI;
 GLOBALREF HTProtocol LYLynxIMGmap;
 GLOBALREF HTProtocol LYLynxCookies;
+
+#ifdef USE_CACHEJAR
+GLOBALREF HTProtocol LYLynxCache;
+#endif
 GLOBALREF HTProtocol LYLynxStatusMessages;
 #endif /* GLOBALREF_IS_MACRO */
 
@@ -2213,6 +2238,9 @@ void LYRegisterLynxProtocols(void)
     HTRegisterProtocol(&LYLynxCGI);
     HTRegisterProtocol(&LYLynxIMGmap);
     HTRegisterProtocol(&LYLynxCookies);
+#ifdef USE_CACHEJAR
+    HTRegisterProtocol(&LYLynxCache);
+#endif
     HTRegisterProtocol(&LYLynxStatusMessages);
 }
 
@@ -2826,6 +2854,13 @@ static int nopause_fun(char *next_arg GCC_UNUSED)
     return 0;
 }
 
+/* -nomore */
+static int nomore_fun(char *next_arg GCC_UNUSED)
+{
+    nomore = TRUE;
+    return 0;
+}
+
 /* -noreverse */
 static int noreverse_fun(char *next_arg GCC_UNUSED)
 {
@@ -3142,10 +3177,13 @@ static int version_fun(char *next_arg GCC_UNUSED)
     HTSprintf0(&result, gettext("%s Version %s (%s)"),
 	       LYNX_NAME, LYNX_VERSION,
 	       LYVersionDate());
-#ifdef USE_SSL
+
     StrAllocCat(result, "\n");
+#ifdef USE_SSL
     HTSprintf(&result, "libwww-FM %s,", HTLibraryVersion);
     append_ssl_version(&result, " ");
+#else
+    HTSprintf(&result, "libwww-FM %s", HTLibraryVersion);
 #endif /* USE_SSL */
 
 #if defined(NCURSES) && defined(HAVE_CURSES_VERSION)
@@ -3285,7 +3323,8 @@ static Config_Type Arg_Table [] =
    ),
    PARSE_FUN(
       "base",		4|FUNCTION_ARG,		base_fun,
-      "prepend a request URL comment and BASE tag to text/html\noutputs for -source dumps"
+      "prepend a request URL comment and BASE tag to text/html\n\
+outputs for -source dumps"
    ),
 #ifndef DISABLE_BIBP
    PARSE_STR(
@@ -3454,7 +3493,8 @@ keys (may be incompatible with some curses packages)"
 #endif
    PARSE_SET(
       "force_empty_hrefless_a",	4|SET_ARG,	force_empty_hrefless_a,
-      "\nforce HREF-less 'A' elements to be empty (close them as\nsoon as they are seen)"
+      "\nforce HREF-less 'A' elements to be empty (close them as\n\
+soon as they are seen)"
    ),
    PARSE_SET(
       "force_html",	4|SET_ARG,		LYforce_HTML_mode,
@@ -3612,7 +3652,11 @@ keys (may be incompatible with some curses packages)"
    ),
    PARSE_SET(
       "nomargins",	4|SET_ARG,		no_margins,
-      "disable the right/left margins in the default style-sheet"
+      "disable the right/left margins in the default\nstyle-sheet"
+   ),
+   PARSE_FUN(
+      "nomore",		4|FUNCTION_ARG,		nomore_fun,
+      "disable -more- string in statusline messages"
    ),
 #if defined(HAVE_SIGACTION) && defined(SIGWINCH)
    PARSE_SET(
@@ -3699,11 +3743,13 @@ with partial-display logic"
    ),
    PARSE_SET(
       "popup",		4|UNSET_ARG,		LYUseDefSelPop,
-      "toggles handling of single-choice SELECT options via\npopup windows or as lists of radio buttons"
+      "toggles handling of single-choice SELECT options via\n\
+popup windows or as lists of radio buttons"
    ),
    PARSE_FUN(
       "post_data",	2|FUNCTION_ARG,		post_data_fun,
-      "user data for post forms, read from stdin,\nterminated by '---' on a line"
+      "user data for post forms, read from stdin,\n\
+terminated by '---' on a line"
    ),
    PARSE_SET(
       "preparsed",	4|SET_ARG,		LYPreparsedSource,
@@ -3771,6 +3817,21 @@ with the PREV_DOC command or from the History List"
       "selective",	4|FUNCTION_ARG,		selective_fun,
       "require .www_browsable files to browse directories"
    ),
+#ifdef USE_SESSIONS
+   PARSE_STR(
+      "session",	2|NEED_LYSTRING_ARG,	session_file,
+      "=FILENAME\nresumes from specified file on startup and\n\
+saves session to that file on exit"
+   ),
+   PARSE_STR(
+      "sessionin",	2|NEED_LYSTRING_ARG,	sessionin_file,
+      "=FILENAME\nresumes session from specified file"
+   ),
+   PARSE_STR(
+      "sessionout",	2|NEED_LYSTRING_ARG,	sessionout_file,
+      "=FILENAME\nsaves session to specified file"
+   ),
+#endif /* USE_SESSIONS */
    PARSE_SET(
       "short_url",	4|SET_ARG,		long_url_ok,
       "enables examination of beginning and end of long URL in\nstatus line"
@@ -3793,8 +3854,8 @@ with the PREV_DOC command or from the History List"
 #endif
    PARSE_SET(
       "soft_dquotes",	4|TOGGLE_ARG,		soft_dquotes,
-      "toggles emulation of the old Netscape and Mosaic bug which\n\
-treated '>' as a co-terminator for double-quotes and tags"
+      "toggles emulation of the old Netscape and Mosaic\n\
+bug which treated '>' as a co-terminator for\ndouble-quotes and tags"
    ),
    PARSE_FUN(
       "source",		4|FUNCTION_ARG,		source_fun,
@@ -3810,7 +3871,7 @@ treated '>' as a co-terminator for double-quotes and tags"
    ),
    PARSE_SET(
       "stderr",		4|SET_ARG,		dump_to_stderr,
-      "write warning messages to standard error when -dump -or -source is used"
+      "write warning messages to standard error when -dump\nor -source is used"
    ),
    PARSE_SET(
       "stdin",		4|SET_ARG,		startfile_stdin,
@@ -3846,7 +3907,7 @@ treated '>' as a co-terminator for double-quotes and tags"
 #endif
    PARSE_SET(
       "tlog",		2|TOGGLE_ARG,		LYUseTraceLog,
-      "toggles use of a Lynx Trace Log for the current session"
+      "toggles use of a Lynx Trace Log for the current\nsession"
    ),
 #ifdef TEXTFIELDS_MAY_NEED_ACTIVATION
    PARSE_SET(
@@ -3870,7 +3931,7 @@ treated '>' as a co-terminator for double-quotes and tags"
    ),
    PARSE_SET(
       "trim_input_fields", 2|SET_ARG,		LYtrimInputFields,
-      "trim input text/textarea fields in forms"
+      "\ntrim input text/textarea fields in forms"
    ),
    PARSE_SET(
       "underline_links",4|TOGGLE_ARG,		LYUnderlineLinks,
@@ -3892,11 +3953,14 @@ treated '>' as a co-terminator for double-quotes and tags"
    ),
    PARSE_SET(
       "validate",	2|SET_ARG,		LYValidate,
-      "accept only http URLs (meant for validation)\nimplies more restrictions than -anonymous, but\ngoto is allowed for http and https"
+      "accept only http URLs (meant for validation)\n\
+implies more restrictions than -anonymous, but\n\
+goto is allowed for http and https"
    ),
    PARSE_SET(
       "verbose",	4|TOGGLE_ARG,		verbose_img,
-      "toggles [LINK], [IMAGE] and [INLINE] comments \nwith filenames of these images"
+      "toggles [LINK], [IMAGE] and [INLINE] comments\n\
+with filenames of these images"
    ),
    PARSE_FUN(
       "version",	1|FUNCTION_ARG,		version_fun,

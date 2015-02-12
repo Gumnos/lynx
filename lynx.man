@@ -1,4 +1,4 @@
-.\" $LynxId: lynx.man,v 1.75 2007/07/01 23:42:16 tom Exp $
+.\" $LynxId: lynx.man,v 1.80 2008/02/17 19:14:40 Paul.B.Mahol Exp $
 .nr N -1
 .nr D 5
 .TH LYNX 1
@@ -358,7 +358,7 @@ do justification of text.
 .B \-link\fR=\fINUMBER
 starting count for lnk#.dat files produced by \fB\-crawl\fR.
 .TP
-.B -listonly
+.B \-listonly
 for \fB-dump\fR, show only the list of links.
 .TP
 .B \-localhost
@@ -371,6 +371,8 @@ Lynx was compiled with local execution enabled).
 .B \-lss\fR=\fIFILENAME
 specify filename containing color-style information.
 The default is lynx.lss.
+If you give an empty filename, \fBlynx\fP uses a built-in monochrome
+scheme which imitates the non-color-style configuration.
 .TP
 .B \-mime_header
 prints the MIME header of a fetched document along with its
@@ -417,6 +419,9 @@ disable mailing of error messages to document owners.
 .TP
 .B \-nomargins
 disable left/right margins in the default style sheet.
+.TP
+.B \-nomore
+disable -more- string in statusline messages.
 .TP
 .B \-nonrestarting_sigwinch
 This flag is not available on all systems,
@@ -665,6 +670,15 @@ toggles showing arrows at ends of the scrollbar.
 .B \-selective
 require .www_browsable files to browse directories.
 .TP
+.B \-session\fR=\fIFILENAME
+resumes from specified file on startup and saves session to that file on exit.
+.TP
+.B \-sessionin\fR=\fIFILENAME
+resumes session from specified file.
+.TP
+.B \-sessionout\fR=\fIFILENAME
+saves session to specified file.
+.TP
 .B \-short_url
 show very long URLs in the status line with "..." to represent the
 portion which cannot be displayed.
@@ -781,7 +795,7 @@ traverse all http links derived from startfile.  When used with
 is output to a file, intended for indexing.  See CRAWL.announce
 for more information.
 .TP
-.B trim_input_fields
+.B \-trim_input_fields
 trim input text/textarea fields in forms.
 .TP
 .B \-underline_links

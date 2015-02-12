@@ -1,4 +1,4 @@
-/* $LynxId: LYReadCFG.c,v 1.124 2007/08/02 19:40:31 tom Exp $ */
+/* $LynxId: LYReadCFG.c,v 1.127 2008/02/11 00:54:34 Paul.B.Mahol Exp $ */
 #ifndef NO_RULES
 #include <HTRules.h>
 #else
@@ -111,14 +111,40 @@ static void free_all_item_lists(void)
 }
 
 /*
- * Process string buffer fields for DOWNLOADER or UPLOADER menus.
+ * Process string buffer fields for DOWNLOADER or UPLOADER
+ *                               or PRINTERS   or EXTERNALS menus
  */
 static void add_item_to_list(char *buffer,
 			     lynx_list_item_type **list_ptr,
 			     int special)
 {
-    char *colon, *next_colon;
+    char *colon, *next_colon, *last_colon;
     lynx_list_item_type *cur_item, *prev_item;
+
+    /*
+     * Check if the XWINDOWS or NON_XWINDOWS keyword is present in the last
+     * field, and act properly when found depending if external environment
+     * $DISPLAY variable is set.
+     */
+    if ((last_colon = strrchr(buffer, ':')) != NULL && *(last_colon - 1) != '\\') {
+	*last_colon++ = '\0';
+	/*
+	 * If last_colon equals XWINDOWS then only continue
+	 * if there is a $DISPLAY variable
+	 */
+	if (!strcasecomp(last_colon, "XWINDOWS")) {
+	    if (LYgetXDisplay() == NULL)
+		return;
+	}
+	/*
+	 * If last_colon equals NON_XWINDOWS then only continue
+	 * if there is no $DISPLAY variable
+	 */
+	else if (!strcasecomp(last_colon, "NON_XWINDOWS")) {
+	    if (LYgetXDisplay() != NULL)
+		return;
+	}
+    }
 
     /*
      * Make a linked list
@@ -1212,6 +1238,18 @@ static int read_htmlsrc_tagname_xform(char *str)
 }
 #endif
 
+#ifdef USE_SESSIONS
+static int session_limit_fun(char *value)
+{
+    session_limit = (short) atoi(value);
+    if (session_limit < 1)
+	session_limit = 1;
+    else if (session_limit > MAX_SESSIONS)
+	session_limit = MAX_SESSIONS;
+    return 0;
+}
+#endif /* USE_SESSIONS */
+
 #if defined(PDCURSES) && defined(PDC_BUILD) && PDC_BUILD >= 2401
 static int screen_size_fun(char *value)
 {
@@ -1493,6 +1531,11 @@ static Config_Type Config_Table [] =
 #endif
      PARSE_SET(RC_SEEK_FRAG_AREA_IN_CUR, LYSeekFragAREAinCur),
      PARSE_SET(RC_SEEK_FRAG_MAP_IN_CUR, LYSeekFragMAPinCur),
+#ifdef USE_SESSIONS
+     PARSE_SET(RC_AUTO_SESSION,         LYAutoSession),
+     PARSE_STR(RC_SESSION_FILE,         LYSessionFile),
+     PARSE_FUN(RC_SESSION_LIMIT,        session_limit_fun),
+#endif
      PARSE_SET(RC_SET_COOKIES,          LYSetCookies),
      PARSE_SET(RC_SHOW_CURSOR,          LYShowCursor),
      PARSE_STR(RC_SHOW_KB_NAME,         LYTransferName),
@@ -1505,6 +1548,7 @@ static Config_Type Config_Table [] =
      PARSE_ENU(RC_SOURCE_CACHE,         LYCacheSource, tbl_source_cache),
      PARSE_ENU(RC_SOURCE_CACHE_FOR_ABORTED, LYCacheSourceForAborted, tbl_abort_source_cache),
 #endif
+     PARSE_STR(RC_SSL_CERT_FILE,        SSL_cert_file),
      PARSE_STR(RC_STARTFILE,            startfile),
      PARSE_SET(RC_STRIP_DOTDOT_URLS,    LYStripDotDotURLs),
      PARSE_SET(RC_SUBSTITUTE_UNDERSCORES, use_underscore),

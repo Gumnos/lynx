@@ -1,5 +1,5 @@
 /*
- * $LynxId: GridText.c,v 1.142 2007/08/02 19:30:32 tom Exp $
+ * $LynxId: GridText.c,v 1.144 2008/02/11 00:07:05 Paul.B.Mahol Exp $
  *
  *		Character grid hypertext object
  *		===============================
@@ -14236,3 +14236,260 @@ int HTMainText_Get_UCLYhndl(void)
 	    HTAnchor_getUCLYhndl(HTMainText->node_anchor, UCT_STAGE_MIME)
 	    : -1);
 }
+
+#ifdef USE_CACHEJAR
+static int LYHandleCache(const char *arg,
+			 HTParentAnchor *anAnchor,
+			 HTFormat format_out,
+			 HTStream *sink)
+{
+    HTFormat format_in = WWW_HTML;
+    HTStream *target = NULL;
+    char c;
+    char *buf = NULL;
+    char *title = NULL;
+    char *address = NULL;
+    char *content_type = NULL;
+    char *content_language = NULL;
+    char *content_encoding = NULL;
+    char *content_location = NULL;
+    char *content_disposition = NULL;
+    char *content_md5 = NULL;
+    char *message_id = NULL;
+    char *date = NULL;
+    char *owner = NULL;
+    char *subject = NULL;
+    char *expires = NULL;
+    char *ETag = NULL;
+    char *server = NULL;
+    char *FileCache = NULL;
+    char *last_modified = NULL;
+    char *cache_control = NULL;
+
+#ifdef USE_SOURCE_CACHE
+    char *source_cache_file = NULL;
+#endif
+    int Size = 0;
+    int x = -1;
+    int cached = 0;
+
+    /*
+     * Check if there is something to do.
+     */
+    if ((cached = HTList_count(loaded_texts)) == 0) {
+	HTProgress(CACHE_JAR_IS_EMPTY);
+	LYSleepMsg();
+	HTNoDataOK = 1;
+	return (HT_NO_DATA);
+    }
+
+    /*
+     * If # of LYNXCACHE:/# is number ask user if he/she want to delete it.
+     */
+    if (sscanf(arg, STR_LYNXCACHE "/%d", &x) == 1 && x > 0) {
+	CTRACE((tfp, "LYNXCACHE number is %d\n", x));
+	_statusline(CACHE_D_OR_CANCEL);
+	c = LYgetch_single();
+	if (c == 'D') {
+	    HText *t = (HText *) HTList_objectAt(loaded_texts, x - 1);
+
+	    HTList_removeObjectAt(loaded_texts, x - 1);
+	    HText_free(t);
+	}
+	return (HT_NO_DATA);
+    }
+
+    /*
+     * If we get to here, it was a LYNXCACHE:/ URL for creating and displaying
+     * the Cache Jar Page.
+     * Set up an HTML stream and return an updated Cache Jar Page.
+     */
+    target = HTStreamStack(format_in,
+			   format_out,
+			   sink, anAnchor);
+    if (!target || target == NULL) {
+	HTSprintf0(&buf, CANNOT_CONVERT_I_TO_O,
+		   HTAtom_name(format_in), HTAtom_name(format_out));
+	HTAlert(buf);
+	FREE(buf);
+	return (HT_NOT_LOADED);
+    }
+
+    /*
+     * Load HTML strings into buf and pass buf to the target for parsing and
+     * rendering.
+     */
+#define PUTS(buf)    (*target->isa->put_block)(target, buf, strlen(buf))
+
+    HTSprintf0(&buf,
+	       "<html>\n<head>\n<title>%s</title>\n</head>\n<body>\n",
+	       CACHE_JAR_TITLE);
+    PUTS(buf);
+    HTSprintf0(&buf, "<h1>%s (%s)%s<a href=\"%s%s\">%s</a></h1>\n",
+	       LYNX_NAME, LYNX_VERSION,
+	       HELP_ON_SEGMENT,
+	       helpfilepath, CACHE_JAR_HELP, CACHE_JAR_TITLE);
+    PUTS(buf);
+
+    /*
+     * Max number of cached documents is always same as HTCacheSize.
+     * We count them from oldest to newest. Currently cached document
+     * is *never* listed, resulting in maximal entries of Cache Jar
+     * to be HTCacheSize - 1
+     */
+    for (x = HTList_count(loaded_texts) - 1; x > 0; x--) {
+	/*
+	 * The number of the document in the cache list, its title in a link,
+	 * and its address and memory allocated for each cached document.
+	 */
+	HText *cachedoc = (HText *) HTList_objectAt(loaded_texts, x);
+
+	if (cachedoc != 0) {
+	    HTParentAnchor *docanchor = cachedoc->node_anchor;
+
+	    if (docanchor != 0) {
+#ifdef USE_SOURCE_CACHE
+		source_cache_file = docanchor->source_cache_file;
+#endif
+		Size = docanchor->content_length;
+		StrAllocCopy(title, docanchor->title);
+		StrAllocCopy(address, docanchor->address);
+		content_type = docanchor->content_type;
+		content_language = docanchor->content_language;
+		content_encoding = docanchor->content_encoding;
+		content_location = docanchor->content_location;
+		content_disposition = docanchor->content_disposition;
+		content_md5 = docanchor->content_md5;
+		message_id = docanchor->message_id;
+		owner = docanchor->owner;
+		StrAllocCopy(subject, docanchor->subject);
+		date = docanchor->date;
+		expires = docanchor->expires;
+		ETag = docanchor->ETag;
+		StrAllocCopy(server, docanchor->server);
+		FileCache = docanchor->FileCache;
+		last_modified = docanchor->last_modified;
+		cache_control = docanchor->cache_control;
+	    }
+	}
+
+	LYEntify(&address, TRUE);
+	if (isEmpty(title))
+	    StrAllocCopy(title, NO_TITLE);
+	else
+	    LYEntify(&title, TRUE);
+
+	HTSprintf0(&buf,
+		   "<p><em>%d.</em> Title: <a href=\"%s%d\">%s</a><br />URL: <a href=\"%s\">%s</a><br />",
+		   x, STR_LYNXCACHE, x, title, address, address);
+	PUTS(buf);
+	if (Size > 0) {
+	    HTSprintf0(&buf, "Size: %d  ", Size);
+	    PUTS(buf);
+	}
+	if (cachedoc->Lines > 0) {
+	    HTSprintf0(&buf, "Lines: %d  ", cachedoc->Lines);
+	    PUTS(buf);
+	}
+	if (FileCache != NULL) {
+	    HTSprintf0(&buf, "File-Cache: <a href=\"file://%s\">%s</a>  ",
+		       FileCache, FileCache);
+	    PUTS(buf);
+	}
+	if (cache_control != NULL) {
+	    HTSprintf0(&buf, "Cache-Control: %s  ", cache_control);
+	    PUTS(buf);
+	}
+	if (content_type != NULL) {
+	    HTSprintf0(&buf, "Content-Type: %s  ", content_type);
+	    PUTS(buf);
+	}
+	if (content_language != NULL) {
+	    HTSprintf0(&buf, "Content-Language: %s  ", content_language);
+	    PUTS(buf);
+	}
+	if (content_encoding != NULL) {
+	    HTSprintf0(&buf, "Content-Encoding: %s  ", content_encoding);
+	    PUTS(buf);
+	}
+	if (content_location != NULL) {
+	    HTSprintf0(&buf, "Content-Location: %s  ", content_location);
+	    PUTS(buf);
+	}
+	if (content_disposition != NULL) {
+	    HTSprintf0(&buf, "Content-Disposition: %s  ", content_disposition);
+	    PUTS(buf);
+	}
+	if (content_md5 != NULL) {
+	    HTSprintf0(&buf, "Content-MD5: %s  ", content_md5);
+	    PUTS(buf);
+	}
+	if (message_id != NULL) {
+	    HTSprintf0(&buf, "Message-ID: %s  ", message_id);
+	    PUTS(buf);
+	}
+	if (subject != NULL) {
+	    LYEntify(&subject, TRUE);
+	    HTSprintf0(&buf, "Subject: %s  ", subject);
+	    PUTS(buf);
+	}
+	if (owner != NULL) {
+	    HTSprintf0(&buf, "Owner: <a href=%s>%s</a>  ", owner, owner);
+	    PUTS(buf);
+	}
+	if (date != NULL) {
+	    HTSprintf0(&buf, "Date: %s  ", date);
+	    PUTS(buf);
+	}
+	if (expires != NULL) {
+	    HTSprintf0(&buf, "Expires: %s  ", expires);
+	    PUTS(buf);
+	}
+	if (last_modified != NULL) {
+	    HTSprintf0(&buf, "Last-Modified: %s  ", last_modified);
+	    PUTS(buf);
+	}
+	if (ETag != NULL) {
+	    HTSprintf0(&buf, "ETag: %s  ", ETag);
+	    PUTS(buf);
+	}
+	if (server != NULL) {
+	    LYEntify(&server, TRUE);
+	    HTSprintf0(&buf, "Server: <em>%s</em>  ", server);
+	    PUTS(buf);
+	}
+#ifdef USE_SOURCE_CACHE
+	if (source_cache_file != NULL) {
+	    HTSprintf0(&buf,
+		       "Source-Cache-File: <a href=\"file://%s\">%s</a>",
+		       source_cache_file, source_cache_file);
+	    PUTS(buf);
+	}
+#endif
+	HTSprintf0(&buf, "<br />");
+	PUTS(buf);
+    }
+    HTSprintf0(&buf, "</body></html>");
+    PUTS(buf);
+    FREE(subject);
+    FREE(title);
+    FREE(address);
+    FREE(server);
+
+    /*
+     * Free the target to complete loading of the Cache Jar Page, and report a
+     * successful load.
+     */
+    (*target->isa->_free) (target);
+    FREE(buf);
+    return (HT_LOADED);
+}
+
+#ifdef GLOBALDEF_IS_MACRO
+#define _LYCACHE_C_GLOBALDEF_1_INIT { "LYNXCACHE",LYHandleCache,0}
+GLOBALDEF(HTProtocol, LYLynxCache, _LYCACHE_C_GLOBALDEF_1_INIT);
+#else
+GLOBALDEF HTProtocol LYLynxCache =
+{"LYNXCACHE", LYHandleCache, 0};
+#endif /* GLOBALDEF_IS_MACRO */
+#endif /* USE_CACHEJAR */

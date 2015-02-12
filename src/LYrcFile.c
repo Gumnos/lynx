@@ -1,4 +1,4 @@
-/* $LynxId: LYrcFile.c,v 1.68 2007/05/23 00:22:06 tom Exp $ */
+/* $LynxId: LYrcFile.c,v 1.72 2008/01/08 00:19:25 tom Exp $ */
 #include <HTUtils.h>
 #include <HTFTP.h>
 #include <LYUtils.h>
@@ -12,12 +12,6 @@
 #include <HTMLDTD.h>
 
 #include <LYLeaks.h>
-
-#ifdef FNAMES_8_3
-#define FNAME_LYNXRC "lynx.rc"
-#else
-#define FNAME_LYNXRC ".lynxrc"
-#endif /* FNAMES_8_3 */
 
 #define MSG_ENABLE_LYNXRC N_("Normally disabled.  See ENABLE_LYNXRC in lynx.cfg\n")
 #define putBool(value) ((value) ? "on" : "off")
@@ -128,6 +122,10 @@ Config_Enum tbl_transfer_rate[] = {
 #ifdef USE_READPROGRESS
     { "KB,ETA",		rateEtaKB },
     { "BYTES,ETA",	rateEtaBYTES },
+#endif
+#ifdef USE_PROGRESSBAR
+    { "METER",		rateBAR },
+    { "FALSE",		rateBAR },
 #endif
     { NULL,		-1 },
 };
@@ -358,7 +356,7 @@ settings made here.\n\
 #ifdef USE_PERSISTENT_COOKIES
     PARSE_STR(RC_COOKIE_FILE,	        LYCookieFile, N_("\
 cookie_file specifies the file from which to read persistent cookies.\n\
-The default is ~/.lynx_cookies.\n\
+The default is ~/" FNAME_LYNX_COOKIES ".\n\
 ")),
 #endif
     PARSE_STR(RC_COOKIE_LOOSE_INVALID_DOMAINS, LYCookieLooseCheckDomains, N_("\

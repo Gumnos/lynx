@@ -1,4 +1,4 @@
-/* $LynxId: LYUtils.c,v 1.163 2007/08/02 20:18:36 tom Exp $ */
+/* $LynxId: LYUtils.c,v 1.167 2008/02/17 18:30:19 ravenexp Exp $ */
 #include <HTUtils.h>
 #include <HTTCP.h>
 #include <HTParse.h>
@@ -1081,22 +1081,18 @@ void LYhighlight(int flag,
 #endif
 
 	if (links[cur].type == WWW_FORM_LINK_TYPE) {
-	    int len;
+	    int len, gllen;
 	    int avail_space = (LYcolLimit - LXP) + (LYcolLimit * (LYlines - LYP));
 	    const char *text = LYGetHiliteStr(cur, 0);
 
 	    if (avail_space > links[cur].l_form->size)
 		avail_space = links[cur].l_form->size;
-	    if (avail_space > (int) sizeof(buffer) - 1)
-		avail_space = (int) sizeof(buffer) - 1;
 
-	    LYstrncpy(buffer, NonNull(text), avail_space);
-	    len = strlen(buffer);
-	    while (len < avail_space) {
-		buffer[len++] = '_';
-	    }
-	    buffer[len] = 0;
-	    LYaddstr(buffer);
+	    gllen = LYmbcsstrlen(NonNull(text), utf_flag, NO);
+	    len = LYmbcs_skip_glyphs(NonNull(text), avail_space, utf_flag) - text;
+	    LYwaddnstr(LYwin, NonNull(text), len);
+	    while (gllen++ < avail_space)
+		LYaddch('_');
 
 #ifdef USE_COLOR_STYLE
 	} else if (flag == OFF) {
@@ -1431,7 +1427,7 @@ void statusline(const char *text)
     LYmove(at_lineno, 0);
     LYclrtoeol();
 
-    if (non_empty(buffer)) {
+    if (buffer[0] != '\0') {
 	BOOLEAN has_CJK = FALSE;
 
 	if (HTCJK != NOCJK) {
@@ -2315,6 +2311,14 @@ UrlTypes is_url(char *filename)
 		 * Special Internal Lynx type.
 		 */
 		result = LYNXHIST_URL_TYPE;
+
+#ifdef USE_CACHEJAR
+	    } else if (compare_type(cp, STR_LYNXCACHE, LEN_LYNXCACHE)) {
+		/* 
+		 * Special Internal Lynx type.
+		 */
+		result = LYNXCACHE_URL_TYPE;
+#endif
 
 	    } else if (compare_type(cp, STR_LYNXKEYMAP, LEN_LYNXKEYMAP)) {
 		/*
@@ -5903,7 +5907,7 @@ static BOOL IsOurSymlink(const char *name)
 
 	    if (cutoff != 0) {
 		HTSprintf0(&clone, "%.*s%s%s",
-			   cutoff - name,
+			   (int) (cutoff - name),
 			   name, PATHSEP_STR, buffer);
 		FREE(buffer);
 		buffer = clone;

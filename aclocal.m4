@@ -1,11 +1,11 @@
-dnl $LynxId: aclocal.m4,v 1.121 2007/07/30 23:23:37 tom Exp $
+dnl $LynxId: aclocal.m4,v 1.123 2008/02/17 19:40:15 tom Exp $
 dnl Macros for auto-configure script.
 dnl by T.E.Dickey <dickey@invisible-island.net>
 dnl and Jim Spath <jspath@mail.bcpl.lib.md.us>
 dnl and Philippe De Muyter <phdm@macqel.be>
 dnl
 dnl Created: 1997/1/28
-dnl Updated: 2007/07/27
+dnl Updated: 2008/02/17
 dnl
 dnl The autoconf used in Lynx development is GNU autoconf 2.13 or 2.52, patched
 dnl by Thomas Dickey.  See your local GNU archives, and this URL:
@@ -698,7 +698,7 @@ AC_SUBST(EXTRA_CPPFLAGS)
 
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_ADD_INCDIR version: 8 updated: 2007/07/30 19:22:58
+dnl CF_ADD_INCDIR version: 9 updated: 2008/02/09 13:15:34
 dnl -------------
 dnl Add an include-directory to $CPPFLAGS.  Don't add /usr/include, since it's
 dnl redundant.  We don't normally need to add -I/usr/local/include for gcc,
@@ -740,7 +740,7 @@ if test -n "$1" ; then
 		fi
 
 		if test "$cf_have_incdir" = no ; then
-		  AC_VERBOSE(adding $cf_add_incdir to include-path)
+		  CF_VERBOSE(adding $cf_add_incdir to include-path)
 		  ifelse($2,,CPPFLAGS,$2)="-I$cf_add_incdir $ifelse($2,,CPPFLAGS,[$]$2)"
 
           cf_top_incdir=`echo $cf_add_incdir | sed -e 's%/include/.*$%/include%'`
@@ -755,7 +755,7 @@ if test -n "$1" ; then
 fi
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_ADD_LIBDIR version: 5 updated: 2007/07/30 19:12:03
+dnl CF_ADD_LIBDIR version: 6 updated: 2008/02/09 13:15:34
 dnl -------------
 dnl	Adds to the library-path
 dnl
@@ -783,7 +783,7 @@ if test -n "$1" ; then
         done
       fi
       if test "$cf_have_libdir" = no ; then
-        AC_VERBOSE(adding $cf_add_libdir to library-path)
+        CF_VERBOSE(adding $cf_add_libdir to library-path)
         ifelse($2,,LDFLAGS,$2)="-L$cf_add_libdir $ifelse($2,,LDFLAGS,[$]$2)"
       fi
     fi
@@ -1400,14 +1400,14 @@ fi
 
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_CHECK_SSL_X509 version: 2 updated: 2007/07/30 19:12:03
+dnl CF_CHECK_SSL_X509 version: 3 updated: 2008/01/06 14:56:47
 dnl -----------------
 dnl Check for X509 support in the SSL library.
 AC_DEFUN([CF_CHECK_SSL_X509],[
 AC_MSG_CHECKING(for X509 support)
 AC_TRY_LINK(CF__SSL_HEAD [
 #include <openssl/x509.h>],
-	[X509_verify_cert_error_string(X509_STORE_CTX_get_error(X509_STORE_CTX *0))],
+	[X509_verify_cert_error_string(X509_STORE_CTX_get_error(NULL))],
 	[cf_x509_support=yes],
 	[cf_x509_support=no])
 AC_MSG_RESULT($cf_x509_support)
@@ -1417,16 +1417,19 @@ if test "$cf_x509_support" = yes ; then
 fi
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_CHECK_TYPE version: 1 updated: 2005/01/01 12:49:48
+dnl CF_CHECK_TYPE version: 2 updated: 2008/01/06 14:56:47
 dnl -------------
 dnl Add a 3rd parameter to AC_CHECK_TYPE, working around autoconf 2.5x's
 dnl deliberate incompatibility.
 dnl	$1 = name of type to check for
 dnl	$2 = default type
 dnl	$3 = additional #include's and related preprocessor lines.
+ifdef([m4_HAS_AC_CT_FOURARGS], [m4_undefine([m4_HAS_AC_CT_FOURARGS])])dnl
+ifelse(m4_PACKAGE_VERSION, [fnord_acsalt], [],
+[ifdef([m4_version_compare],[m4_define([m4_HAS_AC_CT_FOURARGS])])])dnl
 AC_DEFUN([CF_CHECK_TYPE],
 [
-ifdef([m4_version_compare],[
+ifdef([m4_HAS_AC_CT_FOURARGS],[
 	AC_CHECK_TYPE([$1],ac_cv_type_$1=yes,ac_cv_type_$1=no,[$3])
 	],[
 	AC_MSG_CHECKING(for $1)
@@ -3388,6 +3391,97 @@ case .$with_cflags in #(vi
 esac
 ])dnl
 dnl ---------------------------------------------------------------------------
+dnl CF_NSS_COMPAT version: 1 updated: 2008/01/30 18:00:00
+dnl -------------
+dnl Check for NSS compatible SSL libraries
+dnl $1 = the [optional] directory in which the library may be found
+AC_DEFUN([CF_NSS_COMPAT],[
+check=`pkg-config --version 2>/dev/null`
+if test -n "$check" ; then
+	cf_ssl_library=`pkg-config --libs nss`
+	cf_ssl_cflags=`pkg-config --cflags nss`
+else
+	# Without pkg-config, we'll kludge in some defaults
+	cf_ssl_library="-lssl3 -lsmime3 -lnss3 -lplds4 -lplc4 -lnspr4 -lpthread -ldl"
+	cf_ssl_cflags="-I/usr/include/nss3 -I/usr/include/nspr4"
+fi
+cf_ssl_library="-lnss_compat_ossl $cf_ssl_library"
+
+case "$1" in #(vi
+no) #(vi
+	cf_ssl_root=
+	;;
+yes) #(vi
+	AC_CHECK_LIB(nss_compat_ossl, SSL_get_version,[],[
+		cf_ssl_root=/usr/local/nss_compat_ossl
+		if test -d $cf_ssl_root ; then
+			CF_VERBOSE(assume it is in $cf_ssl_root)
+			cf_ssl_library="-L$cf_ssl_root/lib $cf_ssl_library"
+		else
+			AC_MSG_ERROR(cannot find NSS compilant libraries)
+		fi
+	],
+	[-lnss_compat_ossl])
+	;;
+*)
+	if test -d $1 ; then
+		if test -d $1/include ; then
+			cf_ssl_root=$1
+		elif test -d $1/../include ; then
+			cf_ssl_root=$1/..
+		else
+			AC_MSG_ERROR(cannot find NSS compilant library under $1)
+		fi
+		cf_ssl_library="-L$cf_ssl_root/lib $cf_ssl_library"
+	else
+		AC_MSG_WARN(expected a directory: $1)
+	fi
+	;;
+esac
+LIBS="$cf_ssl_library $LIBS"
+
+cf_ssl_subincs=yes
+if test -n "$cf_ssl_root" ; then
+	if test -d $cf_ssl_root/include ; then
+		cf_ssl_cflags="-I$cf_ssl_root/include  $cf_ssl_cflags"
+		test -d $cf_ssl_root/include/nss_compat_ossl || cf_ssl_subincs=no
+	fi
+fi
+CF_ADD_CFLAGS($cf_ssl_cflags)
+
+if test "$cf_ssl_subincs" = yes ; then
+AC_MSG_CHECKING(for NSS compilant include directory)
+AC_TRY_COMPILE([
+#include <stdio.h>
+#include <nss_compat_ossl/nss_compat_ossl.h>],
+	[SSL_shutdown((SSL *)0)],
+	[cf_ssl_incl=yes],
+	[cf_ssl_incl=no])
+AC_MSG_RESULT($cf_ssl_incl)
+test "$cf_ssl_incl" = yes && AC_DEFINE(USE_NSS_COMPAT_INCL)
+fi
+
+AC_MSG_CHECKING(if we can link to NSS compilant library)
+AC_TRY_LINK([
+#include <stdio.h>
+#ifdef USE_NSS_COMPAT_INCL
+#include <nss_compat_ossl/nss_compat_ossl.h>
+#else
+#include <ssl.h>
+#endif
+],
+	[SSL_shutdown((SSL *)0)],
+	[cf_ssl_library=yes],
+	[cf_ssl_library=no])
+AC_MSG_RESULT($cf_ssl_library)
+if test "$cf_ssl_library" = yes ; then
+	AC_DEFINE(USE_SSL)
+	AC_DEFINE(USE_X509_SUPPORT)
+else
+	AC_ERROR(Cannot link with NSS compilant libraries)
+fi
+])dnl
+dnl ---------------------------------------------------------------------------
 dnl CF_OUR_MESSAGES version: 7 updated: 2004/09/12 19:45:55
 dnl ---------------
 dnl Check if we use the messages included with this program
@@ -4212,7 +4306,7 @@ define([CF_SRAND_PARSE],[
 	esac
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_SSL version: 11 updated: 2007/07/29 12:32:41
+dnl CF_SSL version: 12 updated: 2008/01/06 14:56:47
 dnl ------
 dnl Check for ssl library
 dnl $1 = the [optional] directory in which the library may be found
@@ -4246,11 +4340,11 @@ AC_DEFUN([CF_SSL],[
       esac
 
     fi
-    CF_CHECK_SSL_X509
     if test -n "$cf_cv_library_path_ssl" ; then
       CF_ADD_LIBDIR($cf_cv_library_path_ssl)
     fi
     LIBS="-lssl -lcrypto $LIBS"
+    CF_CHECK_SSL_X509
   fi
 ])dnl
 dnl ---------------------------------------------------------------------------

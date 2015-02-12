@@ -1,3 +1,6 @@
+/*
+ * $LynxId: LYHistory.h,v 1.19 2008/02/11 01:05:04 tom Exp $
+ */
 #ifndef LYHISTORY_H
 #define LYHISTORY_H
 
@@ -26,6 +29,7 @@ extern "C" {
     extern void LYstore_message(const char *message);
     extern void LYstore_message2(const char *message, const char *argument);
 
+    extern HTList *Visited_Links;
     extern int nhist_extra;
 
 #ifdef __cplusplus

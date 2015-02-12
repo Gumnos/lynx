@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTTP.c,v 1.87 2007/07/03 00:20:33 tom Exp $
+ * $LynxId: HTTP.c,v 1.91 2008/02/17 19:36:08 Zdenek.Prikryl Exp $
  *
  * HyperText Tranfer Protocol	- Client implementation		HTTP.c
  * ==========================
@@ -79,6 +79,16 @@ static int HTSSLCallback(int preverify_ok, X509_STORE_CTX * x509_ctx GCC_UNUSED)
     char *msg = NULL;
     int result = 1;
 
+#ifdef USE_X509_SUPPORT
+    HTSprintf0(&msg,
+	       gettext("SSL callback:%s, preverify_ok=%d, ssl_okay=%d"),
+	       X509_verify_cert_error_string(X509_STORE_CTX_get_error(x509_ctx)),
+	       preverify_ok, ssl_okay);
+    _HTProgress(msg);
+    FREE(msg);
+#endif
+
+#ifndef USE_NSS_COMPAT_INCL
     if (!(preverify_ok || ssl_okay || ssl_noprompt)) {
 #ifdef USE_X509_SUPPORT
 	HTSprintf0(&msg, SSL_FORCED_PROMPT,
@@ -91,6 +101,7 @@ static int HTSSLCallback(int preverify_ok, X509_STORE_CTX * x509_ctx GCC_UNUSED)
 
 	FREE(msg);
     }
+#endif
     return result;
 }
 
@@ -119,6 +130,13 @@ SSL *HTGetSSLHandle(void)
 	    CTRACE((tfp,
 		    "HTGetSSLHandle: certfile is set to %s by SSL_CERT_FILE\n",
 		    certfile));
+	} else {
+	    if (non_empty(SSL_cert_file)) {
+		certfile = SSL_cert_file;
+		CTRACE((tfp,
+			"HTGetSSLHandle: certfile is set to %s by config SSL_CERT_FILE\n",
+			certfile));
+	    }
 	}
 #endif
 	atexit(free_ssl_ctx);
@@ -432,7 +450,7 @@ static BOOL acceptEncoding(int code)
 }
 
 #ifdef USE_SSL
-static void show_cert_issuer(X509 * peer_cert)
+static void show_cert_issuer(X509 * peer_cert GCC_UNUSED)
 {
 #if defined(USE_OPENSSL_INCL)
     char ssl_dn[1024];
@@ -637,8 +655,10 @@ static int HTLoadHTTP(const char *arg,
 	SSL_handle = handle = HTGetSSLHandle();
 	SSL_set_fd(handle, s);
 #if SSLEAY_VERSION_NUMBER >= 0x0900
+#ifndef USE_NSS_COMPAT_INCL
 	if (!try_tls)
 	    handle->options |= SSL_OP_NO_TLSv1;
+#endif
 #endif /* SSLEAY_VERSION_NUMBER >= 0x0900 */
 	HTSSLInitPRNG();
 	status = SSL_connect(handle);
@@ -807,6 +827,42 @@ static int HTLoadHTTP(const char *arg,
 	}
 
 	/* check the X.509v3 Subject Alternative Name */
+#ifdef USE_GNUTLS_INCL
+	if (status_sslcertcheck < 2) {
+	    int i;
+	    size_t size;
+	    gnutls_x509_crt cert;
+	    static char buf[2048];
+
+	    /* import the certificate to the x509_crt format */
+	    if (gnutls_x509_crt_init(&cert) == 0) {
+
+		if (gnutls_x509_crt_import(cert, peer_cert,
+					   GNUTLS_X509_FMT_DER) < 0) {
+		    gnutls_x509_crt_deinit(cert);
+		    goto done;
+		}
+
+		ret = 0;
+		for (i = 0; !(ret < 0); i++) {
+		    size = sizeof(buf);
+		    ret = gnutls_x509_crt_get_subject_alt_name(cert, i, buf,
+							       &size, NULL);
+
+		    if (strcasecomp_asterisk(ssl_host, buf) == 0) {
+			status_sslcertcheck = 2;
+			HTSprintf0(&msg,
+				   gettext("Verified connection to %s (subj=%s)"),
+				   ssl_host, buf);
+			_HTProgress(msg);
+			FREE(msg);
+			break;
+		    }
+
+		}
+	    }
+	}
+#endif
 #ifdef USE_OPENSSL_INCL
 	if (status_sslcertcheck < 2) {
 	    STACK_OF(GENERAL_NAME) * gens;
