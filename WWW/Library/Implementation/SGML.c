@@ -1,5 +1,5 @@
 /*
- * $LynxId: SGML.c,v 1.144 2011/06/11 12:09:43 tom Exp $
+ * $LynxId: SGML.c,v 1.148 2012/02/10 18:32:26 tom Exp $
  *
  *			General SGML Parser code		SGML.c
  *			========================
@@ -337,7 +337,7 @@ static void HTMLSRC_apply_markup(HTStream *context,
 	    (*context->actions->start_element) (context->target,
 						(int) ts->element,
 						ts->present,
-						(const char **) ts->value,
+						(STRING2PTR) ts->value,
 						context->current_tag_charset,
 						&context->include);
 	else
@@ -1357,7 +1357,7 @@ static void start_element(HTStream *context)
     status = (*context->actions->start_element) (context->target,
 						 (int) TAGNUM_OF_TAGP(new_tag),
 						 context->present,
-						 (const char **) context->value,	/* coerce type for think c */
+						 (STRING2PTR) context->value,	/* coerce type for think c */
 						 context->current_tag_charset,
 						 &context->include);
     if (status == HT_PARSER_OTHER_CONTENT)
@@ -2634,17 +2634,14 @@ static void SGML_character(HTStream *context, int c_in)
 	    /*
 	     * Terminate the numeric entity and try to handle it.  - FM
 	     */
-	    unsigned long lcode;
+	    UCode_t code;
 	    int i;
 
 	    HTChunkTerminate(string);
 #ifdef USE_PRETTYSRC
 	    entity_string = string->data;
 #endif
-	    if ((context->isHex
-		 ? sscanf(string->data, "%lx", &lcode)
-		 : sscanf(string->data, "%lu", &lcode)) == 1) {
-		UCode_t code = (UCode_t) lcode;
+	    if (UCScanCode(&code, string->data, context->isHex)) {
 
 /* =============== work in ASCII below here ===============  S/390 -- gil -- 1092 */
 		if (AssumeCP1252(context)) {

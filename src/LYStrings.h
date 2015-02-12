@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYStrings.h,v 1.79 2011/05/28 13:07:55 tom Exp $
+ * $LynxId: LYStrings.h,v 1.87 2012/02/10 18:36:39 tom Exp $
  */
 #ifndef LYSTRINGS_H
 #define LYSTRINGS_H
@@ -9,6 +9,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+    typedef const char *const Const2CharPtr;
     typedef enum {
 	NORECALL = 0
 	,RECALL_URL
@@ -38,8 +39,8 @@ extern "C" {
     extern int get_popup_number(const char *msg,
 				int *c,
 				int *rel);
-    extern int LYarrayLength(const char **list);
-    extern int LYarrayWidth(const char **list);
+    extern int LYarrayLength(STRING2PTR list);
+    extern int LYarrayWidth(STRING2PTR list);
     extern int LYgetch(void);
     extern int LYgetch_choice(void);
     extern int LYgetch_input(void);
@@ -50,6 +51,10 @@ extern "C" {
 			RecallType recall);
 #define LYGetStr(input,hidden,bufsize,recall) \
 	LYgetstr(input,hidden,(size_t)(bufsize),recall)
+    extern int LYgetBString(bstring **inputline,
+			    int hidden,
+			    size_t max_cols,
+			    RecallType recall);
     extern int LYscanFloat(const char *source, float *result);
     extern int LYscanFloat2(const char **source, float *result);
     extern char *LYstrsep(char **stringp,
@@ -195,18 +200,17 @@ extern "C" {
 #define ENHANCED_LINEEDIT
 #endif
 
-#define MAX_EDIT 1024
-
 /* EditFieldData preserves state between calls to LYEdit1
  */
     typedef struct _EditFieldData {
 
 	int sx;			/* Origin of editfield                       */
 	int sy;
-	int dspwdth;		/* Screen real estate for editting           */
+	int dspwdth;		/* Screen real estate for editing            */
 
-	int strlen;		/* Current size of string.                   */
-	int maxlen;		/* Max size of string, excluding zero at end */
+	size_t buffer_used;	/* current size of string.                   */
+	size_t buffer_size;	/* current buffer-size, excluding nul at end */
+	size_t buffer_limit;	/* buffer size limit, zero if indefinite     */
 	char pad;		/* Right padding  typically ' ' or '_'       */
 	BOOL hidden;		/* Masked password entry flag                */
 
@@ -221,10 +225,8 @@ extern "C" {
 				   unactive mark.  */
 #endif
 
-	char buffer[MAX_EDIT];	/* String buffer                          */
-
-	int offset2col[MAX_EDIT * 2];
-	int col2offset[MAX_EDIT * 2];
+	char *buffer;		/* the buffer which is being edited */
+	int *offset2col;	/* fixups for multibyte characters */
 
     } EditFieldData;
 
@@ -318,9 +320,10 @@ extern "C" {
     extern void LYTrimTrailing(char *buffer);
     extern void LYTrimAllStartfile(char *buffer);
     extern BOOLEAN LYTrimStartfile(char *buffer);
+    extern void LYFinishEdit(EditFieldData *edit);
     extern void LYSetupEdit(EditFieldData *edit, char *old,
-			    int maxstr,
-			    int maxdsp);
+			    size_t buffer_limit,
+			    int display_limit);
     extern void LYRefreshEdit(EditFieldData *edit);
     extern int EditBinding(int ch);	/* in LYEditmap.c */
     extern BOOL LYRemapEditBinding(int xlkc,
@@ -335,7 +338,7 @@ extern "C" {
     extern int LYhandlePopupList(int cur_choice,
 				 int ly,
 				 int lx,
-				 const char **choices,
+				 STRING2PTR choices,
 				 int width,
 				 int i_length,
 				 int disabled,

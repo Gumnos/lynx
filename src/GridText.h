@@ -1,5 +1,5 @@
 /*
- * $LynxId: GridText.h,v 1.65 2010/09/26 23:31:23 tom Exp $
+ * $LynxId: GridText.h,v 1.69 2012/02/12 23:25:38 tom Exp $
  *
  * Specialities of GridText as subclass of HText
  */
@@ -217,9 +217,10 @@ US-ASCII control characters <32 which are not defined in Unicode standard
 				int underline,
 				InputFieldData * I);
     extern void HText_endInput(HText *text);
+    extern PerFormInfo *HText_PerFormInfo(int number);
     extern int HText_SubmitForm(FormInfo * submit_item, DocInfo *doc,
-				char *link_name,
-				char *link_value);
+				const char *link_name,
+				const char *link_value);
     extern void HText_DisableCurrentForm(void);
     extern void HText_ResetForm(FormInfo * form);
     extern void HText_activateRadioButton(FormInfo * form);
@@ -260,7 +261,8 @@ US-ASCII control characters <32 which are not defined in Unicode standard
     extern BOOL HText_AreDifferent(HTParentAnchor *anchor,
 				   const char *full_address);
 
-    extern int HText_ExtEditForm(LinkInfo * form_link);
+    extern int HText_EditTextArea(LinkInfo * form_link);
+    extern void HText_EditTextField(LinkInfo * form_link);
     extern void HText_ExpandTextarea(LinkInfo * form_link, int newlines);
     extern int HText_InsertFile(LinkInfo * form_link);
 

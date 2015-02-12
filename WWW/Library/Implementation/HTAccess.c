@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTAccess.c,v 1.74 2011/05/24 09:35:29 tom Exp $
+ * $LynxId: HTAccess.c,v 1.76 2012/02/04 00:15:53 tom Exp $
  *
  *		Access Manager					HTAccess.c
  *		==============
@@ -687,6 +687,11 @@ static int HTLoad(const char *addr,
     HTProtocol *p;
     int status = get_physical(addr, anchor);
 
+    if (reloading) {
+	FREE(anchor->charset);
+	FREE(anchor->UCStages);
+    }
+
     if (status == HT_FORBIDDEN) {
 	/* prevent crash if telnet or similar was forbidden by rule. - kw */
 	LYFixCursesOn("show alert:");
@@ -890,15 +895,16 @@ static BOOL HTLoadDocument(const char *full_address,	/* may include #fragment */
 	 * based on an If-Modified-Since check, etc.) but the code for doing
 	 * those other things isn't available yet.
 	 */
-	if (LYoverride_no_cache ||
+	if (!reloading &&
+	    (LYoverride_no_cache ||
 #ifdef DONT_TRACK_INTERNAL_LINKS
-	    !HText_hasNoCacheSet(text) ||
-	    !HText_AreDifferent(anchor, full_address)
+	     !HText_hasNoCacheSet(text) ||
+	     !HText_AreDifferent(anchor, full_address)
 #else
-	    ((LYinternal_flag || !HText_hasNoCacheSet(text)) &&
-	     !isLYNXIMGMAP(full_address))
+	     ((LYinternal_flag || !HText_hasNoCacheSet(text)) &&
+	      !isLYNXIMGMAP(full_address))
 #endif /* TRACK_INTERNAL_LINKS */
-	    ) {
+	    )) {
 	    CTRACE((tfp, "HTAccess: Document already in memory.\n"));
 	    HText_select(text);
 

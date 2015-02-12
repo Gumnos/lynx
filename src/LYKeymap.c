@@ -1,4 +1,4 @@
-/* $LynxId: LYKeymap.c,v 1.79 2011/06/11 12:36:28 tom Exp $ */
+/* $LynxId: LYKeymap.c,v 1.83 2012/02/12 18:35:32 tom Exp $ */
 #include <HTUtils.h>
 #include <LYUtils.h>
 #include <LYGlobalDefs.h>
@@ -743,8 +743,14 @@ static Kcmd revmap[] = {
 	LYK_ACTIVATE, "ACTIVATE",
 	"go to the document given by the current link" ),
     DATA(
-	LYK_SUBMIT, "MOUSE_SUBMIT",
+	LYK_MOUSE_SUBMIT, "MOUSE_SUBMIT",
 	"DO NOT MAP:  follow current link, submit" ),
+    DATA(
+	LYK_SUBMIT, "SUBMIT",
+	"prompt and submit form" ),
+    DATA(
+	LYK_RESET, "RESET",
+	"reset fields on current form" ),
     DATA(
 	LYK_GOTO, "GOTO",
 	"go to a document given as a URL" ),
@@ -943,6 +949,9 @@ static Kcmd revmap[] = {
     DATA(
 	LYK_CHDIR, "CHDIR",
 	"change current directory" ),
+    DATA(
+	LYK_PWD, "PWD",
+	"print current directory" ),
 #endif
 #ifdef USE_CURSES_PADS
     DATA(
@@ -1350,15 +1359,32 @@ int lecname_to_lec(const char *func)
 {
     int i;
     struct emap *mp;
+    int result = -1;
 
     if (non_empty(func)) {
 	for (i = 0, mp = ekmap; (*mp).name != NULL; mp++, i++) {
 	    if (strcmp((*mp).name, func) == 0) {
-		return (*mp).code;
+		result = (*mp).code;
+		break;
 	    }
 	}
     }
-    return (-1);
+    return result;
+}
+
+const char *lec_to_lecname(int code)
+{
+    struct emap *mp;
+    int i;
+    const char *result = 0;
+
+    for (i = 0, mp = ekmap; (*mp).name != NULL; mp++, i++) {
+	if ((*mp).code == code) {
+	    result = (*mp).name;
+	    break;
+	}
+    }
+    return result;
 }
 
 /*

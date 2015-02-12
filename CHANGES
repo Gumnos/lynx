@@ -1,7 +1,73 @@
--- $LynxId: CHANGES,v 1.556 2011/06/12 16:04:15 tom Exp $
+-- $LynxId: CHANGES,v 1.588 2012/02/13 00:16:30 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2012-02-12 (2.8.8dev.10)
+* updated po/lynx.pot; there are a few new messages -TD
+* add "submit" and "reset" commands (Debian #603645) -TD
+* add "pwd" command, to show current working directory in the statusline -TD
+* modify check in HText_endForm() when a form contains only a single input
+  field, to allow a return in any text-like field other than textarea to cause
+  the form to be submitted (Debian #603648) -TD
+* add bzlib to win32 makefile.msc -TD
+* define WIN32_LEAN_AND_MEAN in makefile.msc to accommodate naming conflict
+  in recent Win32 SDKs, which otherwise include winsock.h in windows.h -TD
+* fixes for the dev.9 Win32 feature to toggle between normal/fullscreen,
+  by checking the actual screensize after maximizing the display -TD
+* use ASCII apostrophe for 7-bit approximation to U+02bd as well -TD
+* use ASCII apostrophe 0x27 for 7-bit approximation to Unicode apostrophe
+  U+02bc (suggested by Ralph Babel)
+* update LYLeaks.c / LYLeaks.h to include the bstring allocation, copy and free
+  functions -TD
+* several fixes for the -find-leaks option, e.g., include LYLeaks.h in a few
+  modules, modify the StrAllocVsprintf function to update the bookkeeping,
+  etc -TD
+* move call to LYCanWriteFile into LYValidateOutput, to make prompts for
+  download, print and upload more alike -TD
+* correct an old bug in send_file_to_file(), used when printing a page to a
+  file, which prevented its check for appending to an existing file -TD
+* modify LYValidateFilename to use LYTildeExpand -TD
+* modify LYConvertToURL to use LYTildeExpand for Unix, and further modify
+  LYTildeExpand to lookup given user's home directory, thereby making commands
+  such as "g ~root/tmp" work as expected -TD
+* replaced most LYgetStr calls with LYgetBString, except for LYMail.c and
+  LYNews.c since those do use LYgetStr's limits as it was designed.  Other
+  calls generally did not need those limits -TD
+* modify finish_ExtEditForm to eliminate wrapping when an edited line is longer
+  than MAX_LINE.  The user is still offered the choice of wrapping to the
+  displayed size of a TEXTAREA, but if declined, the TEXTAREA's content will
+  not be wrapped -TD
+* modify LYgetstr, making it call revised function LYgetBString which handles
+  bstring's, and allows editing fields which can grow without fixed buffer
+  limits.  In particular, forms all use the same calls, which means that
+  their result is no longer limited by MAX_LINE -TD
+* extend ^X-e editing of textarea's to include single-line fields -TD
+* modify comparison for splitting lines to allow for long preformatted lines,
+  e.g., using &nbsp;'s to not wrap when the line-wrap mode is disabled -TD
+* modify cfg2html.pl to handle options which contain a digit, e.g.,
+  HTML5_CHARSETS whose default value was not marked properly -TD
+* modify HTLoadDocument() to not retain a cached document if user is explicitly
+  doing a refresh.  This fixes the case for a #fragment url, which was
+  otherwise treated as the same as the address without the #fragment -TD
+* clarify version of GPL used in README (request by Paul Menzel) -TD
+* modify HTLoad() to discard charset information before reloading a document,
+  in case the server changes the content-type information between loads
+  (report by Stanislav Brabec) -TD
+* use tidy to indent html documentation -TD
+* provide a way to substitute parameters in URLs for jumpfiles (adapted from
+  patch by Mark Skilbeck -TD
+* ensure that button/input tags have a value for display, in case the tag is
+  improperly terminated (report by Aki Helin) -TD
+* work around glibc bug in sscanf in SGML_character() using strtol() (report by
+  Aki Helin) -TD
+* add check for charset attribute on meta element -Kihara Hideto
+* eliminate ON/OFF macros, using TRUE/FALSE both to work around breakage from
+  zlib 1.2.5.1 changes as well as because they were unnecessary (GenToo
+  #383113) -Nikos Chantziaras, TD
+* updated several configure script macros (TD):
+  CF_ANSI_CC_CHECK, CF_CURSES_LIBS, CF_LD_RPATH_OPT, CF_NETLIBS,
+  CF_XOPEN_SOURCE, CF_X_ATHENA_LIBS
 
 2011-06-12 (2.8.8dev.9)
 * modfy cfg2html to add ".url" directive for referencing RFC's etc -TD

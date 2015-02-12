@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYUtils.c,v 1.213 2011/06/11 12:14:34 tom Exp $
+ * $LynxId: LYUtils.c,v 1.221 2012/02/10 18:22:50 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTCP.h>
@@ -553,7 +553,7 @@ static BOOL show_whereis_targets(int flag,
 		     * Start emphasis immediately if we are making the link
 		     * non-current.  -FM
 		     */
-		    if (flag != ON) {
+		    if (flag != TRUE) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
 			LYaddstr(tmp);
@@ -571,7 +571,7 @@ static BOOL show_whereis_targets(int flag,
 		     * Start emphasis immediately if we are making the link
 		     * non-current.  -FM
 		     */
-		    if (flag != ON) {
+		    if (flag != TRUE) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
 			LYaddstr(tmp);
@@ -585,7 +585,7 @@ static BOOL show_whereis_targets(int flag,
 		     * Start emphasis immediately if we are making the link
 		     * non-current.  -FM
 		     */
-		    if (flag != ON) {
+		    if (flag != TRUE) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
 			LYaddstr(tmp);
@@ -625,10 +625,11 @@ static BOOL show_whereis_targets(int flag,
 			 * character of hightext if we are making the link
 			 * current.  -FM
 			 */
-			if (flag == ON && data[(itmp + 1)] == '\0') {
+			if (flag == TRUE && data[(itmp + 1)] == '\0') {
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
+			    (void) y;
 			    LYmove(hLine, (offset + 1));
 			} else {
 			    LYaddstr(tmp);
@@ -645,7 +646,7 @@ static BOOL show_whereis_targets(int flag,
 			 * character of hightext if we are making the link
 			 * current.  -FM
 			 */
-			if (flag == ON && data[(itmp + 1)] == '\0') {
+			if (flag == TRUE && data[(itmp + 1)] == '\0') {
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
@@ -661,7 +662,7 @@ static BOOL show_whereis_targets(int flag,
 			 * character of hightext if we are making the link
 			 * current.  -FM
 			 */
-			if (flag == ON && data[(itmp + 1)] == '\0') {
+			if (flag == TRUE && data[(itmp + 1)] == '\0') {
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
@@ -684,7 +685,7 @@ static BOOL show_whereis_targets(int flag,
 		    TargetEmphasisON = FALSE;
 		}
 		LYGetYX(y, offset);
-		if (offset < (hoffset + (flag == ON ? (hLen - 1) : hLen))
+		if (offset < (hoffset + (flag == TRUE ? (hLen - 1) : hLen))
 		/*
 		 * See if we have another hit that starts within the
 		 * hightext.  -FM
@@ -705,7 +706,7 @@ static BOOL show_whereis_targets(int flag,
 		 */
 		    && (HitOffset + offset) <
 		    (hoffset +
-		     (flag == ON ? (hLen - 1) : hLen))) {
+		     (flag == TRUE ? (hLen - 1) : hLen))) {
 		    /*
 		     * Set up the data and offset for the hit, and let the code
 		     * for within hightext hits handle it.  -FM
@@ -726,7 +727,7 @@ static BOOL show_whereis_targets(int flag,
 	     * hightext, we are done.  Otherwise, move there and start
 	     * restoring the emphasis.  -FM
 	     */
-	    if ((Offset - offset) <= (flag == ON ? (hLen - 1) : hLen)) {
+	    if ((Offset - offset) <= (flag == TRUE ? (hLen - 1) : hLen)) {
 		data = SKIP_GLYPHS(utf_flag, data, Offset - offset);
 		if (utf_flag) {
 		    LYrefresh();
@@ -751,7 +752,7 @@ static BOOL show_whereis_targets(int flag,
 		     * non-current, or we are making it current but this is not
 		     * the first or last character of the hightext.  -FM
 		     */
-		    if (flag != ON ||
+		    if (flag != TRUE ||
 			(offset > hoffset && data[itmp + 1] != '\0')) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
@@ -771,7 +772,7 @@ static BOOL show_whereis_targets(int flag,
 		     * non-current, or we are making it current but this is not
 		     * the first or last character of the hightext.  -FM
 		     */
-		    if (flag != ON ||
+		    if (flag != TRUE ||
 			(offset > hoffset && data[itmp + 1] != '\0')) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
@@ -787,7 +788,7 @@ static BOOL show_whereis_targets(int flag,
 		     * non-current, or we are making it current but this is not
 		     * the first or last character of the hightext.  -FM
 		     */
-		    if (flag != ON ||
+		    if (flag != TRUE ||
 			(offset > hoffset && data[itmp + 1] != '\0')) {
 			LYstartTargetEmphasis();
 			TargetEmphasisON = TRUE;
@@ -825,7 +826,7 @@ static BOOL show_whereis_targets(int flag,
 			 * character of hightext if we are making the link
 			 * current.  -FM
 			 */
-			if (flag == ON && data[(itmp + 1)] == '\0') {
+			if (flag == TRUE && data[(itmp + 1)] == '\0') {
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
@@ -845,7 +846,7 @@ static BOOL show_whereis_targets(int flag,
 			 * character of hightext if we are making the link
 			 * current.  -FM
 			 */
-			if (flag == ON && data[(itmp + 1)] == '\0') {
+			if (flag == TRUE && data[(itmp + 1)] == '\0') {
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
@@ -861,7 +862,7 @@ static BOOL show_whereis_targets(int flag,
 			 * character of hightext if we are making the link
 			 * current.  -FM
 			 */
-			if (flag == ON && data[(itmp + 1)] == '\0') {
+			if (flag == TRUE && data[(itmp + 1)] == '\0') {
 			    LYstopTargetEmphasis();
 			    TargetEmphasisON = FALSE;
 			    LYGetYX(y, offset);
@@ -884,7 +885,7 @@ static BOOL show_whereis_targets(int flag,
 		    TargetEmphasisON = FALSE;
 		}
 		LYGetYX(y, offset);
-		if (offset < (hoffset + (flag == ON ? (hLen - 1) : hLen))
+		if (offset < (hoffset + (flag == TRUE ? (hLen - 1) : hLen))
 		/*
 		 * See if we have another hit that starts within the
 		 * hightext.  -FM
@@ -904,7 +905,7 @@ static BOOL show_whereis_targets(int flag,
 		 * last character, we are done.  -FM
 		 */
 		    && (HitOffset + offset) <
-		    (hoffset + (flag == ON ? (hLen - 1) : hLen))) {
+		    (hoffset + (flag == TRUE ? (hLen - 1) : hLen))) {
 		    /*
 		     * If the target extends beyond our buffer, emphasize
 		     * everything in the hightext starting at this hit.
@@ -945,7 +946,7 @@ static BOOL show_whereis_targets(int flag,
 				 * last character of hightext if we are making
 				 * the link current.  -FM
 				 */
-				if (flag == ON && data[(itmp + 1)] == '\0') {
+				if (flag == TRUE && data[(itmp + 1)] == '\0') {
 				    LYstopTargetEmphasis();
 				    TargetEmphasisON = FALSE;
 				    LYGetYX(y, offset);
@@ -965,7 +966,7 @@ static BOOL show_whereis_targets(int flag,
 				 * last character of hightext if we are making
 				 * the link current.  -FM
 				 */
-				if (flag == ON && data[(itmp + 1)] == '\0') {
+				if (flag == TRUE && data[(itmp + 1)] == '\0') {
 				    LYstopTargetEmphasis();
 				    TargetEmphasisON = FALSE;
 				} else {
@@ -979,7 +980,7 @@ static BOOL show_whereis_targets(int flag,
 				 * last character of hightext if we are making
 				 * the link current.  -FM
 				 */
-				if (flag == ON && data[(itmp + 1)] == '\0') {
+				if (flag == TRUE && data[(itmp + 1)] == '\0') {
 				    LYstopTargetEmphasis();
 				    TargetEmphasisON = FALSE;
 				} else {
@@ -1025,7 +1026,7 @@ static int find_cached_style(int cur,
 	s = s_curedit;
 #endif
 
-    if (flag != ON) {
+    if (flag != TRUE) {
 	int x;
 
 	/*
@@ -1119,13 +1120,13 @@ void LYhighlight(int flag,
 	    NONNULL(target)));
 
 #if defined(TEXTFIELDS_MAY_NEED_ACTIVATION) && defined(INACTIVE_INPUT_STYLE_VH)
-    if (flag == OFF)
+    if (flag == FALSE)
 	textinput_redrawn = FALSE;
 #endif
 
     if (nlinks > 0) {
 #ifdef USE_COLOR_STYLE
-	if (flag == ON || links[cur].type == WWW_FORM_LINK_TYPE) {
+	if (flag == TRUE || links[cur].type == WWW_FORM_LINK_TYPE) {
 	    LYmove(LYP + title_adjust, LXP);
 	    LynxChangeStyle(find_cached_style(cur, flag), STACK_ON);
 	}
@@ -1134,7 +1135,7 @@ void LYhighlight(int flag,
 	    || LYGetHiliteStr(cur, 0) == NULL) {
 	    LYMoveToLink(cur, target, NULL,
 			 flag, links[cur].inUnderline, utf_flag);
-	    lynx_start_link_color(flag == ON, links[cur].inUnderline);
+	    lynx_start_link_color(flag == TRUE, links[cur].inUnderline);
 	} else {
 	    LYMoveToLink(cur, target, LYGetHiliteStr(cur, 0),
 			 flag, links[cur].inUnderline, utf_flag);
@@ -1162,7 +1163,7 @@ void LYhighlight(int flag,
 		LYaddch('_');
 
 #ifdef USE_COLOR_STYLE
-	} else if (flag == OFF) {
+	} else if (flag == FALSE) {
 	    hl2_drawn = TRUE;
 	    redraw_lines_of_link(cur);
 	    CTRACE2(TRACE_STYLE,
@@ -1196,17 +1197,17 @@ void LYhighlight(int flag,
 		int row = LYP + hi_count + title_adjust;
 
 		hi_offset = LYGetHilitePos(cur, hi_count);
-		lynx_stop_link_color(flag == ON, links[cur].inUnderline);
+		lynx_stop_link_color(flag == TRUE, links[cur].inUnderline);
 		LYmove(row, hi_offset);
 
 #ifdef USE_COLOR_STYLE
 		CTRACE2(TRACE_STYLE,
 			(tfp, "STYLE.highlight.line2: @(%d,%d), style=%d.\n",
 			 row, hi_offset,
-			 flag == ON ? s_alink : s_a));
-		LynxChangeStyle(flag == ON ? s_alink : s_a, ABS_ON);
+			 flag == TRUE ? s_alink : s_a));
+		LynxChangeStyle(flag == TRUE ? s_alink : s_a, ABS_ON);
 #else
-		lynx_start_link_color(flag == ON, links[cur].inUnderline);
+		lynx_start_link_color(flag == TRUE, links[cur].inUnderline);
 #endif
 
 		for (i = 0; (tmp[0] = hi_string[i]) != '\0'
@@ -1225,7 +1226,7 @@ void LYhighlight(int flag,
 		    }
 		}
 	    }
-	    lynx_stop_link_color(flag == ON, links[cur].inUnderline);
+	    lynx_stop_link_color(flag == TRUE, links[cur].inUnderline);
 	}
 #ifdef SHOW_WHEREIS_TARGETS
 	for (hi_count = target1_drawn ? 1 : 0;
@@ -1535,6 +1536,7 @@ void statusline(const char *text)
 		      ? (chtype) hashStyles[a].color
 		      : A_NORMAL) | ' ');
 	    LYGetYX(y, x);
+	    (void) x;
 	    if (y == at_lineno) {
 		LYclrtoeol();
 	    }
@@ -1723,8 +1725,8 @@ void LYFakeZap(int set)
 
 static int DontCheck(void)
 {
-    static long last;
-    long next;
+    static time_t last;
+    time_t next;
 
     /** Curses or slang setup was not invoked **/
     if (dump_output_immediately)
@@ -4235,21 +4237,13 @@ void LYConvertToURL(char **AllocatedString,
 	else
 #endif /* USE_DOS_DRIVES */
 	if (LYIsTilde(*old_string)) {
-	    /*
-	     * On Unix, convert '~' to Home_Dir().
-	     */
-	    StrAllocCat(*AllocatedString, wwwName(Home_Dir()));
-	    if ((cp = strchr(old_string, '/')) != NULL) {
-		/*
-		 * Append rest of path, if present, skipping "user" if "~user"
-		 * was entered, simplifying, and eliminating any residual
-		 * relative elements.  - FM
-		 */
-		StrAllocCopy(temp, cp);
-		LYTrimRelFromAbsPath(temp);
-		StrAllocCat(*AllocatedString, temp);
-		FREE(temp);
-	    }
+	    char *his_home = NULL;
+
+	    StrAllocCopy(his_home, old_string);
+	    LYTildeExpand(&his_home, FALSE);
+	    StrAllocCat(*AllocatedString, his_home);
+	    FREE(his_home);
+
 	    CTRACE((tfp, "Converted '%s' to '%s'\n",
 		    old_string, *AllocatedString));
 	} else {
@@ -5499,6 +5493,29 @@ char *LYTildeExpand(char **pathname,
 	    FREE(second);
 	} else if (temp[1] == '\0') {
 	    StrAllocCopy(*pathname, wwwName(Home_Dir()));
+#ifndef NOUSERS
+	} else {
+	    char *save;
+	    char saved = '\0';
+	    struct passwd *pw;
+
+	    for (save = temp; *save != '\0'; ++save) {
+		if (LYIsPathSep(*save)) {
+		    saved = *save;
+		    *save = '\0';
+		    break;
+		}
+	    }
+	    pw = getpwnam(temp + 1);
+	    *save = saved;
+	    if (pw != 0 && non_empty(pw->pw_dir)) {
+		temp = NULL;
+		StrAllocCopy(temp, save);
+		StrAllocCopy(*pathname, pw->pw_dir);
+		StrAllocCat(*pathname, temp);
+		FREE(temp);
+	    }
+#endif
 	}
 	CTRACE((tfp, "expanded path %s\n", *pathname));
     }
@@ -6630,66 +6647,59 @@ const char *wwwName(const char *pathname)
  * Given a user-specified filename, e.g., for download or print, validate and
  * expand it.  Expand home-directory expressions in the given string.  Only
  * allow pipes if the user can spawn shell commands.
- *
- * Both strings are fixed buffer sizes, LY_MAXPATH.
  */
-BOOLEAN LYValidateFilename(char *result,
-			   char *given)
+BOOLEAN LYValidateFilename(bstring **result,
+			   bstring **given)
 {
     BOOLEAN code = TRUE;
     char *cp = NULL;
-    const char *cp2 = NULL;
 
     /*
      * Cancel if the user entered "/dev/null" on Unix, or an "nl:" path on VMS. 
      * - FM
      */
-    if (LYIsNullDevice(given)) {
+    if (LYIsNullDevice((*given)->str)) {
 	/* just ignore it */
 	code = FALSE;
 #ifdef HAVE_POPEN
-    } else if (LYIsPipeCommand(given)) {
+    } else if (LYIsPipeCommand((*given)->str)) {
 	if (no_shell) {
 	    HTUserMsg(SPAWNING_DISABLED);
 	    code = FALSE;
 	} else {
-	    LYStrNCpy(result, given, LY_MAXPATH);
+	    BStrCopy(*result, (*given));
 	}
 #endif
     } else {
-	if ((cp = FindLeadingTilde(given, TRUE)) != 0
-	    && (cp2 = wwwName(Home_Dir())) != 0
-	    && strlen(cp2) + strlen(given) < LY_MAXPATH) {
-	    if (LYIsTilde(cp[0]) && LYIsPathSep(cp[1])) {
-		*(cp++) = '\0';
-		strcpy(result, given);
-		LYTrimPathSep(result);
-		strcat(result, cp2);
-		strcat(result, cp);
-		strcpy(given, result);
-	    }
+	if ((cp = FindLeadingTilde((*given)->str, TRUE)) != 0) {
+	    char *cp1 = NULL;
+
+	    StrAllocCopy(cp1, (*given)->str);
+	    LYTildeExpand(&cp1, TRUE);
+	    BStrCopy0(*result, cp1);
+	    BStrCopy0(*given, cp1);
+	    FREE(cp1);
 	}
 #ifdef VMS
-	if (strchr(given, '/') != NULL) {
-	    strcpy(result, HTVMS_name("", given));
-	    strcpy(given, result);
+	if (strchr((*given)->str, '/') != NULL) {
+	    BStrCopy0(*result, HTVMS_name("", (*given)->str));
+	    BStrCopy(*given, *result);
 	}
-	if (given[0] != '/'
-	    && strchr(given, ':') == NULL
-	    && strlen(given) < LY_MAXPATH - 13) {
-	    strcpy(result, "sys$disk:");
-	    if (strchr(given, ']') == NULL)
-		strcat(result, "[]");
-	    strcat(result, given);
+	if ((*given)->str[0] != '/'
+	    && strchr((*given)->str, ':') == NULL) {
+	    BStrCopy0(*result, "sys$disk:");
+	    if (strchr((*given)->str, ']') == NULL)
+		BStrCat0(*result, "[]");
+	    BStrCat(*result, (*given));
 	} else {
-	    strcpy(result, given);
+	    BStrCopy(*result, (*given));
 	}
 #else
 
 #ifndef __EMX__
-	if (!LYisAbsPath(given)) {
+	if (!LYisAbsPath((*given)->str)) {
 #if defined(__DJGPP__) || defined(_WINDOWS)
-	    if (strchr(result, ':') != NULL)
+	    if (strchr((*result)->str, ':') != NULL)
 		cp = NULL;
 	    else
 #endif /*  __DJGPP__ || _WINDOWS */
@@ -6706,22 +6716,16 @@ BOOLEAN LYValidateFilename(char *result,
 #endif /* __EMX__ */
 	    cp = NULL;
 
-	*result = 0;
 	if (cp) {
 	    LYTrimPathSep(cp);
-	    if (strlen(cp) >= LY_MAXPATH - 2) {
-		code = FALSE;
-	    } else {
-		sprintf(result, "%s/", cp);
-	    }
+	    BStrCopy0(*result, cp);
+	    BStrCat0(*result, "/");
+	} else {
+	    BStrCopy0(*result, "");
 	}
 	if (code) {
-	    cp = HTSYS_name(given);
-	    if (strlen(result) + strlen(cp) >= LY_MAXPATH - 1) {
-		code = FALSE;
-	    } else {
-		strcat(result, cp);
-	    }
+	    cp = HTSYS_name((*given)->str);
+	    BStrCat0(*result, cp);
 	}
 #endif /* VMS */
     }
@@ -6771,6 +6775,8 @@ int LYValidateOutput(char *filename)
 	} else if (c == NO) {
 	    return 'N';
 	}
+    } else if (!LYCanWriteFile(filename)) {
+	return 'N';
     }
     return 'Y';
 }

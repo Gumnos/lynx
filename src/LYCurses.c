@@ -1,4 +1,4 @@
-/* $LynxId: LYCurses.c,v 1.160 2011/06/06 09:20:59 tom Exp $ */
+/* $LynxId: LYCurses.c,v 1.164 2012/02/10 18:22:15 tom Exp $ */
 #include <HTUtils.h>
 #include <HTAlert.h>
 
@@ -1076,10 +1076,16 @@ void maxmizeWindowSize(void)
 		LYcols = scrsize_x = (disp_width - 4) / font_width;
 		LYlines = scrsize_y = (disp_height - 32) / font_height;
 		LYlines--;
-		CTRACE((tfp, "New Screen Size: (%2d,%2d)\n", scrsize_x, scrsize_y));
+		CTRACE((tfp, "Request maximum screen size: %dx%d\n",
+			scrsize_y, scrsize_x));
 		resize_term(scrsize_y, scrsize_x);
 		Sleep(100);
 		moveWindowHXY(currentWindowHandle, 0, 0);
+		LYlines = LYscreenHeight();
+		LYcols = LYscreenWidth();
+		CTRACE((tfp, "...actual maximum screen size: %dx%d\n",
+			LYlines, LYcols));
+		LYStatusLine = -1;
 		recent_sizechange = TRUE;
 	    }
 	}
@@ -1092,6 +1098,7 @@ void recoverWindowSize(void)
 	LYcols = scrsize_x = saved_scrsize_x2;
 	LYlines = scrsize_y = saved_scrsize_y2;
 	LYlines--;
+	LYStatusLine = -1;
 	wclear(curscr);
 	doupdate();
 	resize_term(scrsize_y, scrsize_x);
@@ -1306,6 +1313,7 @@ void start_curses(void)
 
 #ifdef USE_CURSES_PADS
 	if (LYuseCursesPads) {
+	    CTRACE((tfp, "using curses-pads\n"));
 	    LYwin = newpad(LYlines, MAX_COLS);
 	    LYshiftWin = 0;
 	    LYwideLines = FALSE;
@@ -1472,8 +1480,9 @@ void start_curses(void)
 	CTRACE((tfp, "resize_term: x=%d, y=%d\n", scrsize_x, scrsize_y));
 	CTRACE((tfp, "saved terminal size: x=%d, y=%d\n", saved_scrsize_x, saved_scrsize_y));
 	resize_term(scrsize_y, scrsize_x);
-	LYlines = scrsize_y - 1;
-	LYcols = scrsize_x;
+	LYlines = LYscreenHeight();
+	LYcols = LYscreenWidth();
+	LYStatusLine = -1;
 	LYclear();
 #ifdef _WINDOWS
 	adjustWindowPos();
@@ -1934,6 +1943,7 @@ void LYpaddstr(WINDOW * the_window, int width, const char *the_string)
 #endif
 
     getyx(the_window, y, x1);
+    (void) y;
     if (width + x1 > LYcolLimit)
 	width = LYcolLimit - x1;
 #ifdef WIDEC_CURSES
@@ -2928,7 +2938,7 @@ void lynx_stop_link_color(int flag,
 			  int pending GCC_UNUSED)
 {
 #ifdef USE_COLOR_STYLE
-    LynxChangeStyle(flag == ON ? s_alink : s_a, ABS_OFF);
+    LynxChangeStyle(flag == TRUE ? s_alink : s_a, ABS_OFF);
 #else
     if (flag) {
 	lynx_stop_reverse();

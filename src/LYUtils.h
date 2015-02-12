@@ -1,4 +1,4 @@
-/* $LynxId: LYUtils.h,v 1.88 2011/06/11 10:20:06 tom Exp $ */
+/* $LynxId: LYUtils.h,v 1.91 2012/02/09 18:55:26 tom Exp $ */
 #ifndef LYUTILS_H
 #define LYUTILS_H
 
@@ -117,7 +117,7 @@ extern "C" {
 				      char *prefix_list, char *suffix_list);
     extern BOOLEAN LYFixCursesOnForAccess(const char *addr, const char *physical);
     extern BOOLEAN LYPathOffHomeOK(char *fbuffer, size_t fbuffer_size);
-    extern BOOLEAN LYValidateFilename(char *result, char *given);
+    extern BOOLEAN LYValidateFilename(bstring **result, bstring **given);
     extern BOOLEAN LYisAbsPath(const char *path);
     extern BOOLEAN LYisLocalAlias(const char *filename);
     extern BOOLEAN LYisLocalFile(const char *filename);
@@ -522,8 +522,6 @@ extern "C" {
 /*
  *  Miscellaneous.
  */
-#define ON      1
-#define OFF     0
 #define STREQ(a,b)    (strcmp(a,b) == 0)
 #define STRNEQ(a,b,c) (StrNCmp(a,b,c) == 0)
 

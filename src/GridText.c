@@ -1,5 +1,5 @@
 /*
- * $LynxId: GridText.c,v 1.215 2011/06/11 12:34:51 tom Exp $
+ * $LynxId: GridText.c,v 1.236 2012/02/13 00:33:15 tom Exp $
  *
  *		Character grid hypertext object
  *		===============================
@@ -124,8 +124,8 @@ const char *unchecked_box = "[ ]";
 const char *checked_radio = "(*)";
 const char *unchecked_radio = "( )";
 
-static BOOLEAN underline_on = OFF;
-static BOOLEAN bold_on = OFF;
+static BOOLEAN underline_on = FALSE;
+static BOOLEAN bold_on = FALSE;
 
 #ifdef USE_SOURCE_CACHE
 int LYCacheSource = SOURCE_CACHE_NONE;
@@ -245,7 +245,7 @@ There are 3 functions - POOL_NEW, POOL_FREE, and ALLOC_IN_POOL.
  * Returns a pointer to the "allocated" memory or NULL if fails.
  * Updates 'poolptr' if necessary.
  */
-static pool_data *ALLOC_IN_POOL(HTPool ** ppoolptr, unsigned request)
+static void *ALLOC_IN_POOL(HTPool ** ppoolptr, unsigned request)
 {
     HTPool *pool = *ppoolptr;
     pool_data *ptr;
@@ -579,11 +579,6 @@ void mark_justify_start_position(void *text)
 #define UNDERSCORES(n) \
  ((n) >= MAX_LINE ? underscore_string : &underscore_string[(MAX_LINE-1)] - (n))
 
-/*
- *	Memory leak fixed.
- *	05-29-94 Lynx 2-3-1 Garrett Arch Blythe
- *	Changed to arrays.
- */
 static char underscore_string[MAX_LINE + 1];
 char star_string[MAX_LINE + 1];
 
@@ -908,6 +903,9 @@ static void HText_getChartransInfo(HText *me)
 static void PerFormInfo_free(PerFormInfo * form)
 {
     if (form) {
+	FREE(form->data.submit_action);
+	FREE(form->data.submit_enctype);
+	FREE(form->data.submit_title);
 	FREE(form->accept_cs);
 	FREE(form->thisacceptcs);
 	FREE(form);
@@ -1166,8 +1164,6 @@ HText *HText_new(HTParentAnchor *anchor)
 		   HTAnchor_getUCInfoStage(anchor, UCT_STAGE_HTEXT));
 
     /*
-     * Memory leak fixed.
-     * 05-29-94 Lynx 2-3-1 Garrett Arch Blythe
      * Check to see if our underline and star_string need initialization
      * if the underline is not filled with dots.
      */
@@ -1612,6 +1608,7 @@ static int display_line(HTLine *line,
 			int y, x;
 
 			getyx(LYwin, y, x);
+			(void) y;
 			if (x >= DISPLAY_COLS || x == 0)
 			    break;
 		    }
@@ -2230,6 +2227,7 @@ static void display_page(HText *text,
 		 */
 		LYstopTargetEmphasis();
 		LYGetYX(y, offset);
+		(void) y;
 		data = (char *) &data[itmp];
 
 		/*
@@ -2313,10 +2311,6 @@ static void display_page(HText *text,
 
 		link_dest = HTAnchor_followLink(Anchor_ptr->anchor);
 		{
-		    /*
-		     * Memory leak fixed 05-27-94
-		     * Garrett Arch Blythe
-		     */
 		    auto char *cp_AnchorAddress = NULL;
 
 		    if (traversal)
@@ -2406,7 +2400,7 @@ static void display_page(HText *text,
 		/*
 		 * Bold the link after incrementing nlinks.
 		 */
-		LYhighlight(OFF, (nlinks - 1), target);
+		LYhighlight(FALSE, (nlinks - 1), target);
 
 		display_flag = TRUE;
 
@@ -2850,6 +2844,7 @@ static void split_line(HText *text, unsigned split)
 
 #ifdef DEBUG_APPCH
     CTRACE((tfp, "GridText: split_line(%p,%d) called\n", text, split));
+    CTRACE((tfp, "   previous=%s\n", previous->data));
     CTRACE((tfp, "   bold_on=%d, underline_on=%d\n", bold_on, underline_on));
 #endif
 
@@ -4018,27 +4013,27 @@ void HText_appendCharacter(HText *text, int ch)
 	    if (ch == LY_UNDERLINE_START_CHAR) {
 		line->data[line->size++] = LY_UNDERLINE_START_CHAR;
 		line->data[line->size] = '\0';
-		underline_on = ON;
+		underline_on = TRUE;
 		if (!(dump_output_immediately && use_underscore))
 		    ctrl_chars_on_this_line++;
 		return;
 	    } else if (ch == LY_UNDERLINE_END_CHAR) {
 		line->data[line->size++] = LY_UNDERLINE_END_CHAR;
 		line->data[line->size] = '\0';
-		underline_on = OFF;
+		underline_on = FALSE;
 		if (!(dump_output_immediately && use_underscore))
 		    ctrl_chars_on_this_line++;
 		return;
 	    } else if (ch == LY_BOLD_START_CHAR) {
 		line->data[line->size++] = LY_BOLD_START_CHAR;
 		line->data[line->size] = '\0';
-		bold_on = ON;
+		bold_on = TRUE;
 		ctrl_chars_on_this_line++;
 		return;
 	    } else if (ch == LY_BOLD_END_CHAR) {
 		line->data[line->size++] = LY_BOLD_END_CHAR;
 		line->data[line->size] = '\0';
-		bold_on = OFF;
+		bold_on = FALSE;
 		ctrl_chars_on_this_line++;
 		return;
 	    } else if (ch == LY_SOFT_HYPHEN) {
@@ -4309,20 +4304,32 @@ void HText_appendCharacter(HText *text, int ch)
 
     /*
      * Check for end of line.
+     *
+     * Notes:
+     * 1) text->permissible_split is nonzero if we found a place to split the
+     *    line.  If there is no such place, we still will wrap at the display
+     *    limits (the comparison against LYcols_cu).  Furthermore, if the
+     *    curses-pads feature is active, we will ignore the first comparison
+     *    (against WRAP_COLS) to allow wide preformatted text to be displayed
+     *    without wrapping.
+     * 2) ctrl_chars_on_this_line are nonprintable bytes used for formatting.
      */
     actual = ((indent + (int) line->offset + (int) line->size) +
 	      ((line->size > 0) &&
-	       (int) (line->data[line->size - 1] == LY_SOFT_HYPHEN ? 1 : 0)));
+	       (int) (line->data[line->size - 1] == LY_SOFT_HYPHEN ? 1 : 0))
+	      - ctrl_chars_on_this_line);
 
-    if ((actual
-	 + (int) style->rightIndent
-	 - ctrl_chars_on_this_line
-	 + ((IS_CJK_TTY && text->kanji_buf) ? 1 : 0)
-	) >= WRAP_COLS(text)
+    if (((text->permissible_split
+#ifdef USE_CURSES_PADS
+	  || !LYwideLines
+#endif
+	 ) && (actual
+	       + (int) style->rightIndent
+	       + ((IS_CJK_TTY && text->kanji_buf) ? 1 : 0)
+	 ) >= WRAP_COLS(text))
 	|| (text->T.output_utf8
 	    && ((actual
 		 + UTFXTRA_ON_THIS_LINE
-		 - ctrl_chars_on_this_line
 		 + UTF_XLEN(ch)
 		) > (LYcols_cu(text) - 1)))) {
 
@@ -7640,12 +7647,16 @@ void HTAddSearchQuery(char *query)
 
 int do_www_search(DocInfo *doc)
 {
-    char searchstring[256], temp[256], *cp, *tmpaddress = NULL;
+    bstring *searchstring = NULL;
+    bstring *temp = NULL;
+    char *cp;
+    char *tmpaddress = NULL;
     int ch;
     RecallType recall;
     int QueryTotal;
     int QueryNum;
     BOOLEAN PreviousSearch = FALSE;
+    int code;
 
     /*
      * Load the default query buffer
@@ -7656,28 +7667,28 @@ int do_www_search(DocInfo *doc)
 	 * Use its query as the default.
 	 */
 	PreviousSearch = TRUE;
-	LYStrNCpy(searchstring, ++cp, sizeof(searchstring) - 1);
-	for (cp = searchstring; *cp; cp++)
+	BStrCopy0(searchstring, ++cp);
+	for (cp = searchstring->str; *cp; cp++)
 	    if (*cp == '+')
 		*cp = ' ';
-	HTUnEscape(searchstring);
-	strcpy(temp, searchstring);
+	HTUnEscape(searchstring->str);
+	BStrCopy(temp, searchstring);
 	/*
 	 * Make sure it's treated as the most recent query.  -FM
 	 */
-	HTAddSearchQuery(searchstring);
+	HTAddSearchQuery(searchstring->str);
     } else {
 	/*
 	 * New search; no default.
 	 */
-	searchstring[0] = '\0';
-	temp[0] = '\0';
+	BStrCopy0(searchstring, "");
+	BStrCopy0(temp, "");
     }
 
     /*
      * Prompt for a query string.
      */
-    if (searchstring[0] == '\0') {
+    if (isBEmpty(searchstring)) {
 	if (HTMainAnchor->isIndexPrompt)
 	    _statusline(HTMainAnchor->isIndexPrompt);
 	else
@@ -7688,10 +7699,13 @@ int do_www_search(DocInfo *doc)
     recall = (((PreviousSearch && QueryTotal >= 2) ||
 	       (!PreviousSearch && QueryTotal >= 1)) ? RECALL_URL : NORECALL);
     QueryNum = QueryTotal;
+
   get_query:
-    if ((ch = LYGetStr(searchstring, VISIBLE,
-		       sizeof(searchstring), recall)) < 0 ||
-	*searchstring == '\0' || ch == UPARROW || ch == DNARROW) {
+    if ((ch = LYgetBString(&searchstring, VISIBLE, 0, recall)) < 0 ||
+	isBEmpty(searchstring) ||
+	ch == UPARROW ||
+	ch == DNARROW) {
+
 	if (recall && ch == UPARROW) {
 	    if (PreviousSearch) {
 		/*
@@ -7712,11 +7726,12 @@ int do_www_search(DocInfo *doc)
 		QueryNum = 0;
 	    if ((cp = (char *) HTList_objectAt(search_queries,
 					       QueryNum)) != NULL) {
-		LYStrNCpy(searchstring, cp, sizeof(searchstring) - 1);
-		if (*temp && !strcmp(temp, searchstring)) {
+		BStrCopy0(searchstring, cp);
+		if (!isBEmpty(temp) &&
+		    !strcmp(temp->str, searchstring->str)) {
 		    _statusline(EDIT_CURRENT_QUERY);
-		} else if ((*temp && QueryTotal == 2) ||
-			   (!(*temp) && QueryTotal == 1)) {
+		} else if ((!isBEmpty(temp) && QueryTotal == 2) ||
+			   (isBEmpty(temp) && QueryTotal == 1)) {
 		    _statusline(EDIT_THE_PREV_QUERY);
 		} else {
 		    _statusline(EDIT_A_PREV_QUERY);
@@ -7743,11 +7758,12 @@ int do_www_search(DocInfo *doc)
 		QueryNum = QueryTotal - 1;
 	    if ((cp = (char *) HTList_objectAt(search_queries,
 					       QueryNum)) != NULL) {
-		LYStrNCpy(searchstring, cp, sizeof(searchstring) - 1);
-		if (*temp && !strcmp(temp, searchstring)) {
+		BStrCopy0(searchstring, cp);
+		if (!isBEmpty(temp) &&
+		    !strcmp(temp->str, searchstring->str)) {
 		    _statusline(EDIT_CURRENT_QUERY);
-		} else if ((*temp && QueryTotal == 2) ||
-			   (!(*temp) && QueryTotal == 1)) {
+		} else if ((!isBEmpty(temp) && QueryTotal == 2) ||
+			   (isBEmpty(temp) && QueryTotal == 1)) {
 		    _statusline(EDIT_THE_PREV_QUERY);
 		} else {
 		    _statusline(EDIT_A_PREV_QUERY);
@@ -7760,82 +7776,80 @@ int do_www_search(DocInfo *doc)
 	 * Search cancelled.
 	 */
 	HTInfoMsg(CANCELLED);
-	return (NULLFILE);
-    }
+	code = NULLFILE;
+    } else {
 
-    /*
-     * Strip leaders and trailers.  -FM
-     */
-    LYTrimLeading(searchstring);
-    if (!(*searchstring)) {
-	HTInfoMsg(CANCELLED);
-	return (NULLFILE);
-    }
-    LYTrimTrailing(searchstring);
+	LYTrimLeading(searchstring->str);
+	LYTrimTrailing(searchstring->str);
+	if (isBEmpty(searchstring)) {
+	    HTInfoMsg(CANCELLED);
+	    code = NULLFILE;
+	} else if (!LYforce_no_cache &&
+		   !strcmp(temp->str, searchstring->str)) {
+	    /*
+	     * Don't resubmit the same query unintentionally.
+	     */
+	    HTUserMsg(USE_C_R_TO_RESUB_CUR_QUERY);
+	    code = NULLFILE;
+	} else {
 
-    /*
-     * Don't resubmit the same query unintentionally.
-     */
-    if (!LYforce_no_cache && 0 == strcmp(temp, searchstring)) {
-	HTUserMsg(USE_C_R_TO_RESUB_CUR_QUERY);
-	return (NULLFILE);
-    }
+	    /*
+	     * Add searchstring to the query list,
+	     * or make it the most current.  -FM
+	     */
+	    HTAddSearchQuery(searchstring->str);
 
-    /*
-     * Add searchstring to the query list,
-     * or make it the most current.  -FM
-     */
-    HTAddSearchQuery(searchstring);
-
-    /*
-     * Show the URL with the new query.
-     */
-    if ((cp = strchr(doc->address, '?')) != NULL)
-	*cp = '\0';
-    StrAllocCopy(tmpaddress, doc->address);
-    StrAllocCat(tmpaddress, "?");
-    StrAllocCat(tmpaddress, searchstring);
-    user_message(WWW_WAIT_MESSAGE, tmpaddress);
+	    /*
+	     * Show the URL with the new query.
+	     */
+	    if ((cp = strchr(doc->address, '?')) != NULL)
+		*cp = '\0';
+	    StrAllocCopy(tmpaddress, doc->address);
+	    StrAllocCat(tmpaddress, "?");
+	    StrAllocCat(tmpaddress, searchstring->str);
+	    user_message(WWW_WAIT_MESSAGE, tmpaddress);
 #ifdef SYSLOG_REQUESTED_URLS
-    LYSyslog(tmpaddress);
+	    LYSyslog(tmpaddress);
 #endif
-    FREE(tmpaddress);
-    if (cp)
-	*cp = '?';
+	    FREE(tmpaddress);
+	    if (cp)
+		*cp = '?';
 
-    /*
-     * OK, now we do the search.
-     */
-    if (HTSearch(searchstring, HTMainAnchor)) {
-	/*
-	 * Memory leak fixed.
-	 * 05-28-94 Lynx 2-3-1 Garrett Arch Blythe
-	 */
-	auto char *cp_freeme = NULL;
+	    /*
+	     * OK, now we do the search.
+	     */
+	    if (HTSearch(searchstring->str, HTMainAnchor)) {
+		auto char *cp_freeme = NULL;
 
-	if (traversal)
-	    cp_freeme = stub_HTAnchor_address((HTAnchor *) HTMainAnchor);
-	else
-	    cp_freeme = HTAnchor_address((HTAnchor *) HTMainAnchor);
-	StrAllocCopy(doc->address, cp_freeme);
-	FREE(cp_freeme);
+		if (traversal)
+		    cp_freeme = stub_HTAnchor_address((HTAnchor *) HTMainAnchor);
+		else
+		    cp_freeme = HTAnchor_address((HTAnchor *) HTMainAnchor);
+		StrAllocCopy(doc->address, cp_freeme);
+		FREE(cp_freeme);
 
-	CTRACE((tfp, "\ndo_www_search: newfile: %s\n", doc->address));
+		CTRACE((tfp, "\ndo_www_search: newfile: %s\n", doc->address));
 
-	/*
-	 * Yah, the search succeeded.
-	 */
-	return (NORMAL);
+		/*
+		 * Yah, the search succeeded.
+		 */
+		code = NORMAL;
+	    } else {
+
+		/*
+		 * Either the search failed (Yuk), or we got redirection.
+		 * If it's redirection, use_this_url_instead is set, and
+		 * mainloop() will deal with it such that security features
+		 * and restrictions are checked before acting on the URL, or
+		 * rejecting it.  -FM
+		 */
+		code = NOT_FOUND;
+	    }
+	}
     }
-
-    /*
-     * Either the search failed (Yuk), or we got redirection.
-     * If it's redirection, use_this_url_instead is set, and
-     * mainloop() will deal with it such that security features
-     * and restrictions are checked before acting on the URL, or
-     * rejecting it.  -FM
-     */
-    return (NOT_FOUND);
+    BStrFree(searchstring);
+    BStrFree(temp);
+    return code;
 }
 
 static void write_offset(FILE *fp, HTLine *line)
@@ -9055,13 +9069,14 @@ BOOLEAN HTLoadedDocumentIsSafe(void)
 
 const char *HTLoadedDocumentCharset(void)
 {
-    if (!HTMainText)
-	return (NULL);
+    const char *result = NULL;
 
-    if (HTMainText->node_anchor && HTMainText->node_anchor->charset)
-	return (HTMainText->node_anchor->charset);
-    else
-	return (NULL);
+    if (HTMainText &&
+	HTMainText->node_anchor) {
+	result = HTMainText->node_anchor->charset;
+    }
+
+    return result;
 }
 
 BOOL HTLoadedDocumentEightbit(void)
@@ -9425,13 +9440,25 @@ const char *HText_HiddenLinkAt(HText *text, int number)
  * These routines are used to build forms consisting
  * of input fields
  */
-static int HTFormMethod;
-static char *HTFormAction = NULL;
-static char *HTFormEnctype = NULL;
-static char *HTFormTitle = NULL;
-static char *HTFormAcceptCharset = NULL;
 static BOOLEAN HTFormDisabled = FALSE;
 static PerFormInfo *HTCurrentForm;
+
+static BOOLEAN addFormAction(FormInfo * f)
+{
+    BOOLEAN result = FALSE;
+
+    if (HTCurrentForm != NULL) {
+	result = TRUE;
+	f->submit_action = NULL;
+	StrAllocCopy(f->submit_action, HTCurrentForm->data.submit_action);
+	if (HTCurrentForm->data.submit_enctype != NULL)
+	    StrAllocCopy(f->submit_enctype, HTCurrentForm->data.submit_enctype);
+	if (HTCurrentForm->data.submit_title != NULL)
+	    StrAllocCopy(f->submit_title, HTCurrentForm->data.submit_title);
+	f->submit_method = HTCurrentForm->data.submit_method;
+    }
+    return result;
+}
 
 void HText_beginForm(char *action,
 		     char *method,
@@ -9440,9 +9467,14 @@ void HText_beginForm(char *action,
 		     const char *accept_cs)
 {
     PerFormInfo *newform;
+    int HTFormMethod = URL_GET_METHOD;
+    char *HTFormAction = NULL;
+    char *HTFormEnctype = NULL;
+    char *HTFormTitle = NULL;
+    char *HTFormAcceptCharset = NULL;
 
-    HTFormMethod = URL_GET_METHOD;
     HTFormNumber++;
+
     HTFormFields = 0;
     HTFormDisabled = FALSE;
 
@@ -9495,23 +9527,25 @@ void HText_beginForm(char *action,
     }
 
     /*
-     * Create a new "PerFormInfo" structure to hold info on the current
-     * form.  The HTForm* variables could all migrate there, currently
-     * this isn't done (yet?) but it might be less confusing.
-     * Currently the only data saved in this structure that will actually
-     * be used is the accept_cs string.
-     * This will be appended to the forms list kept by the HText object
-     * if and when we reach a HText_endForm.  - kw
+     * Create a new "PerFormInfo" structure to hold info on the current form. 
+     * This will be appended to the forms list kept by the HText object if and
+     * when we reach a HText_endForm.
      */
     newform = typecalloc(PerFormInfo);
     if (newform == NULL)
 	outofmem(__FILE__, "HText_beginForm");
 
     assert(newform != NULL);
-    newform->number = HTFormNumber;
 
     PerFormInfo_free(HTCurrentForm);	/* shouldn't happen here - kw */
     HTCurrentForm = newform;
+
+    newform->number = HTFormNumber;
+    newform->data.submit_action = HTFormAction;
+    newform->data.submit_enctype = HTFormEnctype;
+    newform->data.submit_method = HTFormMethod;
+    newform->data.submit_title = HTFormTitle;
+    newform->accept_cs = HTFormAcceptCharset;
 
     CTRACE((tfp, "BeginForm: action:%s Method:%d%s%s%s%s%s%s\n",
 	    HTFormAction, HTFormMethod,
@@ -9539,39 +9573,29 @@ void HText_endForm(HText *text)
 	    for (a = text->first_anchor; a != NULL; a = a->next) {
 		if (a->link_type == INPUT_ANCHOR &&
 		    a->input_field->number == HTFormNumber &&
-		    a->input_field->type == F_TEXT_TYPE) {
+		    a->input_field->type != F_TEXTAREA_TYPE &&
+		    F_TEXTLIKE(a->input_field->type)) {
 		    /*
 		     * Got it.  Make it submitting.  -FM
 		     */
-		    a->input_field->submit_action = NULL;
-		    StrAllocCopy(a->input_field->submit_action, HTFormAction);
-		    if (HTFormEnctype != NULL)
-			StrAllocCopy(a->input_field->submit_enctype,
-				     HTFormEnctype);
-		    if (HTFormTitle != NULL)
-			StrAllocCopy(a->input_field->submit_title, HTFormTitle);
-		    a->input_field->submit_method = HTFormMethod;
-		    a->input_field->type = F_TEXT_SUBMIT_TYPE;
-		    if (HTFormDisabled)
-			a->input_field->disabled = TRUE;
+		    if (addFormAction(a->input_field)) {
+			a->input_field->type = F_TEXT_SUBMIT_TYPE;
+			if (HTFormDisabled)
+			    a->input_field->disabled = TRUE;
+		    }
 		    break;
 		}
 	    }
 	}
 
 	/*
-	 * Append info on the current form to the HText object's list of
-	 * forms.
+	 * Append info on the current form to the HText object's list of forms. 
 	 * HText_beginInput call will have set some of the data in the
-	 * PerFormInfo structure (if there were any form fields at all),
-	 * we also fill in the ACCEPT-CHARSET data now (this could have
-	 * been done earlier).  - kw
+	 * PerFormInfo structure (if there were any form fields at all).
 	 */
 	if (HTCurrentForm) {
 	    if (HTFormDisabled)
 		HTCurrentForm->disabled = TRUE;
-	    HTCurrentForm->accept_cs = HTFormAcceptCharset;
-	    HTFormAcceptCharset = NULL;
 	    if (!text->forms)
 		text->forms = HTList_new();
 	    HTList_appendObject(text->forms, HTCurrentForm);
@@ -9586,10 +9610,6 @@ void HText_endForm(HText *text)
     FREE(HTCurSelectGroup);
     FREE(HTCurSelectGroupSize);
     FREE(HTCurSelectedOptionValue);
-    FREE(HTFormAction);
-    FREE(HTFormEnctype);
-    FREE(HTFormTitle);
-    FREE(HTFormAcceptCharset);
     HTFormFields = 0;
     HTFormDisabled = FALSE;
 }
@@ -10079,12 +10099,6 @@ int HText_beginInput(HText *text,
     HTFormFields++;
 
     /*
-     * Set the no_cache flag if the METHOD is POST.  -FM
-     */
-    if (HTFormMethod == URL_POST_METHOD)
-	f->no_cache = TRUE;
-
-    /*
      * Set up VALUE.
      */
     if (I->value)
@@ -10305,14 +10319,7 @@ int HText_beginInput(HText *text,
 	    StrAllocCopy(f->value, "Submit");
 	    f->size = 6;
 	}
-	f->submit_action = NULL;
-	StrAllocCopy(f->submit_action, HTFormAction);
-	if (HTFormEnctype != NULL)
-	    StrAllocCopy(f->submit_enctype, HTFormEnctype);
-	if (HTFormTitle != NULL)
-	    StrAllocCopy(f->submit_title, HTFormTitle);
-	f->submit_method = HTFormMethod;
-
+	addFormAction(f);
     } else if (f->type == F_RADIO_TYPE || f->type == F_CHECKBOX_TYPE) {
 	f->size = 3;
 	if (IValue == NULL)
@@ -10461,11 +10468,16 @@ int HText_beginInput(HText *text,
 	HTCurrentForm->last_field = f;
 	HTCurrentForm->nfields++;	/* will count hidden fields - kw */
 	/*
+	 * Set the no_cache flag if the METHOD is POST.  -FM
+	 */
+	if (HTCurrentForm->data.submit_method == URL_POST_METHOD)
+	    f->no_cache = TRUE;
+	/*
 	 * Propagate form field's accept-charset attribute to enclosing
 	 * form if the form itself didn't have an accept-charset - kw
 	 */
-	if (f->accept_cs && !HTFormAcceptCharset) {
-	    StrAllocCopy(HTFormAcceptCharset, f->accept_cs);
+	if (f->accept_cs && !HTCurrentForm->accept_cs) {
+	    StrAllocCopy(HTCurrentForm->accept_cs, f->accept_cs);
 	}
 	if (!text->forms) {
 	    text->forms = HTList_new();
@@ -10628,15 +10640,15 @@ static void load_a_file(const char *val_used,
 {
     FILE *fd;
     size_t bytes;
-    char buffer[257];
+    char buffer[BUFSIZ + 1];
 
-    CTRACE((tfp, "Ok, about to convert %s to mime/thingy\n", val_used));
+    CTRACE((tfp, "Ok, about to convert \"%s\" to mime/thingy\n", val_used));
 
     if (*val_used) {		/* ignore empty form field */
 	if ((fd = fopen(val_used, BIN_R)) == 0) {
 	    HTAlert(gettext("Can't open file for uploading"));
 	} else {
-	    while ((bytes = fread(buffer, sizeof(char), (size_t) 256, fd)) != 0) {
+	    while ((bytes = fread(buffer, sizeof(char), BUFSIZ, fd)) != 0) {
 		HTSABCat(result, buffer, (int) bytes);
 	    }
 	    LYCloseInput(fd);
@@ -10898,6 +10910,11 @@ static int check_if_base64_needed(int submit_method,
     return !printable && ((submit_method == URL_MAIL_METHOD) && (width > 72));
 }
 
+PerFormInfo *HText_PerFormInfo(int number)
+{
+    return (PerFormInfo *) HTList_objectAt(HTMainText->forms, number - 1);
+}
+
 /*
  * HText_SubmitForm - generate submit data from form fields.
  * For mailto forms, send the data.
@@ -10906,8 +10923,9 @@ static int check_if_base64_needed(int submit_method,
  * Returns 1 if *doc set appropriately for next request,
  * 0 otherwise.  - kw
  */
-int HText_SubmitForm(FormInfo * submit_item, DocInfo *doc, char *link_name,
-		     char *link_value)
+int HText_SubmitForm(FormInfo * submit_item, DocInfo *doc,
+		     const char *link_name,
+		     const char *link_value)
 {
     BOOL had_chartrans_warning = NO;
     BOOL have_accept_cs = NO;
@@ -10944,8 +10962,7 @@ int HText_SubmitForm(FormInfo * submit_item, DocInfo *doc, char *link_name,
     if (!HTMainText)
 	return 0;
 
-    thisform = (PerFormInfo *) HTList_objectAt(HTMainText->forms, form_number
-					       - 1);
+    thisform = HText_PerFormInfo(form_number);
     /*  Sanity check */
     if (!thisform) {
 	CTRACE((tfp, "SubmitForm: form %d not in HTMainText's list!\n",
@@ -11029,8 +11046,7 @@ int HText_SubmitForm(FormInfo * submit_item, DocInfo *doc, char *link_name,
     }
 
     if (target_cs < 0 &&
-	HTMainText->node_anchor->charset &&
-	*HTMainText->node_anchor->charset) {
+	non_empty(HTMainText->node_anchor->charset)) {
 	target_cs = UCGetLYhndl_byMIME(HTMainText->node_anchor->charset);
 	if (target_cs >= 0) {
 	    target_csname = HTMainText->node_anchor->charset;
@@ -11246,7 +11262,7 @@ int HText_SubmitForm(FormInfo * submit_item, DocInfo *doc, char *link_name,
 #ifdef USE_FILE_UPLOAD
 	    case F_FILE_TYPE:
 		val_used = NonNull(form_ptr->value);
-		CTRACE((tfp, "I will submit %s (from %s)\n",
+		CTRACE((tfp, "I will submit \"%s\" (from %s)\n",
 			val_used, name_used));
 		break;
 #endif
@@ -11867,22 +11883,21 @@ void HText_DisableCurrentForm(void)
     TextAnchor *anchor_ptr;
 
     HTFormDisabled = TRUE;
-    if (!HTMainText)
-	return;
+    if (HTMainText != NULL) {
+	/*
+	 * Go through list of anchors and set the disabled flag.
+	 */
+	for (anchor_ptr = HTMainText->first_anchor;
+	     anchor_ptr != NULL;
+	     anchor_ptr = anchor_ptr->next) {
 
-    /*
-     * Go through list of anchors and set the disabled flag.
-     */
-    for (anchor_ptr = HTMainText->first_anchor;
-	 anchor_ptr != NULL;
-	 anchor_ptr = anchor_ptr->next) {
-	if (anchor_ptr->link_type == INPUT_ANCHOR &&
-	    anchor_ptr->input_field->number == HTFormNumber) {
+	    if (anchor_ptr->link_type == INPUT_ANCHOR &&
+		anchor_ptr->input_field->number == HTFormNumber) {
 
-	    anchor_ptr->input_field->disabled = TRUE;
+		anchor_ptr->input_field->disabled = TRUE;
+	    }
 	}
     }
-
     return;
 }
 
@@ -12050,10 +12065,6 @@ static void free_all_texts(void)
     FREE(HTCurSelectGroup);
     FREE(HTCurSelectGroupSize);
     FREE(HTCurSelectedOptionValue);
-    FREE(HTFormAction);
-    FREE(HTFormEnctype);
-    FREE(HTFormTitle);
-    FREE(HTFormAcceptCharset);
     PerFormInfo_free(HTCurrentForm);
 
     return;
@@ -12906,37 +12917,16 @@ static BOOLEAN IsFormsTextarea(FormInfo * form, TextAnchor *anchor_ptr)
 		      !strcmp(anchor_ptr->input_field->name, form->name));
 }
 
-static int finish_ExtEditForm(LinkInfo * form_link, TextAnchor *start_anchor,
-			      char *ed_temp,
-			      int orig_cnt)
+static char *readEditedFile(char *ed_temp)
 {
     struct stat stat_info;
     size_t size;
 
     FILE *fp;
 
-    TextAnchor *anchor_ptr;
-    TextAnchor *end_anchor = NULL;
-    BOOLEAN wrapalert = FALSE;
-
-    int entry_line = form_link->anchor_line_num;
-    int exit_line = 0;
-    int line_cnt = 1;
-
-    HTLine *htline = NULL;
-
     char *ebuf;
-    char *line;
-    char *lp;
-    char *cp;
-    int match_tag = 0;
-    int newlines = 0;
-    int len, len0;
-    int wanted_fieldlen_wrap = -1;	/* not yet asked; 0 means don't. */
-    char *skip_at = NULL;
-    int skip_num = 0, i;
 
-    CTRACE((tfp, "GridText: entered HText_ExtEditForm()\n"));
+    CTRACE((tfp, "GridText: entered HText_EditTextArea()\n"));
 
     /*
      * Read back the edited temp file into our buffer.
@@ -12948,7 +12938,7 @@ static int finish_ExtEditForm(LinkInfo * form_link, TextAnchor *start_anchor,
 	ebuf = typecalloc(char);
 
 	if (!ebuf)
-	    outofmem(__FILE__, "HText_ExtEditForm");
+	    outofmem(__FILE__, "HText_EditTextArea");
 
 	assert(ebuf != NULL);
     } else {
@@ -12979,19 +12969,56 @@ static int finish_ExtEditForm(LinkInfo * form_link, TextAnchor *start_anchor,
 	   && (CanTrimTextArea(UCH(ebuf[size - 1])) || (ebuf[size - 1] == '\0')))
 	ebuf[--size] = '\0';
 
+    return ebuf;
+}
+
+static int finish_ExtEditForm(LinkInfo * form_link, TextAnchor *start_anchor,
+			      char *ed_temp,
+			      int orig_cnt)
+{
+    TextAnchor *anchor_ptr;
+    TextAnchor *end_anchor = NULL;
+    BOOLEAN wrapalert = FALSE;
+
+    int entry_line = form_link->anchor_line_num;
+    int exit_line = 0;
+    int line_cnt = 1;
+
+    HTLine *htline = NULL;
+
+    char *ebuf;
+    char *line;
+    char *lp;
+    char *cp;
+    int match_tag = 0;
+    int newlines = 0;
+    int len, len0;
+    int display_size;
+    int wanted_fieldlen_wrap = -1;	/* not yet asked; 0 means don't. */
+    char *skip_at = NULL;
+    int skip_num = 0, i;
+    size_t line_used = MAX_LINE;
+
+    CTRACE((tfp, "GridText: entered HText_EditTextArea()\n"));
+
+    if ((ebuf = readEditedFile(ed_temp)) == 0) {
+	return 0;
+    }
+
     /*
      * Copy each line from the temp file into the corresponding anchor
      * struct.  Add new lines to the TEXTAREA if needed.  (Always leave
      * the user with a blank line at the end of the TEXTAREA.)
      */
-    if ((line = typeMallocn(char, MAX_LINE)) == 0)
-	  outofmem(__FILE__, "HText_ExtEditForm");
+    if ((line = typeMallocn(char, line_used)) == 0)
+	  outofmem(__FILE__, "HText_EditTextArea");
 
     assert(line != NULL);
 
     anchor_ptr = start_anchor;
-    if (anchor_ptr->input_field->size <= 4 ||
-	anchor_ptr->input_field->size >= MAX_LINE)
+    display_size = anchor_ptr->input_field->size;
+    if (display_size <= 4 ||
+	display_size >= MAX_LINE)
 	wanted_fieldlen_wrap = 0;
 
     len = 0;
@@ -13018,22 +13045,28 @@ static int finish_ExtEditForm(LinkInfo * form_link, TextAnchor *start_anchor,
 	else
 	    len = (int) strlen(lp);
 
-	if (wanted_fieldlen_wrap < 0 && !wrapalert &&
-	    len0 + len >= start_anchor->input_field->size &&
+	if (wanted_fieldlen_wrap < 0 &&
+	    !wrapalert &&
+	    len0 + len >= display_size &&
 	    (cp = strchr(lp, ' ')) != NULL &&
-	    (cp - lp) < start_anchor->input_field->size - 1) {
+	    (cp - lp) < display_size - 1) {
+
 	    LYFixCursesOn("ask for confirmation:");
 	    LYerase();		/* don't show previous state */
 	    if (HTConfirmDefault(gettext("Wrap lines to fit displayed area?"),
 				 NO)) {
-		wanted_fieldlen_wrap = start_anchor->input_field->size - 1;
+		wanted_fieldlen_wrap = display_size - 1;
 	    } else {
 		wanted_fieldlen_wrap = 0;
 	    }
 	}
-	if (wanted_fieldlen_wrap > 0 && len0 + len > wanted_fieldlen_wrap) {
+
+	if (wanted_fieldlen_wrap > 0 &&
+	    len0 + len > wanted_fieldlen_wrap) {
+
 	    for (i = wanted_fieldlen_wrap - len0;
 		 i + len0 >= wanted_fieldlen_wrap / 4; i--) {
+
 		if (isspace(UCH(lp[i]))) {
 		    len = i + 1;
 		    cp = lp + i;
@@ -13064,7 +13097,10 @@ static int finish_ExtEditForm(LinkInfo * form_link, TextAnchor *start_anchor,
 		}
 	    }
 	}
-	if (wanted_fieldlen_wrap > 0 && len0 + len > wanted_fieldlen_wrap) {
+
+	if (wanted_fieldlen_wrap > 0 &&
+	    (len0 + len) > wanted_fieldlen_wrap) {
+
 	    i = len - 1;
 	    while (len0 + i + 1 > wanted_fieldlen_wrap &&
 		   isspace(UCH(lp[i])))
@@ -13073,23 +13109,17 @@ static int finish_ExtEditForm(LinkInfo * form_link, TextAnchor *start_anchor,
 		len = wanted_fieldlen_wrap - len0;
 	}
 
-	if (len0 + len >= MAX_LINE) {
-	    if (!wrapalert) {
-		LYFixCursesOn("show alert:");
-		HTAlert(gettext("Very long lines have been wrapped!"));
-		wrapalert = TRUE;
-	    }
-	    /*
-	     * First try to find a space character for wrapping - kw
-	     */
-	    for (i = MAX_LINE - len0 - 1; i > 0; i--) {
-		if (isspace(UCH(lp[i]))) {
-		    len = i;
-		    break;
-		}
-	    }
-	    if (len0 + len >= MAX_LINE)
-		len = MAX_LINE - len0 - 1;
+	/*
+	 * Check if the new text will fit in the buffer.  HTML does not define
+	 * a "maxlength" attribute for TEXTAREA; its data can grow as needed.
+	 * Lynx will not adjust the display to reflect larger amounts of text;
+	 * it relies on the rows/cols attributes as well as the initial content
+	 * of the text area for the layout.
+	 */
+	if ((size_t) (len0 + len) >= line_used) {
+	    line_used = (size_t) (3 * (len0 + len)) / 2;
+	    if ((line = typeRealloc(char, line, line_used)) == 0)
+		  outofmem(__FILE__, "HText_EditTextArea");
 	}
 
 	strncat(line, lp, (size_t) len);
@@ -13179,7 +13209,7 @@ static int finish_ExtEditForm(LinkInfo * form_link, TextAnchor *start_anchor,
  *
  * --KED 02/01/99
  */
-int HText_ExtEditForm(LinkInfo * form_link)
+int HText_EditTextArea(LinkInfo * form_link)
 {
     char *ed_temp;
     FILE *fp;
@@ -13196,7 +13226,7 @@ int HText_ExtEditForm(LinkInfo * form_link)
 
     FormInfo *form = form_link->l_form;
 
-    CTRACE((tfp, "GridText: entered HText_ExtEditForm()\n"));
+    CTRACE((tfp, "GridText: entered HText_EditTextArea()\n"));
 
     ed_temp = typeMallocn(char, LY_MAXPATH);
 
@@ -13261,7 +13291,7 @@ int HText_ExtEditForm(LinkInfo * form_link)
     LYRemoveTemp(ed_temp);
     FREE(ed_temp);
 
-    CTRACE((tfp, "GridText: exiting HText_ExtEditForm()\n"));
+    CTRACE((tfp, "GridText: exiting HText_EditTextArea()\n"));
 
     /*
      * Return the offset needed to move the cursor from its current
@@ -13270,6 +13300,69 @@ int HText_ExtEditForm(LinkInfo * form_link)
      * the caller deal with moving us there, however ...  :-) ...
      */
     return offset;
+}
+
+/*
+ * Similar to HText_EditTextArea, but assume a single-line text field -TD
+ */
+void HText_EditTextField(LinkInfo * form_link)
+{
+    char *ed_temp;
+    FILE *fp;
+
+    FormInfo *form = form_link->l_form;
+
+    CTRACE((tfp, "GridText: entered HText_EditTextField()\n"));
+
+    ed_temp = typeMallocn(char, LY_MAXPATH);
+
+    if ((fp = LYOpenTemp(ed_temp, "", "w")) == 0) {
+	FREE(ed_temp);
+	return;
+    }
+
+    /*
+     * Write the anchors' text to the temp edit file.
+     */
+    fputs(form->value, fp);
+    fputc('\n', fp);
+
+    LYCloseTempFP(fp);
+
+    CTRACE((tfp, "GridText: text field |%s| dumped to tempfile\n", form_link->lname));
+    CTRACE((tfp, "GridText: invoking editor (%s) on tempfile\n", editor));
+
+    edit_temporary_file(ed_temp, "", NULL);
+
+    CTRACE((tfp, "GridText: returned from editor (%s)\n", editor));
+
+    if (!form->disabled) {
+	char *ebuf;
+	char *p;
+
+	if ((ebuf = readEditedFile(ed_temp)) != 0) {
+	    /*
+	     * Only use the first line of the result, and only that up to
+	     * the size of the field.
+	     */
+	    for (p = ebuf; *p != '\0'; ++p) {
+		if ((p - ebuf) >= form->size - 1) {
+		    *p = '\0';
+		    break;
+		} else if (*p == '\n' || *p == '\r') {
+		    *p = '\0';
+		    break;
+		}
+	    }
+	    StrAllocCopy(form->value, ebuf);
+	    FREE(ebuf);
+	}
+    }
+
+    LYRemoveTemp(ed_temp);
+    FREE(ed_temp);
+
+    CTRACE((tfp, "GridText: exiting HText_EditTextField()\n"));
 }
 
 /*
@@ -14399,7 +14492,7 @@ void LYMoveToLink(int cur,
     HTLine *todr;
     int i, n = 0;
     int XP_draw_min = 0;
-    int flags = ((flag == ON) ? 1 : 0) | (inU ? 2 : 0);
+    int flags = ((flag == TRUE) ? 1 : 0) | (inU ? 2 : 0);
 
     /*
      * We need to protect changed form text fields preceding this

@@ -1,4 +1,4 @@
-/* $LynxId: LYStrings.c,v 1.184 2011/06/06 08:26:37 tom Exp $ */
+/* $LynxId: LYStrings.c,v 1.205 2012/02/13 00:33:02 tom Exp $ */
 #include <HTUtils.h>
 #include <HTCJK.h>
 #include <UCAux.h>
@@ -505,11 +505,13 @@ static int set_clicked_link(int x,
 			links[i].l_form->type == F_TEXT_SUBMIT_TYPE) {
 			if (code != FOR_INPUT
 			/* submit current input field directly */
-			    || !(cury == y && (curx >= lx) && ((curx - lx) <= len))) {
-			    c = LAC_TO_LKC0(LYK_SUBMIT);
+			    || !(cury == y &&
+				 (curx >= lx) &&
+				 ((curx - lx) <= len))) {
+			    c = LAC_TO_LKC0(LYK_MOUSE_SUBMIT);
 			    mouse_link = i;
 			} else {
-			    c = LAC_TO_LKC0(LYK_SUBMIT);
+			    c = LAC_TO_LKC0(LYK_MOUSE_SUBMIT);
 			    mouse_link = -1;
 			}
 			mouse_err = 0;
@@ -1538,7 +1540,7 @@ static int LYmouse_menu(int x, int y, int atlink, int code)
 #endif
 	{"Search index",		LYK_INDEX_SEARCH,	ENT_ONLY_DOC},
 	{"Set Options",			LYK_OPTIONS,		ENT_ONLY_DOC},
-	{"Activate this link",		LYK_SUBMIT,		ENT_ONLY_LINK},
+	{"Activate this link",		LYK_MOUSE_SUBMIT,	ENT_ONLY_LINK},
 	{"Download",			LYK_DOWNLOAD,		ENT_ONLY_LINK}
     };
     /* *INDENT-ON* */
@@ -1766,7 +1768,7 @@ static int LYgetch_for(int code)
     }
 #endif /* !USE_SLANG || VMS */
 
-    CTRACE((tfp, "GETCH: Got %#x.\n", c));
+    CTRACE((tfp, "GETCH%d: Got %#x.\n", code, c));
 #ifdef MISC_EXP
     if (LYNoZapKey > 1 && errno != EINTR &&
 	(c == EOF
@@ -2278,8 +2280,9 @@ static int LYgetch_for(int code)
 		    c = set_clicked_link(event.x, event.y, code, 1);
 		} else if (event.bstate & BUTTON1_DOUBLE_CLICKED) {
 		    c = set_clicked_link(event.x, event.y, code, 2);
-		    if (c == LAC_TO_LKC0(LYK_SUBMIT) && code == FOR_INPUT)
-			lac = LYK_SUBMIT;
+		    if (c == LAC_TO_LKC0(LYK_MOUSE_SUBMIT) &&
+			code == FOR_INPUT)
+			lac = LYK_MOUSE_SUBMIT;
 		} else if (event.bstate & BUTTON3_CLICKED) {
 		    c = LAC_TO_LKC0(LYK_PREV_DOC);
 		} else if (code == FOR_PROMPT
@@ -2300,7 +2303,7 @@ static int LYgetch_for(int code)
 			mouse_link = -1;	/* Forget about approx stuff. */
 
 		    lac = LYmouse_menu(event.x, event.y, atlink, code);
-		    if (lac == LYK_SUBMIT) {
+		    if (lac == LYK_MOUSE_SUBMIT) {
 			if (mouse_link == -1)
 			    lac = LYK_ACTIVATE;
 #ifdef TEXTFIELDS_MAY_NEED_ACTIVATION
@@ -2329,7 +2332,8 @@ static int LYgetch_for(int code)
 		}
 #endif
 		if (code == FOR_INPUT && mouse_link == -1 &&
-		    lac != LYK_REFRESH && lac != LYK_SUBMIT) {
+		    lac != LYK_REFRESH &&
+		    lac != LYK_MOUSE_SUBMIT) {
 		    ungetmouse(&event);		/* Caller will process this. */
 		    wgetch(LYwin);	/* ungetmouse puts KEY_MOUSE back */
 		    c = MOUSE_KEY;
@@ -2857,8 +2861,9 @@ void LYTrimAllStartfile(char *buffer)
 #define StartY	 edit->sy
 #define Buf	 edit->buffer
 #define Pos	 edit->pos	/* current editing position (bytes) */
-#define StrLen	 edit->strlen	/* length (bytes) */
-#define MaxLen	 edit->maxlen
+#define StrLen	 edit->buffer_used	/* length (bytes) */
+#define MaxLen	 edit->buffer_size
+#define BufLimit edit->buffer_limit
 #define DspWdth  edit->dspwdth
 #define DspStart edit->xpan	/* display-start (columns) */
 #define Margin	 edit->margin
@@ -2867,34 +2872,16 @@ void LYTrimAllStartfile(char *buffer)
 #ifdef ENHANCED_LINEEDIT
 #define Mark	 edit->mark
 #endif
+#define CurModif edit->current_modifiers
+#define Offs2Col edit->offset2col
 
 #ifdef ENHANCED_LINEEDIT
-static char killbuffer[MAX_EDIT] = "\0";
+static bstring *killbuffer;
 #endif
 
-void LYSetupEdit(EDREC * edit, char *old,
-		 int maxstr,
-		 int maxdsp)
+static void updateMargin(EDREC * edit)
 {
-    /*
-     * Initialize edit record
-     */
-    LYGetYX(StartY, StartX);
-    PadChar = ' ';
-    IsDirty = TRUE;
-    PanOn = FALSE;
-    edit->current_modifiers = 0;
-
-    MaxLen = maxstr;
-    DspWdth = maxdsp;
-    Margin = 0;
-    Pos = (int) strlen(old);
-#ifdef ENHANCED_LINEEDIT
-    Mark = -1;			/* pos=0, but do not show it yet */
-#endif
-    DspStart = 0;
-
-    if (maxstr > maxdsp) {	/* Need panning? */
+    if ((int) MaxLen > DspWdth) {	/* Need panning? */
 	if (DspWdth > 4)	/* Else "{}" take up precious screen space */
 	    PanOn = TRUE;
 
@@ -2907,9 +2894,72 @@ void LYSetupEdit(EDREC * edit, char *old,
 	if (Margin > 10)
 	    Margin = 10;
     }
+}
 
-    LYStrNCpy(Buf, old, maxstr);
-    StrLen = (int) strlen(Buf);
+/*
+ * Before using an array position, make sure that the array is long enough.
+ * Reallocate if needed.
+ */
+static void ExtendEditor(EDREC * edit, int position)
+{
+    size_t need = (size_t) (++position);
+
+    if (need >= MaxLen && (BufLimit == 0 || need < BufLimit)) {
+	CTRACE((tfp, "ExtendEditor from %u to %u\n",
+		(unsigned) MaxLen,
+		(unsigned) need));
+	Buf = typeRealloc(char, Buf, need);
+	Offs2Col = typeRealloc(int, Offs2Col, need + 1);
+
+	MaxLen = need;
+	updateMargin(edit);
+    }
+}
+
+void LYFinishEdit(EDREC * edit)
+{
+    CTRACE((tfp, "LYFinishEdit:%s\n", NonNull(Buf)));
+
+    FREE(Buf);
+    FREE(Offs2Col);
+}
+
+void LYSetupEdit(EDREC * edit, char *old_value, size_t buffer_limit, int display_limit)
+{
+    CTRACE((tfp, "LYSetupEdit buffer %u, display %d:%s\n",
+	    (unsigned) buffer_limit,
+	    display_limit,
+	    old_value));
+
+    BufLimit = buffer_limit;
+    if (buffer_limit == 0)
+	buffer_limit = strlen(old_value) + 1;
+
+    /*
+     * Initialize edit record
+     */
+    LYGetYX(StartY, StartX);
+    PadChar = ' ';
+    IsDirty = TRUE;
+    PanOn = FALSE;
+    CurModif = 0;
+
+    MaxLen = buffer_limit;
+    DspWdth = display_limit;
+    Margin = 0;
+    Pos = (int) strlen(old_value);
+#ifdef ENHANCED_LINEEDIT
+    Mark = -1;			/* pos=0, but do not show it yet */
+#endif
+    DspStart = 0;
+
+    updateMargin(edit);
+
+    StrLen = strlen(old_value);
+    Buf = typecallocn(char, MaxLen + 1);
+
+    LYStrNCpy(Buf, old_value, buffer_limit);
+    Offs2Col = typecallocn(int, MaxLen + 1);
 }
 
 #ifdef SUPPORT_MULTIBYTE_EDIT
@@ -3018,7 +3068,7 @@ int LYEditInsert(EDREC * edit, unsigned const char *s,
 		 int maxMessage)
 {
     int length = (int) strlen(Buf);
-    int remains = MaxLen - (length + len);
+    int remains = (int) MaxLen - (length + len);
     int edited = 0, overflow = 0;
 
     /*
@@ -3027,11 +3077,12 @@ int LYEditInsert(EDREC * edit, unsigned const char *s,
     if (remains < 0) {
 	overflow = 1;
 	len = 0;
-	if (MaxLen > length)	/* Insert as much as we can */
-	    len = MaxLen - length;
+	if ((int) MaxLen > length)	/* Insert as much as we can */
+	    len = (int) MaxLen - length;
 	else
 	    goto finish;
     }
+    ExtendEditor(edit, length + len);
     Buf[length + len] = '\0';
     for (; length >= Pos; length--)	/* Make room */
 	Buf[length + len] = Buf[length];
@@ -3106,7 +3157,7 @@ int LYEditInsert(EDREC * edit, unsigned const char *s,
 
   finish:
     Pos += len;
-    StrLen += len;
+    StrLen += (size_t) len;
     if (edited)
 	IsDirty = TRUE;
     if (overflow && maxMessage)
@@ -3114,10 +3165,10 @@ int LYEditInsert(EDREC * edit, unsigned const char *s,
 #ifdef ENHANCED_LINEEDIT
     if (Mark > Pos)
 	Mark += len;
-    else if (Mark < -1 - Pos)
+    else if (Mark < -(1 + Pos))
 	Mark -= len;
     if (Mark >= 0)
-	Mark = -1 - Mark;	/* Disable it */
+	Mark = -(1 + Mark);	/* Disable it */
 #endif
     return edited;
 }
@@ -3135,11 +3186,11 @@ int LYEdit1(EDREC * edit, int ch,
     unsigned char uch;
     int offset;
 
-    if (MaxLen <= 0)
+    if ((int) MaxLen <= 0)
 	return (0);		/* Be defensive */
 
-    length = (int) strlen(&Buf[0]);
-    StrLen = length;
+    StrLen = strlen(&Buf[0]);
+    length = (int) StrLen;
 
     switch (action) {
 #ifdef EXP_KEYBOARD_LAYOUT
@@ -3180,15 +3231,16 @@ int LYEdit1(EDREC * edit, int ch,
 	if (ch + 64 >= LYlowest_eightbit[current_char_set])
 	    ch += 64;
 
-	if (Pos <= (MaxLen) && StrLen < (MaxLen)) {
+	if (Pos <= ((int) MaxLen) && StrLen < MaxLen) {
 #ifdef ENHANCED_LINEEDIT
 	    if (Mark > Pos)
 		Mark++;
-	    else if (Mark < -1 - Pos)
+	    else if (Mark < -(1 + Pos))
 		Mark--;
 	    if (Mark >= 0)
-		Mark = -1 - Mark;	/* Disable it */
+		Mark = -(1 + Mark);	/* Disable it */
 #endif
+	    ExtendEditor(edit, length + 1);
 	    for (i = length; i >= Pos; i--)	/* Make room */
 		Buf[i + 1] = Buf[i];
 	    Buf[length + 1] = '\0';
@@ -3285,11 +3337,11 @@ int LYEdit1(EDREC * edit, int ch,
 	    Buf[i] = Buf[i + offset];
 #ifdef ENHANCED_LINEEDIT
 	if (Mark >= 0)
-	    Mark = -1 - Mark;	/* Disable it */
-	if (Mark <= -1 - Pos - offset)
+	    Mark = -(1 + Mark);	/* Disable it */
+	if (Mark <= -(1 + Pos + offset))
 	    Mark += offset;	/* Shift it */
-	if (-1 - Pos - offset < Mark && Mark < -1 - Pos)
-	    Mark = -1 - Pos;	/* Set to the current position */
+	if (-(1 + Pos + offset) < Mark && Mark < -(1 + Pos))
+	    Mark = -(1 + Pos);	/* Set to the current position */
 #endif
 
 	break;
@@ -3303,8 +3355,8 @@ int LYEdit1(EDREC * edit, int ch,
 
 #ifdef ENHANCED_LINEEDIT
 	if (Mark >= 0)
-	    Mark = -1 - Mark;	/* Disable it */
-	if (Mark <= -1 - Pos)
+	    Mark = -(1 + Mark);	/* Disable it */
+	if (Mark <= -(1 + Pos))
 	    Mark += Pos;	/* Shift it */
 	else
 	    Mark = -1;		/* Reset it */
@@ -3319,8 +3371,8 @@ int LYEdit1(EDREC * edit, int ch,
 	Buf[Pos] = '\0';
 #ifdef ENHANCED_LINEEDIT
 	if (Mark >= 0)
-	    Mark = -1 - Mark;	/* Disable it */
-	if (Mark <= -1 - Pos)
+	    Mark = -(1 + Mark);	/* Disable it */
+	if (Mark <= -(1 + Pos))
 	    Mark = -1;		/* Reset it */
 #endif
 	break;
@@ -3349,8 +3401,8 @@ int LYEdit1(EDREC * edit, int ch,
 #ifndef SUPPORT_MULTIBYTE_EDIT
 #ifdef ENHANCED_LINEEDIT
 	if (Mark >= 0)
-	    Mark = -1 - Mark;	/* Disable it */
-	if (Mark <= -1 - Pos)
+	    Mark = -(1 + Mark);	/* Disable it */
+	if (Mark <= -(1 + Pos))
 	    Mark++;
 #endif
 	Pos--;
@@ -3364,8 +3416,8 @@ int LYEdit1(EDREC * edit, int ch,
 
 #ifdef ENHANCED_LINEEDIT
 	if (Mark >= 0)
-	    Mark = -1 - Mark;	/* Disable it */
-	if (Mark <= -1 - Pos)
+	    Mark = -(1 + Mark);	/* Disable it */
+	if (Mark <= -(1 + Pos))
 	    Mark += offset;	/* Shift it */
 #endif
 
@@ -3420,11 +3472,11 @@ int LYEdit1(EDREC * edit, int ch,
 	if (Pos == length)
 	    Pos--;
 	if (Mark < 0)
-	    Mark = -1 - Mark;	/* Temporary enable it */
+	    Mark = -(1 + Mark);	/* Temporary enable it */
 	if (Mark == Pos || Mark == Pos + 1)
 	    Mark = Pos - 1;
 	if (Mark >= 0)
-	    Mark = -1 - Mark;	/* Disable it */
+	    Mark = -(1 + Mark);	/* Disable it */
 	if (Buf[Pos - 1] == Buf[Pos]) {
 	    Pos++;
 	    break;
@@ -3446,7 +3498,7 @@ int LYEdit1(EDREC * edit, int ch,
 	 * emacs-like exchange-point-and-mark
 	 */
 	if (Mark < 0)
-	    Mark = -1 - Mark;	/* Enable it */
+	    Mark = -(1 + Mark);	/* Enable it */
 	if (Mark == Pos)
 	    return (0);
 	i = Pos;
@@ -3459,9 +3511,9 @@ int LYEdit1(EDREC * edit, int ch,
 	 * primitive emacs-like kill-region
 	 */
 	if (Mark < 0)
-	    Mark = -1 - Mark;	/* Enable it */
+	    Mark = -(1 + Mark);	/* Enable it */
 	if (Mark == Pos) {
-	    killbuffer[0] = '\0';
+	    BStrFree(killbuffer);
 	    return (0);
 	}
 	if (Mark > Pos)
@@ -3469,34 +3521,37 @@ int LYEdit1(EDREC * edit, int ch,
 	{
 	    int reglen = Pos - Mark;
 
-	    LYStrNCpy(killbuffer, &Buf[Mark],
-		      HTMIN(reglen, (int) sizeof(killbuffer) - 1));
+	    BStrCopy1(killbuffer, Buf + Mark, reglen);
 	    for (i = Mark; Buf[i + reglen]; i++)
 		Buf[i] = Buf[i + reglen];
 	    Buf[i] = Buf[i + reglen];	/* terminate */
 	    Pos = Mark;
 	}
 	if (Mark >= 0)
-	    Mark = -1 - Mark;	/* Disable it */
+	    Mark = -(1 + Mark);	/* Disable it */
 	break;
 
     case LYE_YANK:
 	/*
 	 * primitive emacs-like yank
 	 */
-	if (!killbuffer[0]) {
-	    Mark = -1 - Pos;
+	if (!killbuffer) {
+	    Mark = -(1 + Pos);
 	    return (0);
-	} {
-	    int yanklen = (int) strlen(killbuffer);
+	} else {
+	    int yanklen = killbuffer->len;
 
-	    if (Pos + yanklen <= (MaxLen) && StrLen + yanklen <= (MaxLen)) {
-		Mark = -1 - Pos;
+	    if ((Pos + yanklen) <= (int) MaxLen &&
+		StrLen + (size_t) yanklen <= MaxLen) {
+
+		ExtendEditor(edit, Pos + yanklen);
+
+		Mark = -(1 + Pos);
 
 		for (i = length; i >= Pos; i--)		/* Make room */
 		    Buf[i + yanklen] = Buf[i];
 		for (i = 0; i < yanklen; i++)
-		    Buf[Pos++] = killbuffer[i];
+		    Buf[Pos++] = killbuffer->str[i];
 
 	    } else if (maxMessage) {
 		_statusline(MAXLEN_REACHED_DEL_OR_MOV);
@@ -3518,7 +3573,7 @@ int LYEdit1(EDREC * edit, int ch,
 	return (ch);
     }
     IsDirty = TRUE;
-    StrLen = (int) strlen(&Buf[0]);
+    StrLen = strlen(&Buf[0]);
     return (0);
 }
 
@@ -3531,60 +3586,62 @@ int get_popup_number(const char *msg,
 		     int *c,
 		     int *rel)
 {
-    char temp[120];
-    char *p = temp;
-    int num;
+    bstring *temp = NULL;
+    int result = 0;
 
     /*
      * Load the c argument into the prompt buffer.
      */
-    temp[0] = (char) *c;
-    temp[1] = '\0';
+    BStrCopy0(temp, "?");
+    temp->str[0] = (char) *c;
+
     _statusline(msg);
 
     /*
      * Get the number, possibly with a suffix, from the user.
      */
-    if (LYGetStr(temp, VISIBLE, sizeof(temp), NORECALL) < 0 || *temp == 0) {
+    if (LYgetBString(&temp, VISIBLE, 0, NORECALL) < 0 || isBEmpty(temp)) {
 	HTInfoMsg(CANCELLED);
 	*c = '\0';
 	*rel = '\0';
-	return (0);
-    }
-
-    *rel = '\0';
-    num = atoi(p);
-    while (isdigit(UCH(*p)))
-	++p;
-    switch (*p) {
-    case '+':
-    case '-':
-	/* 123+ or 123- */
-	*rel = *p++;
-	*c = *p;
-	break;
-    default:
-	*c = *p++;
-	*rel = *p;
-	break;
-    case 0:
-	break;
-    }
-
-    /*
-     * If we had a 'g' or 'p' suffix, load it into c.  Otherwise, zero c.  Then
-     * return the number.
-     */
-    if (*p == 'g' || *p == 'G') {
-	*c = 'g';
-    } else if (*p == 'p' || *p == 'P') {
-	*c = 'p';
     } else {
-	*c = '\0';
+	char *p = temp->str;
+
+	*rel = '\0';
+	result = atoi(p);
+	while (isdigit(UCH(*p)))
+	    ++p;
+	switch (*p) {
+	case '+':
+	case '-':
+	    /* 123+ or 123- */
+	    *rel = *p++;
+	    *c = *p;
+	    break;
+	default:
+	    *c = *p++;
+	    *rel = *p;
+	    break;
+	case 0:
+	    break;
+	}
+
+	/*
+	 * If we had a 'g' or 'p' suffix, load it into c.  Otherwise, zero c.  Then
+	 * return the number.
+	 */
+	if (*p == 'g' || *p == 'G') {
+	    *c = 'g';
+	} else if (*p == 'p' || *p == 'P') {
+	    *c = 'p';
+	} else {
+	    *c = '\0';
+	}
+	if (*rel != '+' && *rel != '-')
+	    *rel = 0;
     }
-    if (*rel != '+' && *rel != '-')
-	*rel = 0;
-    return num;
+    BStrFree(temp);
+    return result;
 }
 
 #ifdef USE_COLOR_STYLE
@@ -3607,7 +3664,10 @@ static void remember_column(EDREC * edit, int offset)
 #else
     getyx(stdscr, y0, x0);
 #endif
-    edit->offset2col[offset] = x0;
+    Offs2Col[offset] = x0;
+
+    (void) y0;
+    (void) x0;
 }
 
 static void fill_edited_line(int prompting GCC_UNUSED, int length, int ch)
@@ -3631,7 +3691,9 @@ static void fill_edited_line(int prompting GCC_UNUSED, int length, int ch)
 void LYRefreshEdit(EDREC * edit)
 {
     /* bytes and characters are not the same thing */
+#if defined(DEBUG_EDIT)
     int all_bytes;
+#endif
     int pos_bytes = Pos;
     int dpy_bytes;
     int lft_bytes;		/* base of string which is displayed */
@@ -3672,15 +3734,17 @@ void LYRefreshEdit(EDREC * edit)
     if (!IsDirty || (DspWdth == 0))
 	return;
 
+    CTRACE((tfp, "LYRefreshEdit:%s\n", Buf));
+
     IsDirty = FALSE;
 
-    all_bytes = (int) strlen(&Buf[0]);
-    StrLen = all_bytes;
+    StrLen = strlen(&Buf[0]);
 
     all_cells = LYstrCells(Buf);
     pos_cells = LYstrExtent2(Buf, Pos);
 
 #if defined(SUPPORT_MULTIBYTE_EDIT) && defined(DEBUG_EDIT)
+    all_bytes = (int) StrLen;
     lft_chars = mbcs_glyphs(Buf, DspStart);
     pos_chars = mbcs_glyphs(Buf, Pos);
     all_chars = mbcs_glyphs(Buf, all_bytes);
@@ -3825,11 +3889,11 @@ void LYRefreshEdit(EDREC * edit)
 	    int j = (int) (next - str);
 
 	    while (i < j) {
-		edit->offset2col[i++] = cell + StartX;
+		Offs2Col[i++] = cell + StartX;
 	    }
 	    cell += LYstrExtent2(last, (int) (next - last));
 	} while (i < dpy_bytes);
-	edit->offset2col[i] = cell + StartX;
+	Offs2Col[i] = cell + StartX;
     } else {
 #if defined(ENHANCED_LINEEDIT) && defined(USE_COLOR_STYLE)
 	if (Mark >= 0 && DspStart > Mark)
@@ -3853,7 +3917,7 @@ void LYRefreshEdit(EDREC * edit)
 		      & UCT_R_8859SPECL))))) {
 		LYaddch(' ');
 	    } else if (str[i] == '\t') {
-		int col = edit->offset2col[i] - StartX;
+		int col = Offs2Col[i] - StartX;
 
 		/*
 		 * Like LYwaddnstr(), expand tabs from the beginning of the
@@ -3880,7 +3944,7 @@ void LYRefreshEdit(EDREC * edit)
     /*
      * Erase rest of input area.
      */
-    padsize = DspWdth - (edit->offset2col[dpy_bytes] - StartX);
+    padsize = DspWdth - (Offs2Col[dpy_bytes] - StartX);
     fill_edited_line(prompting, padsize, PadChar);
 
     /*
@@ -3898,7 +3962,7 @@ void LYRefreshEdit(EDREC * edit)
     /*
      * Finally, move the cursor to the point where the next edit will occur.
      */
-    LYmove(StartY, edit->offset2col[Pos - DspStart]);
+    LYmove(StartY, Offs2Col[Pos - DspStart]);
 
 #ifdef USE_COLOR_STYLE
     if (estyle != NOSTYLE)
@@ -3921,13 +3985,13 @@ static void reinsertEdit(EditFieldData *edit, char *result)
 static int caselessCmpList(const void *a,
 			   const void *b)
 {
-    return strcasecomp(*(const char *const *) a, *(const char *const *) b);
+    return strcasecomp(*(STRING2PTR) a, *(STRING2PTR) b);
 }
 
 static int normalCmpList(const void *a,
 			 const void *b)
 {
-    return strcmp(*(const char *const *) a, *(const char *const *) b);
+    return strcmp(*(STRING2PTR) a, *(STRING2PTR) b);
 }
 
 static char **sortedList(HTList *list, int ignorecase)
@@ -3970,7 +4034,7 @@ static char **sortedList(HTList *list, int ignorecase)
     return result;
 }
 
-int LYarrayLength(const char **list)
+int LYarrayLength(STRING2PTR list)
 {
     int result = 0;
 
@@ -3979,7 +4043,7 @@ int LYarrayLength(const char **list)
     return result;
 }
 
-int LYarrayWidth(const char **list)
+int LYarrayWidth(STRING2PTR list)
 {
     int result = 0;
     int check;
@@ -4008,7 +4072,7 @@ static void FormatChoiceNum(char *dst,
     }
 }
 
-static unsigned options_width(const char **list)
+static unsigned options_width(STRING2PTR list)
 {
     unsigned width = 0;
     int count = 0;
@@ -4080,7 +4144,7 @@ static void draw_option(WINDOW * win, int entry,
 int LYhandlePopupList(int cur_choice,
 		      int ly,
 		      int lx,
-		      const char **choices,
+		      STRING2PTR choices,
 		      int width,
 		      int i_length,
 		      int disabled,
@@ -4098,8 +4162,8 @@ int LYhandlePopupList(int cur_choice,
     char Cnum[64];
     int Lnum;
     int npages;
-    static char prev_target[MAX_LINE];	/* Search string buffer */
-    static char prev_target_buffer[MAX_LINE];	/* Next search buffer */
+    static bstring *prev_target = NULL;		/* Search string buffer */
+    static bstring *next_target = NULL;		/* Next search buffer */
     static BOOL first = TRUE;
     char *cp;
     int ch = 0;
@@ -4111,7 +4175,7 @@ int LYhandlePopupList(int cur_choice,
     int number;
     char buffer[MAX_LINE];
     const char *popup_status_msg = NULL;
-    const char **Cptr = NULL;
+    STRING2PTR Cptr = NULL;
 
 #define CAN_SCROLL_DOWN	1
 #define CAN_SCROLL_UP	2
@@ -4126,10 +4190,10 @@ int LYhandlePopupList(int cur_choice,
      * Initialize the search string buffer. - FM
      */
     if (first) {
-	*prev_target_buffer = '\0';
+	BStrCopy0(next_target, "");
 	first = FALSE;
     }
-    *prev_target = '\0';
+    BStrCopy0(prev_target, "");
     QueryTotal = (search_queries ? HTList_count(search_queries) : 0);
     recall = ((QueryTotal >= 1) ? RECALL_URL : NORECALL);
     QueryNum = QueryTotal;
@@ -4738,7 +4802,7 @@ int LYhandlePopupList(int cur_choice,
 	    break;
 
 	case LYK_NEXT:
-	    if (recall && *prev_target_buffer == '\0') {
+	    if (recall && isBEmpty(next_target)) {
 		/*
 		 * We got a 'n'ext command with no prior query specified within
 		 * the popup window.  See if one was entered when the popup was
@@ -4752,21 +4816,17 @@ int LYhandlePopupList(int cur_choice,
 		 */
 		if ((cp = (char *) HTList_objectAt(search_queries,
 						   0)) != NULL) {
-		    LYStrNCpy(prev_target_buffer,
-			      cp,
-			      sizeof(prev_target_buffer) - 1);
+		    BStrCopy0(next_target, cp);
 		    QueryNum = 0;
 		    FirstRecall = FALSE;
 		}
 	    }
-	    strcpy(prev_target, prev_target_buffer);
+	    BStrCopy(prev_target, next_target);
 	    /* FALLTHRU */
 	case LYK_WHEREIS:
-	    if (*prev_target == '\0') {
+	    if (isBEmpty(prev_target)) {
 		_statusline(ENTER_WHEREIS_QUERY);
-		if ((ch = LYGetStr(prev_target, VISIBLE,
-				   sizeof(prev_target_buffer),
-				   recall)) < 0) {
+		if ((ch = LYgetBString(&prev_target, VISIBLE, 0, recall)) < 0) {
 		    /*
 		     * User cancelled the search via ^G.  - FM
 		     */
@@ -4776,7 +4836,7 @@ int LYhandlePopupList(int cur_choice,
 	    }
 
 	  check_recall:
-	    if (*prev_target == '\0' &&
+	    if (isBEmpty(prev_target) &&
 		!(recall && (ch == UPARROW || ch == DNARROW))) {
 		/*
 		 * No entry.  Simply break.  - FM
@@ -4791,13 +4851,13 @@ int LYhandlePopupList(int cur_choice,
 		     * Use the current string or last query in the list.  - FM
 		     */
 		    FirstRecall = FALSE;
-		    if (*prev_target_buffer) {
+		    if (!isBEmpty(next_target)) {
 			for (QueryNum = (QueryTotal - 1);
 			     QueryNum > 0; QueryNum--) {
 			    if ((cp = (char *) HTList_objectAt(search_queries,
 							       QueryNum))
 				!= NULL &&
-				!strcmp(prev_target_buffer, cp)) {
+				!strcmp(next_target->str, cp)) {
 				break;
 			    }
 			}
@@ -4818,19 +4878,18 @@ int LYhandlePopupList(int cur_choice,
 		}
 		if ((cp = (char *) HTList_objectAt(search_queries,
 						   QueryNum)) != NULL) {
-		    LYStrNCpy(prev_target, cp, sizeof(prev_target) - 1);
-		    if (*prev_target_buffer &&
-			!strcmp(prev_target_buffer, prev_target)) {
+		    BStrCopy0(prev_target, cp);
+		    if (!isBEmpty(next_target) &&
+			!strcmp(next_target->str, prev_target->str)) {
 			_statusline(EDIT_CURRENT_QUERY);
-		    } else if ((*prev_target_buffer && QueryTotal == 2) ||
-			       (!(*prev_target_buffer) &&
-				QueryTotal == 1)) {
+		    } else if ((!isBEmpty(next_target) && QueryTotal == 2) ||
+			       (isBEmpty(next_target) && QueryTotal == 1)) {
 			_statusline(EDIT_THE_PREV_QUERY);
 		    } else {
 			_statusline(EDIT_A_PREV_QUERY);
 		    }
-		    if ((ch = LYGetStr(prev_target, VISIBLE,
-				       sizeof(prev_target_buffer), recall)) < 0) {
+		    if ((ch = LYgetBString(&prev_target,
+					   VISIBLE, 0, recall)) < 0) {
 			/*
 			 * User cancelled the search via ^G.  - FM
 			 */
@@ -4845,13 +4904,13 @@ int LYhandlePopupList(int cur_choice,
 		     * Use the current string or first query in the list.  - FM
 		     */
 		    FirstRecall = FALSE;
-		    if (*prev_target_buffer) {
+		    if (!isBEmpty(next_target)) {
 			for (QueryNum = 0;
 			     QueryNum < (QueryTotal - 1); QueryNum++) {
 			    if ((cp = (char *) HTList_objectAt(search_queries,
 							       QueryNum))
 				!= NULL &&
-				!strcmp(prev_target_buffer, cp)) {
+				!strcmp(next_target->str, cp)) {
 				break;
 			    }
 			}
@@ -4872,21 +4931,18 @@ int LYhandlePopupList(int cur_choice,
 		}
 		if ((cp = (char *) HTList_objectAt(search_queries,
 						   QueryNum)) != NULL) {
-		    LYStrNCpy(prev_target, cp, sizeof(prev_target) - 1);
-		    if (*prev_target_buffer &&
-			!strcmp(prev_target_buffer, prev_target)) {
+		    BStrCopy0(prev_target, cp);
+		    if (isBEmpty(next_target) &&
+			!strcmp(next_target->str, prev_target->str)) {
 			_statusline(EDIT_CURRENT_QUERY);
-		    } else if ((*prev_target_buffer &&
-				QueryTotal == 2) ||
-			       (!(*prev_target_buffer) &&
-				QueryTotal == 1)) {
+		    } else if ((!isBEmpty(next_target) && QueryTotal == 2) ||
+			       (isBEmpty(next_target) && QueryTotal == 1)) {
 			_statusline(EDIT_THE_PREV_QUERY);
 		    } else {
 			_statusline(EDIT_A_PREV_QUERY);
 		    }
-		    if ((ch = LYGetStr(prev_target, VISIBLE,
-				       sizeof(prev_target_buffer),
-				       recall)) < 0) {
+		    if ((ch = LYgetBString(&prev_target,
+					   VISIBLE, 0, recall)) < 0) {
 			/*
 			 * User cancelled the search via ^G. - FM
 			 */
@@ -4899,8 +4955,8 @@ int LYhandlePopupList(int cur_choice,
 	    /*
 	     * Replace the search string buffer with the new target.  - FM
 	     */
-	    strcpy(prev_target_buffer, prev_target);
-	    HTAddSearchQuery(prev_target_buffer);
+	    BStrCopy(next_target, prev_target);
+	    HTAddSearchQuery(next_target->str);
 
 	    /*
 	     * Start search at the next choice.  - FM
@@ -4908,10 +4964,10 @@ int LYhandlePopupList(int cur_choice,
 	    for (j = 1; Cptr[i + j] != NULL; j++) {
 		FormatChoiceNum(buffer, max_choices, (i + j), Cptr[i + j]);
 		if (LYcase_sensitive) {
-		    if (strstr(buffer, prev_target_buffer) != NULL)
+		    if (strstr(buffer, next_target->str) != NULL)
 			break;
 		} else {
-		    if (LYstrstr(buffer, prev_target_buffer) != NULL)
+		    if (LYstrstr(buffer, next_target->str) != NULL)
 			break;
 		}
 	    }
@@ -4936,7 +4992,7 @@ int LYhandlePopupList(int cur_choice,
 	     * If we started at the beginning, it can't be present.  - FM
 	     */
 	    if (cur_choice == 0) {
-		HTUserMsg2(STRING_NOT_FOUND, prev_target_buffer);
+		HTUserMsg2(STRING_NOT_FOUND, next_target->str);
 		goto restore_popup_statusline;
 	    }
 
@@ -4946,10 +5002,10 @@ int LYhandlePopupList(int cur_choice,
 	    for (j = 0; j < cur_choice; j++) {
 		FormatChoiceNum(buffer, max_choices, (j + 1), Cptr[j]);
 		if (LYcase_sensitive) {
-		    if (strstr(buffer, prev_target_buffer) != NULL)
+		    if (strstr(buffer, next_target->str) != NULL)
 			break;
 		} else {
-		    if (LYstrstr(buffer, prev_target_buffer) != NULL)
+		    if (LYstrstr(buffer, next_target->str) != NULL)
 			break;
 		}
 	    }
@@ -4974,7 +5030,7 @@ int LYhandlePopupList(int cur_choice,
 	    /*
 	     * Didn't find it in the preceding choices either.  - FM
 	     */
-	    HTUserMsg2(STRING_NOT_FOUND, prev_target_buffer);
+	    HTUserMsg2(STRING_NOT_FOUND, next_target->str);
 
 	  restore_popup_statusline:
 	    /*
@@ -4982,7 +5038,7 @@ int LYhandlePopupList(int cur_choice,
 	     * FM
 	     */
 	    _statusline(popup_status_msg);
-	    *prev_target = '\0';
+	    BStrCopy0(prev_target, "");
 	    QueryTotal = (search_queries ? HTList_count(search_queries)
 			  : 0);
 	    recall = ((QueryTotal >= 1) ? RECALL_URL : NORECALL);
@@ -5007,42 +5063,48 @@ int LYhandlePopupList(int cur_choice,
     return (disabled ? orig_choice : cur_choice);
 }
 
-#define CurModif MyEdit.current_modifiers
-
-int LYgetstr(char *inputline,
-	     int hidden,
-	     size_t bufsize,
-	     RecallType recall)
+/*
+ * Allow the user to edit a string.
+ */
+int LYgetBString(bstring **inputline,
+		 int hidden,
+		 size_t max_cols,
+		 RecallType recall)
 {
-    int x, y, MaxStringSize;
+    int x, y;
     int ch;
     int xlec = -2;
     int last_xlec = -1;
     int last_xlkc = -1;
-    EditFieldData MyEdit;
+    EditFieldData MyEdit, *edit = &MyEdit;
 
 #ifdef SUPPORT_MULTIBYTE_EDIT
     BOOL refresh_mb = TRUE;
 #endif /* SUPPORT_MULTIBYTE_EDIT */
 
+    CTRACE((tfp, "called LYgetBString hidden %d, recall %d\n", hidden, (int) recall));
+
     LYGetYX(y, x);		/* Use screen from cursor position to eol */
-    MaxStringSize = (int) ((bufsize < sizeof(MyEdit.buffer))
-			   ? (bufsize - 1)
-			   : (sizeof(MyEdit.buffer) - 1));
-    LYSetupEdit(&MyEdit, inputline, MaxStringSize, LYcolLimit - x);
-    MyEdit.hidden = (BOOL) hidden;
+
+    (void) y;
+    (void) x;
+
+    if (*inputline == NULL)	/* caller may not have initialized this */
+	BStrCopy0(*inputline, "");
+
+    LYSetupEdit(edit, (*inputline)->str, max_cols, LYcolLimit - x);
+    IsHidden = (BOOL) hidden;
 #ifdef FEPCTRL
     fep_on();
 #endif
 
-    CTRACE((tfp, "called LYgetstr\n"));
     for (;;) {
       again:
 #ifndef SUPPORT_MULTIBYTE_EDIT
-	LYRefreshEdit(&MyEdit);
+	LYRefreshEdit(edit);
 #else /* SUPPORT_MULTIBYTE_EDIT */
 	if (refresh_mb)
-	    LYRefreshEdit(&MyEdit);
+	    LYRefreshEdit(edit);
 #endif /* SUPPORT_MULTIBYTE_EDIT */
 	ch = LYReadCmdKey(FOR_PROMPT);
 #ifdef SUPPORT_MULTIBYTE_EDIT
@@ -5073,12 +5135,13 @@ int LYgetstr(char *inputline,
 	}
 
 	if (recall != NORECALL && (ch == UPARROW || ch == DNARROW)) {
-	    LYStrNCpy(inputline, MyEdit.buffer, bufsize);
-	    LYAddToCloset(recall, MyEdit.buffer);
-	    CTRACE((tfp, "LYgetstr(%s) recall\n", inputline));
+	    BStrCopy0(*inputline, Buf);
+	    LYAddToCloset(recall, Buf);
+	    CTRACE((tfp, "LYgetstr(%s) recall\n", (*inputline)->str));
 #ifdef FEPCTRL
 	    fep_off();
 #endif
+	    LYFinishEdit(edit);
 	    return (ch);
 	}
 	ch |= CurModif;
@@ -5121,17 +5184,17 @@ int LYgetstr(char *inputline,
 		    char **data = sortedList(list, (BOOL) (recall == RECALL_CMD));
 		    int old_y, old_x;
 		    int cur_choice = 0;
-		    int num_options = LYarrayLength((const char **) data);
+		    int num_options = LYarrayLength((STRING2PTR) data);
 
 		    while (cur_choice < num_options
-			   && strcasecomp(data[cur_choice], MyEdit.buffer) < 0)
+			   && strcasecomp(data[cur_choice], Buf) < 0)
 			cur_choice++;
 
 		    LYGetYX(old_y, old_x);
 		    cur_choice = LYhandlePopupList(cur_choice,
 						   0,
 						   old_x,
-						   (const char **) data,
+						   (STRING2PTR) data,
 						   -1,
 						   -1,
 						   FALSE,
@@ -5139,13 +5202,13 @@ int LYgetstr(char *inputline,
 		    if (cur_choice >= 0) {
 			if (recall == RECALL_CMD)
 			    _statusline(": ");
-			reinsertEdit(&MyEdit, data[cur_choice]);
+			reinsertEdit(edit, data[cur_choice]);
 		    }
 		    LYmove(old_y, old_x);
 		    FREE(data);
 		}
 	    } else {
-		reinsertEdit(&MyEdit, LYFindInCloset(recall, MyEdit.buffer));
+		reinsertEdit(edit, LYFindInCloset(recall, Buf));
 	    }
 	    break;
 
@@ -5160,7 +5223,7 @@ int LYgetstr(char *inputline,
 	    if (ch != '\t' &&
 		(IS_CJK_TTY ||
 		 LYlowest_eightbit[current_char_set] <= 0x97)) {
-		LYLineEdit(&MyEdit, ch, FALSE);
+		LYLineEdit(edit, ch, FALSE);
 		break;
 	    }
 	    /* FALLTHRU */
@@ -5169,13 +5232,14 @@ int LYgetstr(char *inputline,
 	    /*
 	     * Terminate the string and return.
 	     */
-	    LYStrNCpy(inputline, MyEdit.buffer, bufsize);
+	    BStrCopy0(*inputline, Buf);
 	    if (!hidden)
-		LYAddToCloset(recall, MyEdit.buffer);
-	    CTRACE((tfp, "LYgetstr(%s) LYE_ENTER\n", inputline));
+		LYAddToCloset(recall, Buf);
+	    CTRACE((tfp, "LYgetstr(%s) LYE_ENTER\n", (*inputline)->str));
 #ifdef FEPCTRL
 	    fep_off();
 #endif
+	    LYFinishEdit(edit);
 	    return (ch);
 
 #ifdef CAN_CUT_AND_PASTE
@@ -5197,11 +5261,11 @@ int LYgetstr(char *inputline,
 		    while (e1 < e) {
 			if (*e1 < ' ') {	/* Stop here? */
 			    if (e1 > s)
-				LYEditInsert(&MyEdit, s, (int) (e1 - s),
+				LYEditInsert(edit, s, (int) (e1 - s),
 					     map_active, TRUE);
 			    s = e1;
 			    if (*e1 == '\t') {	/* Replace by space */
-				LYEditInsert(&MyEdit,
+				LYEditInsert(edit,
 					     (unsigned const char *) " ",
 					     1,
 					     map_active,
@@ -5213,7 +5277,7 @@ int LYgetstr(char *inputline,
 			    ++e1;
 		    }
 		    if (e1 > s)
-			LYEditInsert(&MyEdit, s, (int) (e1 - s), map_active, TRUE);
+			LYEditInsert(edit, s, (int) (e1 - s), map_active, TRUE);
 		}
 		get_clip_release();
 		break;
@@ -5224,11 +5288,11 @@ int LYgetstr(char *inputline,
 	    /*
 	     * Control-C or Control-G aborts.
 	     */
-	    inputline[0] = '\0';
 	    CTRACE((tfp, "LYgetstr LYE_ABORT\n"));
 #ifdef FEPCTRL
 	    fep_off();
 #endif
+	    LYFinishEdit(edit);
 	    return (-1);
 
 	case LYE_STOP:
@@ -5238,14 +5302,15 @@ int LYgetstr(char *inputline,
 	    CTRACE((tfp, "LYgetstr LYE_STOP\n"));
 #ifdef TEXTFIELDS_MAY_NEED_ACTIVATION
 	    textfields_need_activation = TRUE;
+	    LYFinishEdit(edit);
 	    return (-1);
 #else
 #ifdef ENHANCED_LINEEDIT
 	    if (Mark >= 0)
-		Mark = -1 - Mark;	/* Disable it */
-#endif
+		Mark = -(1 + Mark);	/* Disable it */
 #endif
 	    break;
+#endif
 
 	case LYE_LKCMD:
 	    /*
@@ -5271,24 +5336,45 @@ int LYgetstr(char *inputline,
 		break;
 	    }
 #ifndef SUPPORT_MULTIBYTE_EDIT
-	    LYLineEdit(&MyEdit, ch, FALSE);
+	    LYLineEdit(edit, ch, FALSE);
 #else /* SUPPORT_MULTIBYTE_EDIT */
-	    if (LYLineEdit(&MyEdit, ch, FALSE) == 0) {
+	    if (LYLineEdit(edit, ch, FALSE) == 0) {
 		if (refresh_mb && IS_CJK_TTY && (0x81 <= ch) && (ch <= 0xfe))
 		    refresh_mb = FALSE;
 		else
 		    refresh_mb = TRUE;
 	    } else {
 		if (!refresh_mb) {
-		    LYEdit1(&MyEdit, 0, LYE_DELP, FALSE);
+		    LYEdit1(edit, 0, LYE_DELP, FALSE);
 		}
 	    }
 #endif /* SUPPORT_MULTIBYTE_EDIT */
 	}
     }
-#ifdef FEPCTRL
-    fep_off();
-#endif
+}
+
+/*
+ * Use this for fixed-buffer edits which have not been converted to use
+ * LYgetBString().
+ */
+int LYgetstr(char *inputline,	/* fixed-size buffer for input/output */
+	     int hidden,	/* true to suppress from command-history */
+	     size_t bufsize,	/* sizeof(inputline) */
+	     RecallType recall)	/* type of command-history */
+{
+    int ch;
+    bstring *my_bstring = NULL;
+
+    BStrCopy0(my_bstring, inputline);
+    if (my_bstring != 0) {
+	ch = LYgetBString(&my_bstring, hidden, bufsize, recall);
+	if (ch >= 0 && my_bstring != 0)
+	    LYStrNCpy(inputline, my_bstring->str, bufsize);
+	BStrFree(my_bstring);
+    } else {
+	ch = -1;
+    }
+    return ch;
 }
 
 const char *LYLineeditHelpURL(void)

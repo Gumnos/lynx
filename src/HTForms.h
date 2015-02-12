@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTForms.h,v 1.29 2011/05/19 10:53:07 tom Exp $
+ * $LynxId: HTForms.h,v 1.33 2012/02/12 22:30:53 tom Exp $
  */
 #ifndef HTFORMS_H
 #define HTFORMS_H
@@ -75,7 +75,7 @@ extern "C" {
 	char *value;		/* user entered string data */
 	char *orig_value;	/* the original value */
 	int size;		/* width on the screen */
-	unsigned maxlength;	/* max width of data */
+	size_t maxlength;	/* max width of data */
 	int group;		/* a group associated with the link
 				 *  this is used for select's
 				 */
@@ -98,7 +98,7 @@ extern "C" {
 	char *accept_cs;
     } FormInfo;
 
-#define FormIsReadonly(form) ((form)->disabled || (form)->readonly)
+#define FormIsReadonly(form) ((form) && ((form)->disabled || (form)->readonly))
 
 /*
  * As structure for info associated with a form.  There is some redundancy
@@ -108,8 +108,8 @@ extern "C" {
  */
     typedef struct _PerFormInfo {
 	int number;		/* form number, see GridText.c */
-	/* except for the last two, the following fields aren't actually used.. */
 	int disabled;		/* If YES, can't change values */
+	FormInfo data;
 	struct _PerFormInfo *next;	/* pointer to next form in doc */
 	int nfields;		/* number of fields */
 	FormInfo *first_field;
@@ -140,6 +140,10 @@ extern "C" {
 	F_KEYGEN_TYPE,
 	F_BUTTON_TYPE
     } FieldTypes;
+
+#define F_SUBMITLIKE(type) ((type) == F_SUBMIT_TYPE || \
+			    (type) == F_IMAGE_SUBMIT_TYPE || \
+			    (type) == F_TEXT_SUBMIT_TYPE)
 
 #define F_TEXTLIKE(type) ((type) == F_TEXT_TYPE || \
 			  (type) == F_TEXT_SUBMIT_TYPE || \
