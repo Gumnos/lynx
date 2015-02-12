@@ -1,7 +1,15 @@
--- $LynxId: CHANGES,v 1.491 2010/06/21 08:36:29 tom Exp $
+-- $LynxId: CHANGES,v 1.496 2010/08/25 09:20:04 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2010-08-25 (2.8.8dev.5)
+* modify convert_to_idna() to check for malformed urls (Debian #594300 reports
+  this as CVE-2010-2810) -TD
+* correct typo in po/makefile.inn from removal of mkdirs.sh in dev.4 (Debian
+  #592078) -TD
+* correct a sign-extension error in UpdateBoundary(), used for MIME boundary
+  computation, broken in dev.4 compiler-warning fixes -TD
 
 2010-06-21 (2.8.8dev.4)
 * check for SSL error when reading response from "GET".  This incidentally
