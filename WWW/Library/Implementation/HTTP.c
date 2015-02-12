@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTTP.c,v 1.124 2012/08/01 11:00:26 tom Exp $
+ * $LynxId: HTTP.c,v 1.126 2012/11/13 22:49:46 tom Exp $
  *
  * HyperText Tranfer Protocol	- Client implementation		HTTP.c
  * ==========================
@@ -710,7 +710,12 @@ static int HTLoadHTTP(const char *arg,
 	/* get host we're connecting to */
 	ssl_host = HTParse(url, "", PARSE_HOST);
 	ssl_host = StripIpv6Brackets(ssl_host);
-#if SSLEAY_VERSION_NUMBER >= 0x0900
+#if defined(USE_GNUTLS_FUNCS)
+	ret = gnutls_server_name_set(handle->gnutls_state,
+				     GNUTLS_NAME_DNS,
+				     ssl_host, strlen(ssl_host));
+	CTRACE((tfp, "...called gnutls_server_name_set(%s) ->%d\n", ssl_host, ret));
+#elif SSLEAY_VERSION_NUMBER >= 0x0900
 #ifndef USE_NSS_COMPAT_INCL
 	if (!try_tls) {
 	    handle->options |= SSL_OP_NO_TLSv1;
@@ -768,16 +773,17 @@ static int HTLoadHTTP(const char *arg,
 					    GNUTLS_VERIFY_DO_NOT_ALLOW_SAME |
 					    GNUTLS_VERIFY_ALLOW_X509_V1_CA_CRT);
 	ret = gnutls_certificate_verify_peers2(handle->gnutls_state, &tls_status);
-	if (ret < 0) {
+	if (ret < 0 || (ret == 0 &&
+			tls_status & GNUTLS_CERT_SIGNER_NOT_FOUND)) {
 	    int flag_continue = 1;
 	    char *msg2;
 
-	    if (tls_status & GNUTLS_CERT_SIGNER_NOT_FOUND) {
+	    if (ret == 0 && tls_status & GNUTLS_CERT_SIGNER_NOT_FOUND) {
+		msg2 = gettext("self signed certificate");
+	    } else if (tls_status & GNUTLS_CERT_SIGNER_NOT_FOUND) {
 		msg2 = gettext("no issuer was found");
 	    } else if (tls_status & GNUTLS_CERT_SIGNER_NOT_CA) {
 		msg2 = gettext("issuer is not a CA");
-	    } else if (tls_status & GNUTLS_CERT_SIGNER_NOT_FOUND) {
-		msg2 = gettext("the certificate has no known issuer");
 	    } else if (tls_status & GNUTLS_CERT_REVOKED) {
 		msg2 = gettext("the certificate has been revoked");
 	    } else {

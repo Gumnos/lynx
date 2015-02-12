@@ -1,5 +1,5 @@
 /*
- * $LynxId: GridText.c,v 1.239 2012/08/15 22:20:41 tom Exp $
+ * $LynxId: GridText.c,v 1.243 2012/11/18 22:09:20 tom Exp $
  *
  *		Character grid hypertext object
  *		===============================
@@ -2163,10 +2163,9 @@ static void display_page(HText *text,
 		   ((int) line->offset + LenNeeded) <= DISPLAY_COLS) {
 		size_t itmp = 0;
 		size_t written = 0;
-		int x_pos = offset + (int) (cp - data);
+		int x_off = offset + (int) (cp - data);
 		size_t len = strlen(target);
 		size_t utf_extra = 0;
-		int y;
 
 		text->page_has_target = YES;
 
@@ -2185,14 +2184,16 @@ static void display_page(HText *text,
 			/*
 			 * Ignore special characters.
 			 */
-			x_pos--;
+			x_off--;
 
 		    } else if (&data[itmp] >= cp) {
 			if (cp == &data[itmp]) {
 			    /*
 			     * First printable character of target.
 			     */
-			    LYmove((i + title_lines), x_pos);
+			    LYmove((i + title_lines),
+				   line->offset + LYstrExtent2(line->data,
+							       x_off - line->offset));
 			}
 			/*
 			 * Output all the printable target chars.
@@ -2226,17 +2227,11 @@ static void display_page(HText *text,
 		 * line.  -FM
 		 */
 		LYstopTargetEmphasis();
-		LYGetYX(y, offset);
-		(void) y;
 		data = (char *) &data[itmp];
+		offset = (int) (data - line->data + line->offset);
 
-		/*
-		 * Adjust the cursor position, should we be at
-		 * the end of the line, or not have another hit
-		 * in it.  -FM
-		 */
-		LYmove((i + title_lines + 1), 0);
 	    }			/* end while */
+	    LYmove((i + title_lines + 1), 0);
 #endif /* USE_COLOR_STYLE */
 #endif /* SHOW_WHEREIS_TARGETS */
 
@@ -4277,6 +4272,9 @@ void HText_appendCharacter(HText *text, int ch)
 	     target_cu + UTF_XLEN(ch) >= LYcols_cu(text))) {
 	    int saved_kanji_buf;
 	    eGridState saved_state;
+	    BOOL add_blank = (dont_wrap_pre
+			      && line->size
+			      && (line->data[line->size - 1] == ' '));
 
 	    new_line(text);
 	    line = text->last_line;
@@ -4286,6 +4284,8 @@ void HText_appendCharacter(HText *text, int ch)
 	    text->kanji_buf = '\0';
 	    text->state = S_text;
 	    HText_appendCharacter(text, LY_SOFT_NEWLINE);
+	    if (add_blank)
+		HText_appendCharacter(text, ' ');
 	    text->kanji_buf = saved_kanji_buf;
 	    text->state = saved_state;
 	}
@@ -13345,14 +13345,10 @@ void HText_EditTextField(LinkInfo * form_link)
 
 	if ((ebuf = readEditedFile(ed_temp)) != 0) {
 	    /*
-	     * Only use the first line of the result, and only that up to
-	     * the size of the field.
+	     * Only use the first line of the result.
 	     */
 	    for (p = ebuf; *p != '\0'; ++p) {
-		if ((p - ebuf) >= form->size - 1) {
-		    *p = '\0';
-		    break;
-		} else if (*p == '\n' || *p == '\r') {
+		if (*p == '\n' || *p == '\r') {
 		    *p = '\0';
 		    break;
 		}

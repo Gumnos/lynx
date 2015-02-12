@@ -1,13 +1,50 @@
--- $LynxId: CHANGES,v 1.619 2012/08/22 09:56:16 tom Exp $
+-- $LynxId: CHANGES,v 1.634 2012/11/18 21:54:53 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2012-11-18 (2.8.8dev.15)
+* corrected position of highlighting from search/whereis function when using
+  multibyte characters (Debian #673385) -TD
+* modify default case for HTLoadGopher() to use the file's suffix to obtain
+  a MIME mapping rather than always storing unknown types to disk (suggested by
+  Dario Niederman) -TD
+* modify ^X-e handling to not limit the result to the form field's length
+  (report by Keith Bowes) -TD
+* modify the Inno Setup files to show lynx's version numbers.  Development
+  and prerelease versions are indicated in the numeric-only versions by
+  prefixing a "10" or "20" -TD
+* ask for filesize when downloading via ftp, to use this in the read-progress
+  ETA -TD
+* fix special case when -dont_wrap_pre option is used, to restore space between
+  words which was lost when inserting a soft newline used to splice together
+  segments of a long line (Ubuntu #806749) -TD
+* provide more readable ETA message as an option (prompted by patch by Joerg
+  Hahn) -TD
+* add GNUTLS call to enable SNI (Server Name Indication) extension (Ubuntu
+  #732177) -TD
+* correct typo for -bibhost option in manpage (Redhat #854574) -TD
+* revise nsl-fork logic for passing addrinfo and hostent data back to eliminate
+  fixed limit on the number of records to return -TD
+* correct problem with loop logic in fill_addrinfo() exposed by multiple
+  addresses from
+    http://fbcdn-sphotos-d-a.akamaihd.net
+  (report/analysis by TG) -TD
+* updates for configure script macros (TD):
+  + add 3rd parameter to AC_DEFINE's to allow autoheader to run
+  + remove unused macros
+* update nl.po from
+    http://translationproject.org/latest/lynx
+* improve checking of certificates in the gnutls_certificate_verify_peers2()
+  by handling special case where self-signed certificates should be reported
+  (patch by Jamie Strandboge).
+* update config.guess (2012-09-25), config.sub (2012-08-18)
 
 2012-08-22 (2.8.8dev.14)
 * reset anchor's actual-length calculation at the end of pumpData() to handle
   scenario where this is used for internal data movement, i.e., for
   decompressing files (report by Owen Leibman, Debian #681214) -TD
-* drop two files overlooked in previous commit:
+* drop two files overlooked in previous commit (TD):
   lynx.rsp and WWW/Library/Implementation/HTFWriter.c
 
 2012-08-15 (2.8.8dev.13)
