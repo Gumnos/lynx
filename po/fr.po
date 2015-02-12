@@ -1,0 +1,43 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR Free Software Foundation, Inc.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+# The French translations for Lynx were created by the 
+# Chebucto Project.
+# Contributors include:
+# Chris Maxwell (CM)
+# David Potter
+# David Trueman (NdT)
+# * * * * * * * * * *
+# J.E. Spath <jspath @ bcpl . net> wedged this into Lynx
+# started: Wed Sep  2 20:22:45 EDT 1998
+# cleaned: Sat Aug 28 10:12:17 EDT 1999
+#  this file is now a placeholder;
+#  see http://www.iro.umontreal.ca/contrib/po/HTML/domain-lynx.html
+#
+# , fuzzy
+# MUST GO AND FIND NdT= to address problems.
+
+
+#: src/LYMain.c:2444
+msgid ""
+"\n"
+"%s Version %s (%.*s)\n"
+msgstr ""
+
+#: src/LYMain.c:2451 src/LYMain.c:2489 src/LYMain.c:2510 src/LYMain.c:2511
+msgid "Copyrights held by the University of Kansas, CERN, and other contributors.\n"
+msgstr "Copyright s'est tenu par l'université du Kansas, du CERN, et d'autres contribuants\n"
+
+#: src/LYMain.c:2453 src/LYMain.c:2491 src/LYMain.c:2512 src/LYMain.c:2513
+msgid "Distributed under the GNU General Public License.\n"
+msgstr "Distribué sous le permis de grand public de GNU\n"
+
+#: src/LYMain.c:2455 src/LYMain.c:2493 src/LYMain.c:2514 src/LYMain.c:2515
+msgid ""
+"See http://lynx.browser.org/ and the online help for more information.\n"
+"\n"
+msgstr "Voyez http://lynx.browser.org / et d'aide en ligne pour plus d'information.\n"
+
+#: src/LYMain.c:2486 src/LYMain.c:2507 src/LYMain.c:2508
+msgid "%s Version %s %s"
+msgstr "%s Version %s %s"
