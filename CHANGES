@@ -1,7 +1,59 @@
--- $LynxId: CHANGES,v 1.325 2008/12/14 20:04:30 tom Exp $
+-- $LynxId: CHANGES,v 1.352 2008/12/31 23:27:54 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2008-12-31 (2.8.7dev.12)
+* add configure option --enable-ascii-ctypes to enable EXP_ASCII_CTYPES -TD
+* move EBCDIC tables to separate file LYebcdic.c to simplify building test
+  driver for parsdate.c on z/OS -PG
+* fix an off-by-one difference between UTF-8/non-UTF-8 comparisons in
+  HText_appendCharacter() which would leave an extra character wrapped in some
+  cases, e.g., in the options menu when field-numbering was turned on -TD
+* remove logic in GridText.c for ignoring "excess" characters in a field when
+  fields are numbered, since highlighting of wrapped multiline links works,
+  and this feature is incompatible with it -TD
+* remove obsolete CF_VARARGS configure check -TD
+* modify configure script to build with MinGW and MSYS -TD
+* modify configure macro CF_XOPEN_SOURCE to define _ALL_SOURCE for AIX 6.x -TD
+* implement a LONG_LIST equivalent for ftp, configurable as FTP_FORMAT -TD
+* adapt some of the SH_EX ifdef'd features (TD):
+  + extra keypad conversions in LYgetch_for() are for PDCurses.
+  + add -show_cfg option.
+  + entify embedded blanks in HTDOS_wwwName().
+  + treat null file-pointer in HTParseFile(HTFormat() as end-of-file.
+* change the phase during which "-help" option is processed, to allow it to
+  reflect the configured values of the options in the help-message (prompted
+  by discussion with Dan Jacobson regarding Debian #507083) -TD
+* modify havevisible() and UCTransToUni() functions to process UTF-8 input,
+  fixing a problem saving bookmarks whose title is UTF-8 (prompted by patch by
+  Takao Fujiwara) -TD
+* restore logic in HTLoadHTTP() to strip matching square brackets from host
+  name and certificate host (comments by TG) -TD
+* modify UCdomap.c to work with Solaris iconv and handle additional encodings:
+  + if "TRANSLIT" feature (an extension of glibc) does not succeed, retry
+    the call to iconv_open without "TRANSLIT"
+  + add check for any MIME name beginning "iso8859", mapping to "iso-8859"
+  + recognize "eucjp" MIME name as alias for "euc-jp"
+  + recognize "pck" MIME name as alias for "shift_jis"
+  + recognize "ansi-1251" MIME name as alias for "windows-1251"
+  (patch by Takao Fujiwara)
+* add "*.dbg" to suffixes to ignore in autoconf script when checking for
+  executables and objects produced by C compile (report by PG, for z/OS) -TD
+* modify parsdate.y to convert between EBCDIC/ASCII to work on z/OS -PG, -TD
+* modify src/makefile.in to make it simple for a build script running in a
+  separate directory to regenerate parsdate.c (prompted by discussion with PG
+  regarding building on z/OS which uses EBCDIC) -TD
+* add configure check for yacc (report by PG) -TD
+* fixes to make configure --help agree with INSTALLATION (report by PW) -TD
+* add id.po from
+    http://translationproject.org/latest/lynx/
+* add a null-pointer check for content type, fix for dev.11 changes (Debian
+  #509321) -TD
+* improve configurability with regard to pkg-config by adding --with-pkg-config
+  option, which can be used to enable/disable use of the program as well as
+  specify the pathname used (prompted by comments by TG) -TD
+* correct handling of --with-ssl option when pkg-config is not found -TD
 
 2008-12-14 (2.8.7dev.11)
 * add support for HTML5 rel=author in link (mailing list comments) -TD
@@ -25,7 +77,7 @@ Changes since Lynx 2.8 release
 * correct handling of the option value from configure "--with-ssl", which was
   not being used in the search-list (report by PGNet) -TD
 * update configure script macros -TD
-  CF_CURSES_LIBS - add "pdcurses", e.g., to link with mingw
+  CF_CURSES_LIBS - add "pdcurses", e.g., to link with MinGW
   CF_UTF8_LIB - use CF_FIND_LINKAGE to better work with BSD ports.
   CF_XOPEN_SOURCE - add case for dragonfly
 * document width-limitation in manpage, fix a few stray 1024's still in the
@@ -422,7 +474,7 @@ Changes since Lynx 2.8 release
   of getfile() is unneeded, we restore the link number as well as the line
   number (Debian #386561) -TD
 * modify makefile.msc to allow building with slang configuration -TD
-* fixes for keyboard input of slang configuration in win32 (not mingw) which
+* fixes for keyboard input of slang configuration in win32 (not MinGW) which
   was broken in 2.8.3dev.5 -TD
 * fix LYgetTableString(), making the monochome appearance with an empty ".lss"
   file for color-style look like the non-color-style (Debian #386216) -TD

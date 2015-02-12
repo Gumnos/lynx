@@ -1,4 +1,4 @@
-dnl $LynxId: configure.in,v 1.173 2008/12/14 19:32:44 tom Exp $
+dnl $LynxId: configure.in,v 1.181 2008/12/31 20:58:39 tom Exp $
 dnl
 dnl Process this file with autoconf to produce a configure script.
 dnl
@@ -29,7 +29,7 @@ dnl ---------------------------------------------------------------------------
 dnl
 dnl ask PRCS to plug-in the project-version for the configure-script.
 dnl $Format: "AC_REVISION($ProjectVersion$)"$
-AC_REVISION(2.8.7dev.11)
+AC_REVISION(2.8.7dev.12)
 
 # Save the original $CFLAGS so we can distinguish whether the user set those
 # in the environment, or whether autoconf added -O and -g options:
@@ -62,7 +62,7 @@ AC_ARG_WITH(system-type,
 PACKAGE=lynx
 dnl ask PRCS to plug-in the project-version for the packages.
 # $Format: "VERSION=$ProjectVersion$"$
-VERSION=2.8.7dev.11
+VERSION=2.8.7dev.12
 
 AC_SUBST(PACKAGE)
 AC_SUBST(VERSION)
@@ -95,6 +95,7 @@ AC_PROG_CPP
 AC_PROG_LN_S
 AC_PROG_MAKE_SET
 AC_PROG_INSTALL
+AC_PROG_YACC
 AC_CHECK_PROGS(LINT, lint alint lclint tdlint, [])
 
 AC_AIX
@@ -257,6 +258,22 @@ irix*)
 	;;
 linux*)
 	TRY_CFLAGS="$TRY_CFLAGS -DLINUX"
+	;;
+mingw*)
+	# put these directlyin CPPFLAGS since they will not work in lynx_cfg.h
+	CF_ADD_CFLAGS(\
+		-DWIN32_LEAN_AND_MEAN \
+		-DDOSPATH \
+		-DNOSIGHUP \
+		-DNOUSERS \
+		-DWIN_EX \
+		-D_CONSOLE \
+		-D_MBCS \
+		-D_WINDOWS \
+		-D_WIN_CC \
+		-D__WIN32__ \
+	)
+	EXTRA_OBJS="$EXTRA_OBJS Xsystem\$o"
 	;;
 msdosdjgpp*)
 	LIBS="$LIBS -lwatt"
@@ -710,7 +727,6 @@ AC_CHECK_HEADERS( \
 CF_TERMIO_AND_TERMIOS
 CF_FUNC_SIGACTION
 CF_FUNC_WAIT
-CF_VARARGS
 AC_TYPE_GETGROUPS
 AC_TYPE_OFF_T
 AC_TYPE_PID_T
@@ -829,6 +845,14 @@ CF_ARG_ENABLE(addrlist-page,
 AC_MSG_RESULT($use_addrlist_page)
 test $use_addrlist_page != no && AC_DEFINE(EXP_ADDRLIST_PAGE)
 
+AC_MSG_CHECKING(if experimental ascii case-conversion)
+CF_ARG_ENABLE(ascii-ctypes,
+[  --enable-ascii-ctypes   use experimental ascii case-conversion],
+	[use_ascii_ctypes=$enableval],
+	[use_ascii_ctypes=no])
+AC_MSG_RESULT($use_ascii_ctypes)
+test $use_ascii_ctypes != no && AC_DEFINE(EXP_ASCII_CTYPES)
+
 AC_MSG_CHECKING(if experimental charset-selection logic should be used)
 CF_ARG_ENABLE(charset-choice,
 [  --enable-charset-choice use experimental charset-selection logic],
@@ -885,14 +909,6 @@ CF_ARG_ENABLE(kbd-layout,
 AC_MSG_RESULT($use_kbd_layout)
 test $use_kbd_layout != no && AC_DEFINE(EXP_KEYBOARD_LAYOUT)
 
-dnl AC_MSG_CHECKING(if experimental JavaScript support should be used)
-dnl CF_ARG_ENABLE(libjs,
-dnl [  --enable-libjs          use experimental JavaScript support (Mozilla libjs)],
-dnl 	[use_libjs=$enableval],
-dnl 	[use_libjs=no])
-dnl AC_MSG_RESULT($use_libjs)
-dnl test $use_libjs != no && AC_DEFINE(EXP_LIBJS)
-
 dnl --------------------------------------------------------------------------
 AC_MSG_CHECKING(if experimental nested-table logic should be used)
 CF_ARG_ENABLE(nested-tables,
@@ -927,7 +943,7 @@ CF_ARG_ENABLE(sessions,
 	[use_sessions=no])
 AC_MSG_RESULT($use_sessions)
 if test $use_sessions != no ; then
-    AC_DEFINE(USE_SESSIONS)
+	AC_DEFINE(USE_SESSIONS)
 	EXTRA_OBJS="$EXTRA_OBJS LYSession\$o"
 fi
 
@@ -979,7 +995,7 @@ test $use_file_upload != no && AC_DEFINE(USE_FILE_UPLOAD)
 dnl --------------------------------------------------------------------------
 AC_MSG_CHECKING(if element-justification logic should be used)
 CF_ARG_DISABLE(justify-elts,
-[  --enable-justify-elts   use element-justification logic],
+[  --disable-justify-elts  use element-justification logic],
 	[use_justify_elts=$enableval],
 	[use_justify_elts=yes])
 AC_MSG_RESULT($use_justify_elts)
@@ -1122,7 +1138,16 @@ CF_ARG_ENABLE(nsl-fork,
 	[use_nsl_fork=yes],
 	[use_nsl_fork=no])
 AC_MSG_RESULT($use_nsl_fork)
-test $use_nsl_fork = yes && AC_DEFINE(NSL_FORK)
+if test $use_nsl_fork = yes ; then
+	case $host_os in
+	mingw*)
+		AC_DEFINE(_WINDOWS_NSL)
+		;;
+	*)
+		AC_DEFINE(NSL_FORK)
+		;;
+	esac
+fi
 
 dnl --------------------------------------------------------------------------
 AC_MSG_CHECKING(if you want to log URL requests via syslog)

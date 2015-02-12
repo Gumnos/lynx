@@ -1,4 +1,4 @@
-/* $LynxId: LYmktime.c,v 1.7 2008/07/06 12:55:40 tom Exp $ */
+/* $LynxId: LYmktime.c,v 1.9 2008/12/27 00:46:30 tom Exp $ */
 
 #include <LYStrings.h>
 #include <LYUtils.h>
@@ -57,7 +57,7 @@ time_t LYmktime(char *string,
 		BOOL absolute)
 {
 #if USE_PARSDATE
-    time_t result;
+    time_t result = 0;
 
     if (non_empty(string)) {
 	CTRACE((tfp, "LYmktime: Parsing '%s'\n", string));

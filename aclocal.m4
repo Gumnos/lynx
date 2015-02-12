@@ -1,11 +1,11 @@
-dnl $LynxId: aclocal.m4,v 1.128 2008/12/12 01:03:21 tom Exp $
+dnl $LynxId: aclocal.m4,v 1.133 2008/12/29 14:29:10 tom Exp $
 dnl Macros for auto-configure script.
 dnl by T.E.Dickey <dickey@invisible-island.net>
 dnl and Jim Spath <jspath@mail.bcpl.lib.md.us>
 dnl and Philippe De Muyter <phdm@macqel.be>
 dnl
 dnl Created: 1997/1/28
-dnl Updated: 2008/06/30
+dnl Updated: 2008/12/24
 dnl
 dnl The autoconf used in Lynx development is GNU autoconf 2.13 or 2.52, patched
 dnl by Thomas Dickey.  See your local GNU archives, and this URL:
@@ -698,7 +698,7 @@ AC_SUBST(EXTRA_CPPFLAGS)
 
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_ADD_INCDIR version: 9 updated: 2008/02/09 13:15:34
+dnl CF_ADD_INCDIR version: 10 updated: 2008/12/27 12:30:03
 dnl -------------
 dnl Add an include-directory to $CPPFLAGS.  Don't add /usr/include, since it's
 dnl redundant.  We don't normally need to add -I/usr/local/include for gcc,
@@ -725,7 +725,7 @@ if test -n "$1" ; then
 		fi
 
 		if test "$cf_have_incdir" = no ; then
-          if test "$cf_add_incdir" = /usr/local/include ; then
+		  if test "$cf_add_incdir" = /usr/local/include ; then
 			if test "$GCC" = yes
 			then
 			  cf_save_CPPFLAGS=$CPPFLAGS
@@ -743,9 +743,9 @@ if test -n "$1" ; then
 		  CF_VERBOSE(adding $cf_add_incdir to include-path)
 		  ifelse($2,,CPPFLAGS,$2)="-I$cf_add_incdir $ifelse($2,,CPPFLAGS,[$]$2)"
 
-          cf_top_incdir=`echo $cf_add_incdir | sed -e 's%/include/.*$%/include%'`
-          test "$cf_top_incdir" = "$cf_add_incdir" && break
-          cf_add_incdir="$cf_top_incdir"
+		  cf_top_incdir=`echo $cf_add_incdir | sed -e 's%/include/.*$%/include%'`
+		  test "$cf_top_incdir" = "$cf_add_incdir" && break
+		  cf_add_incdir="$cf_top_incdir"
 		else
 		  break
 		fi
@@ -2103,7 +2103,7 @@ fi
 ])
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_FIND_LINKAGE version: 12 updated: 2007/07/29 20:13:53
+dnl CF_FIND_LINKAGE version: 13 updated: 2008/12/24 07:59:55
 dnl ---------------
 dnl Find a library (specifically the linkage used in the code fragment),
 dnl searching for it if it is not already in the library path.
@@ -2136,6 +2136,7 @@ AC_TRY_LINK([$1],[$2],
     cf_cv_find_linkage_$3=yes,[
     cf_cv_find_linkage_$3=no
 
+    CF_VERBOSE(find linkage for $3 library)
     CF_MSG_LOG([Searching for headers in [FIND_LINKAGE]($3,$6)])
 
     cf_save_CPPFLAGS="$CPPFLAGS"
@@ -2643,7 +2644,7 @@ rm -f conftest*
 AC_SUBST(EXTRA_CFLAGS)
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_GNUTLS version: 14 updated: 2008/12/11 20:01:57
+dnl CF_GNUTLS version: 15 updated: 2008/12/25 09:30:14
 dnl ---------
 dnl Check for gnutls library (TLS "is" SSL)
 dnl $1 = the [optional] directory in which the library may be found
@@ -2660,7 +2661,7 @@ AC_DEFUN([CF_GNUTLS],[
 		case $1 in #(vi
 		no) #(vi
 			;;
-		yes)
+		yes) # if no explicit directory given, try pkg-config
 			CF_VERBOSE(checking pkg-config for $cf_pkg_gnutls)
 			if "$PKG_CONFIG" --exists $cf_pkg_gnutls ; then
 				CF_VERBOSE(... found $cf_pkg_gnutls in pkg-config)
@@ -3386,7 +3387,7 @@ EOF
 test "$cf_cv_ncurses_version" = no || AC_DEFINE(NCURSES)
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_NETLIBS version: 4 updated: 1999/12/23 15:20:39
+dnl CF_NETLIBS version: 5 updated: 2008/12/29 08:43:47
 dnl ----------
 dnl After checking for functions in the default $LIBS, make a further check
 dnl for the functions that are netlib-related (these aren't always in the
@@ -3399,32 +3400,77 @@ dnl	-lsocket
 dnl	-lbsd
 AC_DEFUN([CF_NETLIBS],[
 cf_test_netlibs=no
+
 AC_MSG_CHECKING(for network libraries)
+
 AC_CACHE_VAL(cf_cv_netlibs,[
 AC_MSG_RESULT(working...)
+
 cf_cv_netlibs=""
 cf_test_netlibs=yes
-AC_CHECK_FUNCS(gethostname,,[
-	CF_RECHECK_FUNC(gethostname,nsl,cf_cv_netlibs,[
-		CF_RECHECK_FUNC(gethostname,socket,cf_cv_netlibs)])])
-#
-# FIXME:  sequent needs this library (i.e., -lsocket -linet -lnsl), but
-# I don't know the entrypoints - 97/7/22 TD
-# AC_HAVE_LIBRARY(inet,cf_cv_netlibs="-linet $cf_cv_netlibs")
-AC_CHECK_LIB(inet, main, cf_cv_netlibs="-linet $cf_cv_netlibs")
-#
-if test "$ac_cv_func_lsocket" != no ; then
-AC_CHECK_FUNCS(socket,,[
-	CF_RECHECK_FUNC(socket,socket,cf_cv_netlibs,[
-		CF_RECHECK_FUNC(socket,bsd,cf_cv_netlibs)])])
-fi
-#
-AC_CHECK_FUNCS(gethostbyname,,[
-	CF_RECHECK_FUNC(gethostbyname,nsl,cf_cv_netlibs)])
-#
-AC_CHECK_FUNCS(strcasecmp,,[
-	CF_RECHECK_FUNC(strcasecmp,resolv,cf_cv_netlibs)])
+
+case $host_os in #(vi
+mingw32) # (vi
+	AC_CHECK_HEADERS( windows.h winsock.h winsock2.h )
+
+	if test "$ac_cv_header_winsock2_h" = "yes" ; then
+		cf_winsock_lib="-lws2_32"
+	elif test "$ac_cv_header_winsock_h" = "yes" ; then
+		cf_winsock_lib="-lwsock32"
+	fi
+
+	cf_save_LIBS="$LIBS"
+	LIBS="$cf_winsock_lib $LIBS"
+
+	AC_TRY_LINK([
+#ifdef HAVE_WINDOWS_H
+#undef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#else
+#ifdef HAVE_WINSOCK_H
+#include <winsock.h>
+#endif
+#endif
+#endif
+],[
+	char buffer[1024];
+	gethostname(buffer, sizeof(buffer));],
+	[cf_cv_netlibs="$cf_winsock_lib $cf_cv_netlibs"],
+	[AC_MSG_ERROR(Cannot link against winsock library)])
+
+	LIBS="$cf_save_LIBS"
+	;;
+*)
+	AC_CHECK_FUNCS(gethostname,,[
+		CF_RECHECK_FUNC(gethostname,nsl,cf_cv_netlibs,[
+			CF_RECHECK_FUNC(gethostname,socket,cf_cv_netlibs)])])
+
+	AC_CHECK_LIB(inet, main, cf_cv_netlibs="-linet $cf_cv_netlibs")
+
+	if test "$ac_cv_func_lsocket" != no ; then
+	AC_CHECK_FUNCS(socket,,[
+		CF_RECHECK_FUNC(socket,socket,cf_cv_netlibs,[
+			CF_RECHECK_FUNC(socket,bsd,cf_cv_netlibs)])])
+	fi
+
+	AC_CHECK_FUNCS(gethostbyname,,[
+		CF_RECHECK_FUNC(gethostbyname,nsl,cf_cv_netlibs)])
+
+	AC_CHECK_FUNCS(strcasecmp,,[
+		CF_RECHECK_FUNC(strcasecmp,resolv,cf_cv_netlibs)])
+	;;
+esac
 ])
+
+case $cf_cv_netlibs in #(vi
+*ws2_32*)
+	AC_DEFINE(USE_WINSOCK2_H)
+	;;
+esac
+
 LIBS="$LIBS $cf_cv_netlibs"
 test $cf_test_netlibs = no && echo "$cf_cv_netlibs" >&AC_FD_MSG
 ])dnl
@@ -3765,6 +3811,38 @@ if test $cf_cv_lib_XCurses = yes ; then
 else
 	AC_MSG_ERROR(Cannot link with XCurses)
 fi
+])dnl
+dnl ---------------------------------------------------------------------------
+dnl CF_PKG_CONFIG version: 2 updated: 2008/12/24 07:57:28
+dnl -------------
+dnl Check for the package-config program, unless disabled by command-line.
+AC_DEFUN([CF_PKG_CONFIG],
+[
+AC_MSG_CHECKING(if you want to use pkg-config)
+AC_ARG_WITH(pkg-config,
+	[  --with-pkg-config{=path} enable/disable use of pkg-config],
+	[cf_pkg_config=$withval],
+	[cf_pkg_config=yes])
+AC_MSG_RESULT($cf_pkg_config)
+
+case $cf_pkg_config in
+no)
+	PKG_CONFIG=none
+	;;
+yes)
+	AC_PATH_PROG(PKG_CONFIG, pkg-config, none)
+	;;
+*)
+	PKG_CONFIG=$withval
+	;;
+esac
+
+test -z "$PKG_CONFIG" && PKG_CONFIG=none
+if test "$PKG_CONFIG" != none ; then
+	CF_PATH_SYNTAX(PKG_CONFIG)
+fi
+
+AC_SUBST(PKG_CONFIG)
 ])dnl
 dnl ---------------------------------------------------------------------------
 dnl CF_POSIX_C_SOURCE version: 6 updated: 2005/07/14 20:25:10
@@ -4409,7 +4487,7 @@ define([CF_SRAND_PARSE],[
 	esac
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_SSL version: 14 updated: 2008/12/09 19:45:44
+dnl CF_SSL version: 16 updated: 2008/12/25 09:30:14
 dnl ------
 dnl Check for ssl library
 dnl $1 = [optional] directory in which the library may be found, set by AC_ARG_WITH
@@ -4424,7 +4502,7 @@ AC_DEFUN([CF_SSL],[
 		case $1 in #(vi
 		no) #(vi
 			;;
-		yes)
+		yes) # if no explicit directory given, try pkg-config
 			if "$PKG_CONFIG" --exists openssl ; then
 				cf_cv_have_ssl=yes
 
@@ -4465,7 +4543,7 @@ AC_DEFUN([CF_SSL],[
 
 	if test "$cf_cv_have_ssl" != yes; then
 		case $1 in #(vi
-		no)
+		yes)
 			CF_FIND_LINKAGE(CF__SSL_HEAD,
 				CF__SSL_BODY,
 				ssl,
@@ -5175,32 +5253,6 @@ fi
 fi
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_VARARGS version: 3 updated: 1998/12/10 20:06:29
-dnl ----------
-dnl Check for ANSI stdarg.h vs varargs.h.  Note that some systems include
-dnl <varargs.h> within <stdarg.h>.
-AC_DEFUN([CF_VARARGS],
-[
-AC_CHECK_HEADERS(stdarg.h varargs.h)
-AC_MSG_CHECKING(for standard varargs)
-AC_CACHE_VAL(cf_cv_ansi_varargs,[
-	AC_TRY_COMPILE([
-#if HAVE_STDARG_H
-#include <stdarg.h>
-#else
-#if HAVE_VARARGS_H
-#include <varargs.h>
-#endif
-#endif
-		],
-		[return 0;} int foo(char *fmt,...){va_list args;va_start(args,fmt);va_end(args)],
-		[cf_cv_ansi_varargs=yes],
-		[cf_cv_ansi_varargs=no])
-	])
-AC_MSG_RESULT($cf_cv_ansi_varargs)
-test $cf_cv_ansi_varargs = yes && AC_DEFINE(ANSI_VARARGS)
-])dnl
-dnl ---------------------------------------------------------------------------
 dnl CF_VERBOSE version: 3 updated: 2007/07/29 09:55:12
 dnl ----------
 dnl Use AC_VERBOSE w/o the warnings
@@ -5409,7 +5461,7 @@ AC_TRY_LINK([
 test $cf_cv_need_xopen_extension = yes && CPPFLAGS="$CPPFLAGS -D_XOPEN_SOURCE_EXTENDED"
 ])dnl
 dnl ---------------------------------------------------------------------------
-dnl CF_XOPEN_SOURCE version: 26 updated: 2008/07/27 11:26:57
+dnl CF_XOPEN_SOURCE version: 28 updated: 2008/12/27 12:30:03
 dnl ---------------
 dnl Try to get _XOPEN_SOURCE defined properly that we can use POSIX functions,
 dnl or adapt to the vendor's definitions to get equivalent functionality,
@@ -5426,7 +5478,7 @@ cf_XOPEN_SOURCE=ifelse($1,,500,$1)
 cf_POSIX_C_SOURCE=ifelse($2,,199506L,$2)
 
 case $host_os in #(vi
-aix[[45]]*) #(vi
+aix[[456]]*) #(vi
 	CPPFLAGS="$CPPFLAGS -D_ALL_SOURCE"
 	;;
 freebsd*|dragonfly*) #(vi
@@ -5443,7 +5495,7 @@ hpux*) #(vi
 irix[[56]].*) #(vi
 	CPPFLAGS="$CPPFLAGS -D_SGI_SOURCE"
 	;;
-linux*|gnu*|k*bsd*-gnu) #(vi
+linux*|gnu*|mint*|k*bsd*-gnu) #(vi
 	CF_GNU_SOURCE
 	;;
 mirbsd*) #(vi
@@ -5777,11 +5829,3 @@ AC_DEFUN([jm_GLIBC21],
     GLIBC21="$ac_cv_gnu_library_2_1"
   ]
 )
-dnl ---------------------------------------------------------------------------
-dnl CF_PKG_CONFIG version: 1 updated: 2006/08/20 13:51:03
-dnl -------------
-dnl Check for the package-config program.
-AC_DEFUN([CF_PKG_CONFIG],
-[
-AC_PATH_PROG(PKG_CONFIG, pkg-config, none)
-])dnl
