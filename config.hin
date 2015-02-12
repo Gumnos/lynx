@@ -1,5 +1,5 @@
 /*
- * $LynxId: config.hin,v 1.118 2010/06/19 17:00:06 tom Exp $
+ * $LynxId: config.hin,v 1.121 2010/09/26 14:25:50 tom Exp $
  * vile:cmode
  *
  * The configure script translates "config.hin" into "lynx_cfg.h"
@@ -205,6 +205,7 @@
 #undef NEED_REMOVE		/* CF_REMOVE_BROKEN */
 #undef NEED_WCHAR_H		/* CF_WIDEC_CURSES */
 #undef NGROUPS			/* CF_NGROUPS */
+#undef NLS_TEXTDOMAIN		/* NLS_TEXTDOMAIN */
 #undef NO_CHANGE_EXECUTE_PERMS	/* CF_ARG_DISABLE(dired-xpermit) */
 #undef NO_CONFIG_INFO		/* CF_ARG_DISABLE(config-info) */
 #undef NO_EXTENDED_HTMLDTD	/* CF_ARG_DISABLE(extended-dtd) */
@@ -224,6 +225,8 @@
 #undef SIZEOF_LONG		/* AC_CHECK_SIZEOF(long) */
 #undef SIZEOF_OFF_T		/* AC_CHECK_SIZEOF(off_t) */
 #undef SIZEOF_TIME_T		/* AC_CHECK_SIZEOF(time_t) */
+#undef SLsmg_Color_Type		/* CF_SLANG_UNIX_DEFS */
+#undef SLtt_Char_Type		/* CF_SLANG_UNIX_DEFS */
 #undef SOCKS			/* CF_SOCKS, CF_SOCKS5 */
 #undef STDC_HEADERS
 #undef SYSTEM_MAIL		/* CF_DEFINE_PROG */
@@ -292,6 +295,7 @@
 #undef off_t			/* AC_TYPE_OFF_T */
 #undef pid_t			/* AC_TYPE_PID_T */
 #undef socklen_t		/* CF_CHECK_TYPE(socklen_t,...) */
+#undef ssize_t			/* CF_CHECK_TYPE(ssize_t,...) */
 #undef uid_t			/* AC_TYPE_UID_T */
 #undef ut_name			/* CF_UTMP */
 #undef ut_xstatus		/* CF_UTMP_UT_XSTATUS */

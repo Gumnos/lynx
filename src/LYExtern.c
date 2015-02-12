@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYExtern.c,v 1.42 2009/01/01 22:07:00 tom Exp $
+ * $LynxId: LYExtern.c,v 1.46 2010/10/04 08:56:57 tom Exp $
  *
  External application support.
  This feature allows lynx to pass a given URL to an external program.
@@ -52,7 +52,7 @@ static char *decode_string(char *s)
 	    /* Do nothing if at the end of the string. Or if the chars
 	       are not hex-digits. */
 	    if (!*(s + 1) || !*(s + 2)
-		|| !(isxdigit(*(s + 1)) && isxdigit(*(s + 2)))) {
+		|| !(isxdigit(UCH(*(s + 1))) && isxdigit(UCH(*(s + 2))))) {
 		*p = *s;
 		continue;
 	    }
@@ -170,7 +170,7 @@ static char *format_command(char *command,
     if (strnicmp("file://localhost/", param, 17) == 0) {
 	/* decode local path parameter for programs to be
 	   able to interpret - TH */
-	LYstrncpy(pram_string, param, sizeof(pram_string) - 1);
+	LYStrNCpy(pram_string, param, sizeof(pram_string) - 1);
 	decode_string(pram_string);
 	param = pram_string;
     } else {
@@ -185,7 +185,7 @@ static char *format_command(char *command,
 	char host[sizeof(pram_string)];
 	int last_pos;
 
-	LYstrncpy(host, param + 9, sizeof(host));
+	LYStrNCpy(host, param + 9, sizeof(host));
 	last_pos = strlen(host) - 1;
 	if (last_pos > 1 && host[last_pos] == '/')
 	    host[last_pos] = '\0';
@@ -236,7 +236,7 @@ static char *format_command(char *command,
  * allow the user to select one.  Return the selected command.
  */
 static char *lookup_external(char *param,
-			     BOOL only_overriders)
+			     int only_overriders)
 {
     int pass, num_disabled, num_matched, num_choices, cur_choice;
     int length = 0;
@@ -310,7 +310,7 @@ static char *lookup_external(char *param,
 }
 
 BOOL run_external(char *param,
-		  BOOL only_overriders)
+		  int only_overriders)
 {
 #ifdef WIN_EX
     int status;

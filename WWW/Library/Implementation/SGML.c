@@ -1,5 +1,5 @@
 /*
- * $LynxId: SGML.c,v 1.135 2010/06/18 09:59:35 tom Exp $
+ * $LynxId: SGML.c,v 1.140 2010/10/04 00:04:12 tom Exp $
  *
  *			General SGML Parser code		SGML.c
  *			========================
@@ -38,6 +38,11 @@
 #ifdef USE_PRETTYSRC
 # include <LYPrettySrc.h>
 #endif
+
+#define AssumeCP1252(context) \
+	(((context)->inUCLYhndl == LATIN1 \
+	  || (context)->inUCLYhndl == US_ASCII) \
+	 && !(context)->extended_html)
 
 #define INVALID (-1)
 
@@ -312,7 +317,7 @@ static void pool_free(HTElement * e)
 
 static void HTMLSRC_apply_markup(HTStream *context,
 				 HTlexeme lexeme,
-				 BOOL start)
+				 int start)
 {
     HT_tagspec *ts = *((start ? lexeme_start : lexeme_end) + lexeme);
 
@@ -328,14 +333,14 @@ static void HTMLSRC_apply_markup(HTStream *context,
 	CTRACE((tfp, ts->start ? "SRCSTART %d\n" : "SRCSTOP %d\n", (int) lexeme));
 	if (ts->start)
 	    (*context->actions->start_element) (context->target,
-						ts->element,
+						(int) ts->element,
 						ts->present,
 						(const char **) ts->value,
 						context->current_tag_charset,
 						&context->include);
 	else
 	    (*context->actions->end_element) (context->target,
-					      ts->element,
+					      (int) ts->element,
 					      &context->include);
 	ts = ts->next;
     }
@@ -528,7 +533,7 @@ static void handle_attribute_value(HTStream *context, const char *s)
 	StrAllocCopy_extra(context->value[context->current_attribute_number], s);
 #ifdef USE_COLOR_STYLE
 	if (current_is_class) {
-	    strncpy(class_string, s, TEMPSTRINGSIZE);
+	    StrNCpy(class_string, s, TEMPSTRINGSIZE);
 	    CTRACE((tfp, "SGML: class is '%s'\n", s));
 	} else {
 	    CTRACE((tfp, "SGML: attribute value is '%s'\n", s));
@@ -656,7 +661,7 @@ static void put_pretty_number(HTStream *context)
 static char replace_buf[64];	/* buffer for replacement strings */
 static BOOL FoundEntity = FALSE;
 
-static void handle_entity(HTStream *context, char term)
+static void handle_entity(HTStream *context, int term)
 {
     UCode_t code;
     long uck = -1;
@@ -810,7 +815,7 @@ static void handle_comment(HTStream *context)
     CTRACE((tfp, "SGML Comment:\n<%s>\n", s));
 
     if (context->csi == NULL &&
-	strncmp(s, "!--#", 4) == 0 &&
+	StrNCmp(s, "!--#", 4) == 0 &&
 	LYCheckForCSI(context->node_anchor, &context->url) == TRUE) {
 	LYDoCSI(context->url, s, &context->csi);
     } else {
@@ -857,14 +862,14 @@ static void handle_marked(HTStream *context)
 
     CTRACE((tfp, "SGML Marked Section:\n<%s>\n", s));
 
-    if (!strncmp(context->string->data, "![INCLUDE[", 10)) {
+    if (!StrNCmp(context->string->data, "![INCLUDE[", 10)) {
 	context->string->data[context->string->size - 3] = '\0';
 	StrAllocCat(context->include, context->string->data + 10);
 	/* @@@ This needs to take charset into account! @@@
 	   the wrong assumptions will be made about the data's
 	   charset once it is in include - kw */
 
-    } else if (!strncmp(context->string->data, "![CDATA[", 8)) {
+    } else if (!StrNCmp(context->string->data, "![CDATA[", 8)) {
 	(*context->actions->put_block) (context->target,
 					context->string->data + 8,
 					context->string->size - 11);
@@ -882,7 +887,7 @@ static void handle_processing_instruction(HTStream *context)
 
     CTRACE((tfp, "SGML Processing instruction:\n<%s>\n", s));
 
-    if (!strncmp(s, "?xml ", 5)) {
+    if (!StrNCmp(s, "?xml ", 5)) {
 	int flag = context->T.decode_utf8;
 
 	context->strict_xml = TRUE;
@@ -896,7 +901,7 @@ static void handle_processing_instruction(HTStream *context)
 		t += 9;
 		if (*t == '"')
 		    ++t;
-		flag = !strncmp(t, "utf-8", 5);
+		flag = !StrNCmp(t, "utf-8", 5);
 	    }
 	    if (flag) {
 		CTRACE((tfp, "...Use UTF-8 for XML\n"));
@@ -972,7 +977,7 @@ static void handle_sgmlatt(HTStream *context)
 #define ALT_TAGP(t) ALT_TAGP_OF_TAGNUM(TAGNUM_OF_TAGP(t))
 #define NORMAL_TAGP(t) NORMAL_TAGP_OF_TAGNUM(TAGNUM_OF_TAGP(t))
 
-static BOOL element_valid_within(HTTag * new_tag, HTTag * stacked_tag, BOOL direct)
+static BOOL element_valid_within(HTTag * new_tag, HTTag * stacked_tag, int direct)
 {
     BOOL result = YES;
     TagClass usecontains, usecontained;
@@ -1032,7 +1037,7 @@ static void do_close_stacked(HTStream *context)
     if (!psrc_view)		/* Don't actually pass call on if viewing psrc - kw */
 #endif
 	(*context->actions->end_element) (context->target,
-					  e,
+					  (int) e,
 					  &context->include);
     context->element_stack = stacked->next;
     pool_free(stacked);
@@ -1164,11 +1169,12 @@ static void end_element(HTStream *context, HTTag * old_tag)
 	if (!psrc_view)		/* Don't actually pass call on if viewing psrc - kw */
 #endif
 	    status = (*context->actions->end_element) (context->target,
-						       e, &context->include);
+						       (int) e,
+						       &context->include);
 	if (status == HT_PARSER_REOPEN_ELT) {
 	    CTRACE((tfp, "SGML: Restart <%s>\n", t->name));
 	    (*context->actions->start_element) (context->target,
-						e,
+						(int) e,
 						NULL,
 						NULL,
 						context->current_tag_charset,
@@ -1347,7 +1353,7 @@ static void start_element(HTStream *context)
      */
     CTRACE((tfp, "SGML: Start <%s>\n", new_tag->name));
     status = (*context->actions->start_element) (context->target,
-						 TAGNUM_OF_TAGP(new_tag),
+						 (int) TAGNUM_OF_TAGP(new_tag),
 						 context->present,
 						 (const char **) context->value,	/* coerce type for think c */
 						 context->current_tag_charset,
@@ -1591,7 +1597,7 @@ static void discard_empty(HTStream *context)
 }
 
 #ifdef USE_PRETTYSRC
-static BOOL end_if_prettysrc(HTStream *context, HTChunk *string, char end_ch)
+static BOOL end_if_prettysrc(HTStream *context, HTChunk *string, int end_ch)
 {
     BOOL result = psrc_view;
 
@@ -1620,7 +1626,7 @@ static BOOL end_if_prettysrc(HTStream *context, HTChunk *string, char end_ch)
 }
 #endif
 
-static void SGML_character(HTStream *context, char c_in)
+static void SGML_character(HTStream *context, int c_in)
 {
     const SGML_dtd *dtd = context->dtd;
     HTChunk *string = context->string;
@@ -1909,9 +1915,8 @@ static void SGML_character(HTStream *context, char c_in)
 	 *
 	 * http://www.whatwg.org/specs/web-apps/current-work/multipage/infrastructure.html#character-encodings-0
 	 */
-	if (context->inUCLYhndl == LATIN1
-	    || context->inUCLYhndl == US_ASCII) {
-	    clong = LYcp1252ToUnicode(c);
+	if (AssumeCP1252(context)) {
+	    clong = LYcp1252ToUnicode((UCode_t) c);
 	    goto top1;
 	}
 	goto after_switch;
@@ -2100,7 +2105,7 @@ static void SGML_character(HTStream *context, char c_in)
 			   HTPassEightBitRaw &&
 			   saved_char_in >=
 			   LYlowest_eightbit[context->outUCLYhndl]) {
-		    PUTUTF8((0xf000 | saved_char_in));
+		    PUTUTF8((UCode_t) (0xf000 | saved_char_in));
 		} else {
 		    PUTUTF8(clong);
 		}
@@ -2146,7 +2151,8 @@ static void SGML_character(HTStream *context, char c_in)
 		   (uck = UCTransUniChar(unsign_c,
 					 context->outUCLYhndl)) >= ' ' &&
 		   uck < 256) {
-	    CTRACE((tfp, "UCTransUniChar returned 0x%.2lX:'%c'.\n",
+	    CTRACE((tfp, "UCTransUniChar returned 0x%.2" PRI_UCode_t
+		    ":'%c'.\n",
 		    uck, FROMASCII((char) uck)));
 	    /*
 	     * We got one octet from the conversions, so use it.  - FM
@@ -2195,7 +2201,7 @@ static void SGML_character(HTStream *context, char c_in)
 #endif
 
 	    string->size = 0;
-	    EntityName = HTMLGetEntityName((int) (unsign_c - 160));
+	    EntityName = HTMLGetEntityName((UCode_t) (unsign_c - 160));
 	    HTChunkPuts(string, EntityName);
 	    HTChunkTerminate(string);
 #ifdef USE_PRETTYSRC
@@ -2639,7 +2645,9 @@ static void SGML_character(HTStream *context, char c_in)
 		UCode_t code = (UCode_t) lcode;
 
 /* =============== work in ASCII below here ===============  S/390 -- gil -- 1092 */
-		code = LYcp1252ToUnicode(code);
+		if (AssumeCP1252(context)) {
+		    code = LYcp1252ToUnicode(code);
+		}
 		/*
 		 * Check for special values.  - FM
 		 */
@@ -2746,7 +2754,7 @@ static void SGML_character(HTStream *context, char c_in)
 			   code == 8207) {
 		    if (TRACE) {
 			string->size--;
-			LYstrncpy(replace_buf,
+			LYStrNCpy(replace_buf,
 				  string->data,
 				  (string->size < 64 ? string->size : 63));
 			fprintf(tfp,
@@ -3307,7 +3315,7 @@ static void SGML_character(HTStream *context, char c_in)
 		saved_char_in >=
 		LYlowest_eightbit[context->outUCLYhndl]) {
 		HTChunkPutUtf8Char(string,
-				   (0xf000 | saved_char_in));
+				   (UCode_t) (0xf000 | saved_char_in));
 	    } else {
 		HTChunkPutUtf8Char(string, clong);
 	    }
@@ -3717,7 +3725,7 @@ static void SGML_character(HTStream *context, char c_in)
 		saved_char_in >=
 		LYlowest_eightbit[context->outUCLYhndl]) {
 		HTChunkPutUtf8Char(string,
-				   (0xf000 | saved_char_in));
+				   (UCode_t) (0xf000 | saved_char_in));
 	    } else {
 		HTChunkPutUtf8Char(string, clong);
 	    }
@@ -3757,7 +3765,7 @@ static void SGML_character(HTStream *context, char c_in)
 		saved_char_in >=
 		LYlowest_eightbit[context->outUCLYhndl]) {
 		HTChunkPutUtf8Char(string,
-				   (0xf000 | saved_char_in));
+				   (UCode_t) (0xf000 | saved_char_in));
 	    } else {
 		HTChunkPutUtf8Char(string, clong);
 	    }
@@ -3801,7 +3809,7 @@ static void SGML_character(HTStream *context, char c_in)
 		saved_char_in >=
 		LYlowest_eightbit[context->outUCLYhndl]) {
 		HTChunkPutUtf8Char(string,
-				   (0xf000 | saved_char_in));
+				   (UCode_t) (0xf000 | saved_char_in));
 	    } else {
 		HTChunkPutUtf8Char(string, clong);
 	    }
@@ -3955,7 +3963,7 @@ static void SGML_character(HTStream *context, char c_in)
 #endif
 				(*context->actions->end_element)
 				    (context->target,
-				     TAGNUM_OF_TAGP(context->current_tag),
+				     (int) TAGNUM_OF_TAGP(context->current_tag),
 				     &context->include);
 			}
 		    } else if (!strcasecomp(string->data, "P")) {
@@ -3985,7 +3993,7 @@ static void SGML_character(HTStream *context, char c_in)
 #endif
 			    (*context->actions->end_element)
 				(context->target,
-				 TAGNUM_OF_TAGP(context->current_tag),
+				 (int) TAGNUM_OF_TAGP(context->current_tag),
 				 &context->include);
 		    }
 		    string->size = 0;
@@ -4281,7 +4289,9 @@ static void SGML_character(HTStream *context, char c_in)
 		    c = UCH((clong & 0xff));
 		}
 		saved_char_in = '\0';
-		context->include_index = puni - context->active_include + 1;
+		context->include_index = (int) (puni
+						- context->active_include
+						+ 1);
 		goto top1;
 	    } else {
 		/*
@@ -4323,10 +4333,10 @@ static void InferUtfFromBom(HTStream *context, int chndl)
  * Avoid rewrite of SGML_character() to handle hypothetical case of UTF-16
  * webpages, by pretending that the data is UTF-8.
  */
-static void SGML_widechar(HTStream *context, long ch)
+static void SGML_widechar(HTStream *context, int ch)
 {
-    if (!UCPutUtf8_charstring(context, SGML_character, ch)) {
-	SGML_character(context, (char) ch);
+    if (!UCPutUtf8_charstring(context, SGML_character, (UCode_t) ch)) {
+	SGML_character(context, ch);
     }
 }
 
@@ -4337,17 +4347,17 @@ static void SGML_write(HTStream *context, const char *str, int l)
 
     if (sgml_offset == 0) {
 	if (l > 3
-	    && !memcmp(str, "\357\273\277", 3)) {
+	    && !MemCmp(str, "\357\273\277", 3)) {
 	    CTRACE((tfp, "SGML_write found UTF-8 BOM\n"));
 	    InferUtfFromBom(context, UTF8_handle);
 	    str += 3;
 	} else if (l > 2) {
-	    if (!memcmp(str, "\377\376", 2)) {
+	    if (!MemCmp(str, "\377\376", 2)) {
 		CTRACE((tfp, "SGML_write found UCS-2 LE BOM\n"));
 		InferUtfFromBom(context, UTF8_handle);
 		str += 2;
 		context->T.ucs_mode = -1;
-	    } else if (!memcmp(str, "\376\377", 2)) {
+	    } else if (!MemCmp(str, "\376\377", 2)) {
 		CTRACE((tfp, "SGML_write found UCS-2 BE BOM\n"));
 		InferUtfFromBom(context, UTF8_handle);
 		str += 2;
@@ -4524,8 +4534,8 @@ History:
 
 static int TREAT_SJIS = 1;
 
-void JISx0201TO0208_EUC(unsigned char IHI,
-			unsigned char ILO,
+void JISx0201TO0208_EUC(unsigned IHI,
+			unsigned ILO,
 			unsigned char *OHI,
 			unsigned char *OLO)
 {
@@ -4600,8 +4610,8 @@ void JISx0201TO0208_EUC(unsigned char IHI,
 	*OHI = UCH(table[ILO - 0xA1][0]);
 	*OLO = UCH(table[ILO - 0xA1][1]);
     } else {
-	*OHI = IHI;
-	*OLO = ILO;
+	*OHI = UCH(IHI);
+	*OLO = UCH(ILO);
     }
 }
 
@@ -4620,8 +4630,8 @@ static int IS_SJIS_STR(const unsigned char *str)
     return 0;
 }
 
-unsigned char *SJIS_TO_JIS1(unsigned char HI,
-			    unsigned char LO,
+unsigned char *SJIS_TO_JIS1(unsigned HI,
+			    unsigned LO,
 			    unsigned char *JCODE)
 {
     HI = UCH(HI - UCH((HI <= 0x9F) ? 0x71 : 0xB1));
@@ -4634,13 +4644,13 @@ unsigned char *SJIS_TO_JIS1(unsigned char HI,
     } else {
 	LO = UCH(LO - UCH(0x1F));
     }
-    JCODE[0] = HI;
-    JCODE[1] = LO;
+    JCODE[0] = UCH(HI);
+    JCODE[1] = UCH(LO);
     return JCODE;
 }
 
-unsigned char *JIS_TO_SJIS1(unsigned char HI,
-			    unsigned char LO,
+unsigned char *JIS_TO_SJIS1(unsigned HI,
+			    unsigned LO,
 			    unsigned char *SJCODE)
 {
     if (HI & 1)
@@ -4653,22 +4663,28 @@ unsigned char *JIS_TO_SJIS1(unsigned char HI,
     HI = UCH(((HI - 0x21) >> 1) + 0x81);
     if (0x9F < HI)
 	HI = UCH(HI + UCH(0x40));
-    SJCODE[0] = HI;
-    SJCODE[1] = LO;
+    SJCODE[0] = UCH(HI);
+    SJCODE[1] = UCH(LO);
     return SJCODE;
 }
 
-unsigned char *EUC_TO_SJIS1(unsigned char HI,
-			    unsigned char LO,
+unsigned char *EUC_TO_SJIS1(unsigned HI,
+			    unsigned LO,
 			    unsigned char *SJCODE)
 {
-    if (HI == 0x8E)
-	JISx0201TO0208_EUC(HI, LO, &HI, &LO);
+    if (HI == 0x8E) {
+	unsigned char HI_data[2];
+	unsigned char LO_data[2];
+
+	HI_data[0] = UCH(HI);
+	LO_data[0] = UCH(LO);
+	JISx0201TO0208_EUC(HI, LO, HI_data, LO_data);
+    }
     JIS_TO_SJIS1(UCH(HI & 0x7F), UCH(LO & 0x7F), SJCODE);
     return SJCODE;
 }
 
-void JISx0201TO0208_SJIS(unsigned char I,
+void JISx0201TO0208_SJIS(unsigned I,
 			 unsigned char *OHI,
 			 unsigned char *OLO)
 {
@@ -4680,8 +4696,8 @@ void JISx0201TO0208_SJIS(unsigned char I,
     *OLO = SJCODE[1];
 }
 
-unsigned char *SJIS_TO_EUC1(unsigned char HI,
-			    unsigned char LO,
+unsigned char *SJIS_TO_EUC1(unsigned HI,
+			    unsigned LO,
 			    unsigned char *data)
 {
     SJIS_TO_JIS1(HI, LO, data);

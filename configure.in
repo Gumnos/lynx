@@ -1,4 +1,4 @@
-dnl $LynxId: configure.in,v 1.215 2010/06/20 18:09:14 tom Exp $
+dnl $LynxId: configure.in,v 1.221 2010/09/22 21:29:54 tom Exp $
 dnl
 dnl Process this file with autoconf to produce a configure script.
 dnl
@@ -29,7 +29,7 @@ dnl ---------------------------------------------------------------------------
 dnl
 dnl ask PRCS to plug-in the project-version for the configure-script.
 dnl $Format: "AC_REVISION($ProjectVersion$)"$
-AC_REVISION(2.8.8dev.5)
+AC_REVISION(2.8.8dev.6)
 
 # Save the original $CFLAGS so we can distinguish whether the user set those
 # in the environment, or whether autoconf added -O and -g options:
@@ -59,10 +59,12 @@ AC_ARG_WITH(system-type,
 [AC_MSG_WARN(overriding system type $host_os to $withval)
  host_os=$withval])
 
+AC_ARG_PROGRAM
+
 PACKAGE=lynx
 dnl ask PRCS to plug-in the project-version for the packages.
 # $Format: "VERSION=$ProjectVersion$"$
-VERSION=2.8.8dev.5
+VERSION=2.8.8dev.6
 
 AC_SUBST(PACKAGE)
 AC_SUBST(VERSION)
@@ -104,7 +106,8 @@ esac
 AC_PROG_MAKE_SET
 AC_PROG_INSTALL
 AC_PROG_YACC
-AC_CHECK_PROGS(LINT, lint alint lclint tdlint, [])
+CF_PROG_LINT
+CF_MAKE_TAGS
 
 AC_AIX
 AC_ISC_POSIX
@@ -752,6 +755,7 @@ AC_TYPE_OFF_T
 AC_TYPE_PID_T
 AC_TYPE_UID_T
 AC_TYPE_MODE_T
+CF_CHECK_TYPE(ssize_t, int)
 CF_CHECK_TYPE(socklen_t, int, [
 #include <sys/types.h>
 #include <sys/socket.h>

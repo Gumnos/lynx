@@ -1,4 +1,4 @@
-/* $LynxId: LYCurses.c,v 1.151 2010/06/17 08:09:48 tom Exp $ */
+/* $LynxId: LYCurses.c,v 1.156 2010/09/25 00:48:03 tom Exp $ */
 #include <HTUtils.h>
 #include <HTAlert.h>
 
@@ -136,13 +136,13 @@ void VTHome(void)
 void LYaddAttr(int a)
 {
     Current_Attr |= a;
-    SLsmg_set_color(Current_Attr & ~Masked_Attr);
+    SLsmg_set_color((SLsmg_Color_Type) (Current_Attr & ~Masked_Attr));
 }
 
 void LYsubAttr(int a)
 {
     Current_Attr &= ~a;
-    SLsmg_set_color(Current_Attr & ~Masked_Attr);
+    SLsmg_set_color((SLsmg_Color_Type) (Current_Attr & ~Masked_Attr));
 }
 
 static void lynx_setup_attrs(void)
@@ -161,7 +161,7 @@ static void lynx_setup_attrs(void)
     int n;
 
     for (n = 1; n <= 7; n++)
-	SLtt_set_mono(n, NULL, (monoattr[n] & ~Masked_Attr));
+	SLtt_set_mono(n, NULL, (SLtt_Char_Type) (monoattr[n] & ~Masked_Attr));
 }
 
 void lynx_setup_colors(void)
@@ -260,8 +260,8 @@ static char *attr_to_string(int code)
 {
     static char result[sizeof(Mono_Attrs) + 80];
     unsigned i;
-    int pair = PAIR_NUMBER(code);
-    int bold = (pair != 0 && (code & A_BOLD) != 0);
+    int pair = PAIR_NUMBER((unsigned) code);
+    int bold = (pair != 0 && ((unsigned) code & A_BOLD) != 0);
 
     if (bold)
 	code &= (int) ~A_BOLD;
@@ -295,10 +295,13 @@ static char *attr_to_string(int code)
 /*
  *  This function boxes windows for (n)curses.
  */
-void LYbox(WINDOW * win, BOOLEAN formfield GCC_UNUSED)
+void LYbox(WINDOW * win, int formfield GCC_UNUSED)
 {
 #ifdef USE_SLANG
-    SLsmg_draw_box(win->top_y, win->left_x, win->height, win->width + 4);
+    SLsmg_draw_box(win->top_y,
+		   win->left_x,
+		   (unsigned) win->height,
+		   (unsigned) win->width + 4);
 #else
 #ifdef VMS
     /*
@@ -424,11 +427,11 @@ static void LYAttrset(WINDOW * win, int color,
 	&& color >= 0) {
 	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset color %#x -> (%s)\n",
 			      color, attr_to_string(color)));
-	(void) wattrset(win, color);
+	(void) wattrset(win, (unsigned) color);
     } else if (mono >= 0) {
 	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset mono %#x -> (%s)\n",
 			      mono, attr_to_string(mono)));
-	(void) wattrset(win, mono);
+	(void) wattrset(win, (unsigned) mono);
     } else {
 	CTRACE2(TRACE_STYLE, (tfp, "CSS:LYAttrset (A_NORMAL)\n"));
 	(void) wattrset(win, A_NORMAL);
@@ -493,7 +496,7 @@ void curses_w_style(WINDOW * win, int style,
 				  "in LynxChangeStyle(curses_w_style)"));
 	    last_colorattr_ptr = MAX_LAST_STYLES - 1;
 	}
-	last_styles[last_colorattr_ptr++] = LYgetattrs(win);
+	last_styles[last_colorattr_ptr++] = (int) LYgetattrs(win);
 	/* don't cache style changes for active links */
 #if OMIT_SCN_KEEPING
 	/* since we don't compute the hcode to stack off in HTML.c, we
@@ -653,11 +656,11 @@ static int encode_color_attr(int color_attr)
     int code = 0;
     int offs = 1;
 
-    if (color_attr & A_BOLD)
+    if ((unsigned) color_attr & A_BOLD)
 	code |= 1;
-    if (color_attr & (A_REVERSE | A_DIM))
+    if ((unsigned) color_attr & (A_REVERSE | A_DIM))
 	code |= 2;
-    if (color_attr & A_UNDERLINE)
+    if ((unsigned) color_attr & A_UNDERLINE)
 	code |= 4;
     result = lynx_color_cfg_attr(code);
 
@@ -706,8 +709,8 @@ char *LYgetTableString(int code)
 {
     int mask = decode_mono_code(code);
     int second = encode_color_attr(mask);
-    int pair = PAIR_NUMBER(second);
-    int mono = (int) (mask & A_ATTRIBUTES);
+    int pair = PAIR_NUMBER((unsigned) second);
+    int mono = (int) ((unsigned) mask & A_ATTRIBUTES);
     int fg = lynx_color_pairs[pair].fg;
     int bg = lynx_color_pairs[pair].bg;
     unsigned n;
@@ -810,7 +813,7 @@ int lynx_chg_color(int color,
 void lynx_set_color(int a)
 {
     if (lynx_has_color && LYShowColor >= SHOW_COLOR_ON) {
-	(void) wattrset(LYwin, lynx_color_cfg_attr(a)
+	(void) wattrset(LYwin, (unsigned) lynx_color_cfg_attr(a)
 			| (((a + 1) < COLOR_PAIRS)
 			   ? (chtype) get_color_pair(a + 1)
 			   : A_NORMAL));
@@ -869,11 +872,11 @@ void LYnoVideo(int a)
     CTRACE((tfp, "LYnoVideo(%d)\n", a));
 #ifdef USE_SLANG
     if (a & 1)
-	Masked_Attr |= SLTT_BOLD_MASK;
+	Masked_Attr |= (int) SLTT_BOLD_MASK;
     if (a & 2)
-	Masked_Attr |= SLTT_REV_MASK;
+	Masked_Attr |= (int) SLTT_REV_MASK;
     if (a & 4)
-	Masked_Attr |= SLTT_ULINE_MASK;
+	Masked_Attr |= (int) SLTT_ULINE_MASK;
     lynx_setup_attrs();
 #else
 #ifdef USE_COLOR_TABLE
@@ -991,7 +994,7 @@ void start_curses(void)
 	size_change(0);
 
 #if (defined(VMS) || defined(REAL_UNIX_SYSTEM)) && !defined(__CYGWIN__)
-	if ((Masked_Attr & SLTT_ULINE_MASK) == 0) {
+	if ((Masked_Attr & (int) SLTT_ULINE_MASK) == 0) {
 	    SLtt_add_color_attribute(4, SLTT_ULINE_MASK);
 	    SLtt_add_color_attribute(5, SLTT_ULINE_MASK);
 	}
@@ -1573,7 +1576,7 @@ BOOLEAN setup(char *terminal)
 
     printf("%s%s\n", gettext("Terminal ="), term);
     if ((strlen(term) < 5) ||
-	strncmp(term, "vt", 2) || !isdigit(term[2])) {
+	StrNCmp(term, "vt", 2) || !isdigit(term[2])) {
 	printf("%s\n",
 	       gettext("You must use a vt100, 200, etc. terminal with this program."));
 	printf(CONFIRM_PROCEED, "n/y");
@@ -1655,7 +1658,7 @@ BOOLEAN setup(char *terminal)
      * from all other links.  The workaround here is to disable the 'rev'
      * capability.
      */
-    if ((strncmp((const char *) ttytype, "sun", 3) == 0)) {
+    if ((StrNCmp((const char *) ttytype, "sun", 3) == 0)) {
 	LYnoVideo(2);
     }
 #endif /* HAVE_TTYTYPE */
@@ -1811,7 +1814,11 @@ WINDOW *LYstartPopup(int *top_y,
 	*width = LYcolLimit - 5;
     }
 
-    SLsmg_fill_region(*top_y, *left_x - 1, *height, *width + 4, ' ');
+    SLsmg_fill_region(*top_y,
+		      *left_x - 1,
+		      (unsigned) *height,
+		      (unsigned) *width + 4,
+		      ' ');
     form_window = &fake_window;
     form_window->top_y = *top_y;
     form_window->left_x = *left_x;
@@ -1986,7 +1993,7 @@ static
 int LYstrExtent0(const char *string,
 		 int len,
 		 int maxCells GCC_UNUSED,
-		 BOOL retCellNum GCC_UNUSED)
+		 int retCellNum GCC_UNUSED)
 {
     int used = (len < 0 ? (int) strlen(string) : len);
     int result = used;

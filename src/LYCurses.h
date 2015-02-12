@@ -1,4 +1,4 @@
-/* $LynxId: LYCurses.h,v 1.83 2009/11/27 12:58:31 tom Exp $ */
+/* $LynxId: LYCurses.h,v 1.86 2010/10/04 08:56:09 tom Exp $ */
 #ifndef LYCURSES_H
 #define LYCURSES_H
 
@@ -49,7 +49,11 @@
 #endif /* FALSE */
 
 #ifdef USE_SLANG
+#define ENABLE_SLFUTURE_CONST 1
 #include <slang.h>
+#ifndef SLFUTURE_CONST
+#define SLFUTURE_CONST		/* nothing */
+#endif
 typedef unsigned long chtype;
 
 #undef WINDOW
@@ -187,6 +191,10 @@ typedef char chtype;
 
 #ifdef ERR
 #undef ERR			/* all versions of curses define this */
+#endif
+
+#ifdef KEY_EVENT
+#undef KEY_EVENT		/* wincon.h or Cygwin's copy of it */
 #endif
 
 #ifdef MOUSE_MOVED
@@ -334,7 +342,7 @@ extern "C" {
 #define LYstopPopup() LYsubwindow(0)
 #endif				/* NCURSES */
 
-    extern void LYbox(WINDOW * win, BOOLEAN formfield);
+    extern void LYbox(WINDOW * win, int formfield);
     extern WINDOW *LYstartPopup(int *top_y, int *left_x, int *height, int *width);
 
 /*

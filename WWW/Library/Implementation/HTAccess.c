@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTAccess.c,v 1.69 2010/04/29 09:30:51 tom Exp $
+ * $LynxId: HTAccess.c,v 1.73 2010/10/03 22:49:46 tom Exp $
  *
  *		Access Manager					HTAccess.c
  *		==============
@@ -285,9 +285,8 @@ BOOL override_proxy(const char *addr)
 	return NO;
     }
 
-    if (NULL != (p = strrchr(Host, ':'))) {	/* Port specified */
+    if (NULL != (p = HTParsePort(Host, &port))) {	/* Port specified */
 	*p++ = 0;		/* Chop off port */
-	port = atoi(p);
     } else {			/* Use default port */
 	acc_method = HTParse(addr, "", PARSE_ACCESS);
 	if (acc_method != NULL) {
@@ -329,22 +328,28 @@ BOOL override_proxy(const char *addr)
 	const char *colon = NULL;
 	int templ_port = 0;
 	int t_len;
+	int brackets = 0;
 
 	while (*no_proxy && (WHITE(*no_proxy) || *no_proxy == ','))
 	    no_proxy++;		/* Skip whitespace and separators */
 
 	end = no_proxy;
 	while (*end && !WHITE(*end) && *end != ',') {	/* Find separator */
-	    if (*end == ':')
+	    if (!brackets && (*end == ':'))
 		colon = end;	/* Port number given */
+	    else if (*end == '[')
+		++brackets;
+	    else if (*end == ']')
+		--brackets;
 	    end++;
 	}
 
 	if (colon) {
+	    /* unlike HTParsePort(), this may be followed by non-digits */
 	    templ_port = atoi(colon + 1);
-	    t_len = colon - no_proxy;
+	    t_len = (int) (colon - no_proxy);
 	} else {
-	    t_len = end - no_proxy;
+	    t_len = (int) (end - no_proxy);
 	}
 
 	if ((!templ_port || templ_port == port) &&
@@ -357,7 +362,7 @@ BOOL override_proxy(const char *addr)
 	if ((!templ_port || templ_port == port) &&
 	    (t_len > 0 && t_len <= h_len &&
 	     isdigit(UCH(*no_proxy)) &&
-	     !strncmp(host, no_proxy, (unsigned) t_len))) {
+	     !StrNCmp(host, no_proxy, t_len))) {
 	    FREE(host);
 	    return YES;
 	}
@@ -411,10 +416,10 @@ static int get_physical(const char *addr,
 	StrAllocCat(physical, "?0,0");
 	CTRACE((tfp, "HTAccess: Appending '?0,0' coordinate pair.\n"));
     }
-    if (!strncmp(physical, "Proxied=", 8)) {
+    if (!StrNCmp(physical, "Proxied=", 8)) {
 	HTAnchor_setPhysical(anchor, physical + 8);
 	using_proxy = YES;
-    } else if (!strncmp(physical, "NoProxy=", 8)) {
+    } else if (!StrNCmp(physical, "NoProxy=", 8)) {
 	HTAnchor_setPhysical(anchor, physical + 8);
 	override_flag = YES;
     } else {
@@ -448,15 +453,16 @@ static int get_physical(const char *addr,
 #ifdef USE_GATEWAYS
 
     if (!override_flag && !using_proxy) {	/* else ignore no_proxy env var */
+	char *host = NULL;
+	int port;
+
 	if (!strcasecomp(acc_method, "news")) {
 	    /*
 	     * News is different, so we need to check the name of the server,
 	     * as well as the default port for selective exclusions.
 	     */
-	    char *host = NULL;
-
 	    if ((host = HTParse(addr, "", PARSE_HOST))) {
-		if (strchr(host, ':') == NULL) {
+		if (HTParsePort(host, &port) == NULL) {
 		    StrAllocCopy(Server_addr, "news://");
 		    StrAllocCat(Server_addr, host);
 		    StrAllocCat(Server_addr, ":119/");
@@ -472,10 +478,8 @@ static int get_physical(const char *addr,
 	     * Wais also needs checking of the default port for selective
 	     * exclusions.
 	     */
-	    char *host = NULL;
-
 	    if ((host = HTParse(addr, "", PARSE_HOST))) {
-		if (!(strchr(host, ':'))) {
+		if (!(HTParsePort(host, &port))) {
 		    StrAllocCopy(Server_addr, "wais://");
 		    StrAllocCat(Server_addr, host);
 		    StrAllocCat(Server_addr, ":210/");
@@ -523,7 +527,7 @@ static int get_physical(const char *addr,
 	    char *gatewayed = NULL;
 
 	    StrAllocCopy(gatewayed, proxy);
-	    if (!strncmp(gatewayed, "http", 4)) {
+	    if (!StrNCmp(gatewayed, "http", 4)) {
 		char *cp = strrchr(gatewayed, '/');
 
 		/* Append a slash to the proxy specification if it doesn't
@@ -535,7 +539,7 @@ static int get_physical(const char *addr,
 	    /*
 	     * Ensure that the proxy server uses ftp for file URLs. - FM
 	     */
-	    if (!strncmp(addr, "file", 4)) {
+	    if (!StrNCmp(addr, "file", 4)) {
 		StrAllocCat(gatewayed, "ftp");
 		StrAllocCat(gatewayed, (addr + 4));
 	    } else
@@ -795,7 +799,7 @@ static BOOL HTLoadDocument(const char *full_address,	/* may include #fragment */
      */
     if (!anchor->post_data) {
 	while ((cp = HTAnchor_physical(anchor)) != NULL &&
-	       !strncmp(cp, "Location=", 9)) {
+	       !StrNCmp(cp, "Location=", 9)) {
 	    DocAddress NewDoc;
 
 	    CTRACE((tfp, "HTAccess: '%s' is a redirection URL.\n",

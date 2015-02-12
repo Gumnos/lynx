@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYReadCFG.c,v 1.150 2010/06/18 00:11:35 tom Exp $
+ * $LynxId: LYReadCFG.c,v 1.156 2010/09/27 10:45:02 tom Exp $
  */
 #ifndef NO_RULES
 #include <HTRules.h>
@@ -200,7 +200,7 @@ static void add_item_to_list(char *buffer,
 
 	if (cur_item->name == NULL)
 	    outofmem(__FILE__, "read_cfg");
-	LYstrncpy(cur_item->name, buffer, (int) (colon - buffer));
+	LYStrNCpy(cur_item->name, buffer, (int) (colon - buffer));
 	remove_backslashes(cur_item->name);
 
 	/*
@@ -217,7 +217,7 @@ static void add_item_to_list(char *buffer,
 
 	    if (cur_item->command == NULL)
 		outofmem(__FILE__, "read_cfg");
-	    LYstrncpy(cur_item->command,
+	    LYStrNCpy(cur_item->command,
 		      colon + 1,
 		      (int) (next_colon - (colon + 1)));
 	    remove_backslashes(cur_item->command);
@@ -249,8 +249,9 @@ lynx_list_item_type *find_item_by_number(lynx_list_item_type *list_ptr,
     return list_ptr;
 }
 
-int match_item_by_name(lynx_list_item_type *ptr, char *name,
-		       BOOLEAN only_overriders)
+int match_item_by_name(lynx_list_item_type *ptr,
+		       const char *name,
+		       int only_overriders)
 {
     return
 	(ptr->command != 0
@@ -717,7 +718,7 @@ static int keymap_fun(char *key)
 
 		if (sselect_edi) {
 		    if (*sselect_edi)
-			select_edi = strtol(sselect_edi, endp, 10);
+			select_edi = (int) strtol(sselect_edi, endp, 10);
 		    if (**endp != '\0') {
 			fprintf(stderr,
 				gettext("invalid line-editor selection %s for key %s, selecting all\n"),
@@ -789,7 +790,7 @@ static int lynx_sig_file_fun(char *value)
 {
     char temp[LY_MAXPATH];
 
-    LYstrncpy(temp, value, sizeof(temp) - 1);
+    LYStrNCpy(temp, value, sizeof(temp) - 1);
     if (LYPathOffHomeOK(temp, sizeof(temp))) {
 	StrAllocCopy(LynxSigFile, temp);
 	LYAddPathToHome(temp, sizeof(temp), LynxSigFile);
@@ -998,7 +999,7 @@ static int system_editor_fun(char *value)
 }
 
 #define SetViewer(mime_type, viewer) \
-    HTSetPresentation(mime_type, viewer, 0, 1.0, 3.0, 0.0, 0, mediaCFG)
+    HTSetPresentation(mime_type, viewer, 0, 1.0, 3.0, 0.0, 0L, mediaCFG)
 
 static int viewer_fun(char *value)
 {
@@ -1054,7 +1055,7 @@ static int nonrest_sigwinch_fun(char *value)
 }
 
 #ifdef USE_CHARSET_CHOICE
-static void matched_charset_choice(BOOL display_charset,
+static void matched_charset_choice(int display_charset,
 				   int i)
 {
     int j;
@@ -1073,7 +1074,7 @@ static void matched_charset_choice(BOOL display_charset,
 }
 
 static int parse_charset_choice(char *p,
-				BOOL display_charset)	/*if FALSE, then assumed doc charset */
+				int display_charset)	/*if FALSE, then assumed doc charset */
 {
     int len, i;
     int matches = 0;
@@ -1370,7 +1371,7 @@ static Config_Type Config_Table [] =
 #ifdef VMS
      PARSE_PRG(RC_CSWING_PATH,          ppCSWING),
 #endif
-     PARSE_TIM(RC_DELAYSECS,            DebugSecs),
+     PARSE_TIM(RC_DELAYSECS,            DelaySecs),
      PARSE_FUN(RC_DEFAULT_BOOKMARK_FILE, default_bookmark_file_fun),
      PARSE_FUN(RC_DEFAULT_CACHE_SIZE,   default_cache_size_fun),
 #ifdef USE_DEFAULT_COLORS
@@ -1615,6 +1616,7 @@ static Config_Type Config_Table [] =
 #endif
      PARSE_PRG(RC_UNCOMPRESS_PATH,      ppUNCOMPRESS),
      PARSE_SET(RC_UNDERLINE_LINKS,      LYUnderlineLinks),
+     PARSE_SET(RC_UNIQUE_URLS,          unique_urls),
      PARSE_PRG(RC_UNZIP_PATH,           ppUNZIP),
 #ifdef DIRED_SUPPORT
      PARSE_ADD(RC_UPLOADER,             uploaders),
@@ -1785,13 +1787,15 @@ typedef BOOL (optidx_set_t)[NOPTS_];
  * configuration variable.
  */
 void LYSetConfigValue(const char *name,
-		      char *value)
+		      const char *param)
 {
+    char *value = NULL;
     Config_Type *tbl = lookup_config(name);
     ParseUnionPtr q = ParseUnionOf(tbl);
     char *temp_name = 0;
     char *temp_value = 0;
 
+    StrAllocCopy(value, param);
     switch (tbl->type) {
     case CONF_BOOL:
 	if (q->set_value != 0)
@@ -1874,7 +1878,7 @@ void LYSetConfigValue(const char *name,
 
 #if defined(EXEC_LINKS) || defined(LYNXCGI_LINKS)
     case CONF_ADD_TRUSTED:
-	add_trusted(value, q->def_value);
+	add_trusted(value, (int) q->def_value);
 	break;
 #endif
 
@@ -1886,6 +1890,7 @@ void LYSetConfigValue(const char *name,
     default:
 	break;
     }
+    FREE(value);
 }
 
 /*

@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTUtils.h,v 1.98 2010/04/29 09:13:44 tom Exp $
+ * $LynxId: HTUtils.h,v 1.102 2010/09/25 15:32:56 tom Exp $
  *
  * Utility macros for the W3 code library
  * MACROS FOR GENERAL USE
@@ -329,13 +329,13 @@ Standard C library for malloc() etc
 /* array/table size */
 #define	TABLESIZE(v)	(sizeof(v)/sizeof(v[0]))
 
-#define	typecalloc(cast)		(cast *)calloc(1,sizeof(cast))
-#define	typecallocn(cast,ntypes)	(cast *)calloc(ntypes,sizeof(cast))
+#define	typecalloc(cast)		(cast *)calloc((size_t)1, sizeof(cast))
+#define	typecallocn(cast,ntypes)	(cast *)calloc((size_t)(ntypes),sizeof(cast))
 
-#define typeRealloc(cast,ptr,ntypes)    (cast *)realloc(ptr, (ntypes)*sizeof(cast))
+#define typeRealloc(cast,ptr,ntypes)    (cast *)realloc(ptr, (size_t)(ntypes)*sizeof(cast))
 
 #define typeMalloc(cast)                (cast *)malloc(sizeof(cast))
-#define typeMallocn(cast,ntypes)        (cast *)malloc((ntypes)*sizeof(cast))
+#define typeMallocn(cast,ntypes)        (cast *)malloc((size_t)(ntypes)*sizeof(cast))
 
 /*
 
@@ -542,7 +542,7 @@ extern int WWW_TraceMask;
 /*
  * Printing/scanning-formats for "off_t", as well as cast needed to fit.
  */
-#if defined(HAVE_INTTYPES_H) && defined(SIZEOF_OFF_T)
+#if defined(HAVE_LONG_LONG) && defined(HAVE_INTTYPES_H) && defined(SIZEOF_OFF_T)
 #if (SIZEOF_OFF_T == 8) && defined(PRId64)
 
 #define PRI_off_t	PRId64
@@ -566,7 +566,7 @@ extern int WWW_TraceMask;
 #endif
 
 #ifndef PRI_off_t
-#if (SIZEOF_OFF_T > SIZEOF_LONG)
+#if defined(HAVE_LONG_LONG) && (SIZEOF_OFF_T > SIZEOF_LONG)
 #define PRI_off_t	"lld"
 #define SCN_off_t	"lld"
 #define CAST_off_t(n)	(long long)(n)
@@ -580,7 +580,7 @@ extern int WWW_TraceMask;
 /*
  * Printing-format for "time_t", as well as cast needed to fit.
  */
-#if defined(HAVE_INTTYPES_H) && defined(SIZEOF_TIME_T)
+#if defined(HAVE_LONG_LONG) && defined(HAVE_INTTYPES_H) && defined(SIZEOF_TIME_T)
 #if (SIZEOF_TIME_T == 8) && defined(PRId64)
 
 #define PRI_time_t	PRId64
@@ -604,7 +604,7 @@ extern int WWW_TraceMask;
 #endif
 
 #ifndef PRI_time_t
-#if (SIZEOF_TIME_T > SIZEOF_LONG)
+#if defined(HAVE_LONG_LONG) && (SIZEOF_TIME_T > SIZEOF_LONG)
 #define PRI_time_t	"lld"
 #define SCN_time_t	"lld"
 #define CAST_time_t(n)	(long long)(n)
@@ -618,7 +618,7 @@ extern int WWW_TraceMask;
 /*
  * Printing-format for "UCode_t".
  */
-#define PRI_UCode_t	"ld"
+#define PRI_UCode_t	"lX"
 
 /*
  * Verbose-tracing.

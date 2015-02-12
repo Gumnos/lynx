@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTML.c,v 1.139 2010/06/18 00:05:37 tom Exp $
+ * $LynxId: HTML.c,v 1.146 2010/09/25 17:00:36 tom Exp $
  *
  *		Structured stream to Rich hypertext converter
  *		============================================
@@ -287,13 +287,17 @@ void LYShowBadHTML(const char *message)
 /*	Character handling
  *	------------------
  */
-void HTML_put_character(HTStructured * me, char c)
+void HTML_put_character(HTStructured * me, int c)
 {
+    unsigned uc = UCH(c);
+
     /*
      * Ignore all non-MAP content when just scanning a document for MAPs.  - FM
      */
     if (LYMapsOnly && me->sp[0].tag_number != HTML_OBJECT)
 	return;
+
+    c = (int) uc;
 
     /*
      * Do EOL conversion if needed.  - FM
@@ -323,7 +327,7 @@ void HTML_put_character(HTStructured * me, char c)
 	if (c == LY_SOFT_HYPHEN)
 	    return;
 	if (c != '\n' && c != '\t' && c != '\r') {
-	    HTChunkPutc(&me->title, UCH(c));
+	    HTChunkPutc(&me->title, uc);
 	} else if (FIX_JAPANESE_SPACES) {
 	    if (c == '\t') {
 		HTChunkPutc(&me->title, ' ');
@@ -336,28 +340,28 @@ void HTML_put_character(HTStructured * me, char c)
 	return;
 
     case HTML_STYLE:
-	HTChunkPutc(&me->style_block, UCH(c));
+	HTChunkPutc(&me->style_block, uc);
 	return;
 
     case HTML_SCRIPT:
-	HTChunkPutc(&me->script, UCH(c));
+	HTChunkPutc(&me->script, uc);
 	return;
 
     case HTML_OBJECT:
-	HTChunkPutc(&me->object, UCH(c));
+	HTChunkPutc(&me->object, uc);
 	return;
 
     case HTML_TEXTAREA:
-	HTChunkPutc(&me->textarea, UCH(c));
+	HTChunkPutc(&me->textarea, uc);
 	return;
 
     case HTML_SELECT:
     case HTML_OPTION:
-	HTChunkPutc(&me->option, UCH(c));
+	HTChunkPutc(&me->option, uc);
 	return;
 
     case HTML_MATH:
-	HTChunkPutc(&me->math, UCH(c));
+	HTChunkPutc(&me->math, uc);
 	return;
 
     default:
@@ -375,7 +379,7 @@ void HTML_put_character(HTStructured * me, char c)
 	     */
 	    if (me->sp[0].tag_number == HTML_A)
 		break;
-	    HTChunkPutc(&me->option, UCH(c));
+	    HTChunkPutc(&me->option, uc);
 	    return;
 	}
 	break;
@@ -725,7 +729,7 @@ void HTML_write(HTStructured * me, const char *s, int l)
 #ifdef USE_COLOR_STYLE
 static char *Style_className = 0;
 static char *Style_className_end = 0;
-static unsigned Style_className_len = 0;
+static size_t Style_className_len = 0;
 static int hcode;
 
 #ifdef LY_FIND_LEAKS
@@ -737,11 +741,11 @@ static void free_Style_className(void)
 
 static void addClassName(const char *prefix,
 			 const char *actual,
-			 unsigned length)
+			 size_t length)
 {
-    unsigned offset = strlen(prefix);
-    unsigned have = (unsigned) (Style_className_end - Style_className);
-    unsigned need = (offset + length + 1);
+    size_t offset = strlen(prefix);
+    size_t have = (unsigned) (Style_className_end - Style_className);
+    size_t need = (offset + length + 1);
 
     if ((have + need) >= Style_className_len) {
 	Style_className_len += 1024 + 2 * (have + need);
@@ -770,7 +774,7 @@ static void addClassName(const char *prefix,
 
 #ifdef USE_PRETTYSRC
 
-static void HTMLSRC_apply_markup(HTStructured * context, HTlexeme lexeme, BOOL start,
+static void HTMLSRC_apply_markup(HTStructured * context, HTlexeme lexeme, int start,
 				 int tag_charset)
 {
     HT_tagspec *ts = *((start ? lexeme_start : lexeme_end) + lexeme);
@@ -787,18 +791,19 @@ static void HTMLSRC_apply_markup(HTStructured * context, HTlexeme lexeme, BOOL s
 	CTRACE((tfp, ts->start ? "SRCSTART %d\n" : "SRCSTOP %d\n", (int) lexeme));
 	if (ts->start)
 	    HTML_start_element(context,
-			       ts->element,
+			       (int) ts->element,
 			       ts->present,
 			       (const char **) ts->value,
 			       tag_charset,
 			       NULL);
 	else
 	    HTML_end_element(context,
-			     ts->element,
+			     (int) ts->element,
 			     NULL);
 	ts = ts->next;
     }
 }
+
 #  define START TRUE
 #  define STOP FALSE
 
@@ -841,12 +846,12 @@ static void LYStartArea(HTStructured * obj, const char *href,
 
 static void LYHandleFIG(HTStructured * me, const BOOL *present,
 			const char **value,
-			BOOL isobject,
-			BOOL imagemap,
+			int isobject,
+			int imagemap,
 			const char *id,
 			const char *src,
-			BOOL convert,
-			BOOL start,
+			int convert,
+			int start,
 			BOOL *intern_flag GCC_UNUSED)
 {
     if (start == TRUE) {
@@ -1009,7 +1014,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	    if (tagname_transform != 0)
 		PUTS(tag->name);
 	    else {
-		LYstrncpy(buf, tag->name, sizeof(buf) - 1);
+		LYStrNCpy(buf, tag->name, sizeof(buf) - 1);
 		LYLowerCase(buf);
 		PUTS(buf);
 	    }
@@ -1021,7 +1026,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 			if (attrname_transform != 0)
 			    PUTS(tag->attributes[i].name);
 			else {
-			    LYstrncpy(buf,
+			    LYStrNCpy(buf,
 				      tag->attributes[i].name,
 				      sizeof(buf) - 1);
 			    LYLowerCase(buf);
@@ -1103,7 +1108,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 
     addClassName(";",
 		 HTML_dtd.tags[element_number].name,
-		 HTML_dtd.tags[element_number].name_len);
+		 (size_t) HTML_dtd.tags[element_number].name_len);
 
     class_name = (force_classname ? forced_classname : class_string);
     force_classname = FALSE;
@@ -1240,7 +1245,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 	     * Create the host[:port] field.
 	     */
 	    temp = HTParse(base, "", PARSE_HOST + PARSE_PUNCTUATION);
-	    if (!strncmp(temp, "//", 2)) {
+	    if (!StrNCmp(temp, "//", 2)) {
 		StrAllocCat(me->base_href, temp);
 		if (!strcmp(me->base_href, "file://")) {
 		    StrAllocCat(me->base_href, "localhost");
@@ -2914,7 +2919,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 		/*
 		 * Deal with our ftp gateway kludge.  - FM
 		 */
-		if (!url_type && !strncmp(href, "/foo/..", 7) &&
+		if (!url_type && !StrNCmp(href, "/foo/..", 7) &&
 		    (isFTP_URL(me->node_anchor->address) ||
 		     isFILE_URL(me->node_anchor->address))) {
 		    for (i = 0; (href[i] = href[i + 7]) != 0; i++) ;
@@ -5567,7 +5572,7 @@ static int HTML_start_element(HTStructured * me, int element_number,
 #ifdef USE_JUSTIFY_ELTS
 	if (wait_for_this_stacked_elt < 0 &&
 	    HTML_dtd.tags[ElementNumber].can_justify == FALSE)
-	    wait_for_this_stacked_elt = me->stack - me->sp + MAX_NESTING;
+	    wait_for_this_stacked_elt = (int) (me->stack - me->sp) + MAX_NESTING;
 #endif
     }
 #ifdef USE_JUSTIFY_ELTS
@@ -5613,6 +5618,8 @@ static int HTML_start_element(HTStructured * me, int element_number,
 static int HTML_end_element(HTStructured * me, int element_number,
 			    char **include)
 {
+    static char empty[1];
+
     int i = 0;
     int status = HT_OK;
     char *temp = NULL, *cp = NULL;
@@ -5639,7 +5646,7 @@ static int HTML_end_element(HTStructured * me, int element_number,
 	    if (tagname_transform != 0)
 		PUTS(tag->name);
 	    else {
-		LYstrncpy(buf, tag->name, sizeof(buf) - 1);
+		LYStrNCpy(buf, tag->name, sizeof(buf) - 1);
 		LYLowerCase(buf);
 		PUTS(buf);
 	    }
@@ -6294,7 +6301,7 @@ static int HTML_end_element(HTStructured * me, int element_number,
 		 * up if invalid comments are present in the content, or if an
 		 * OBJECT end tag is present in a quoted attribute.  - FM
 		 */
-		if (!strncmp(cp, "<!--", 4)) {
+		if (!StrNCmp(cp, "<!--", 4)) {
 		    data = LYFindEndOfComment(cp);
 		    cp = data;
 		} else if (s == 0 && !strncasecomp(cp, "<PARAM", 6) &&
@@ -6886,7 +6893,7 @@ static int HTML_end_element(HTStructured * me, int element_number,
 		} else {
 		    FREE(temp);
 		}
-		data = "";
+		data = empty;
 	    }
 	    /*
 	     * Display at least the requested number of text lines and/or blank
@@ -6915,7 +6922,7 @@ static int HTML_end_element(HTStructured * me, int element_number,
 			data = (cp + 1);
 		    } else {
 			StrAllocCopy(temp, data);
-			data = "";
+			data = empty;
 		    }
 		} else {
 		    FREE(temp);
@@ -6948,7 +6955,7 @@ static int HTML_end_element(HTStructured * me, int element_number,
 		    data = (cp + 1);
 		} else if (*data != '\0') {
 		    StrAllocCopy(temp, data);
-		    data = "";
+		    data = empty;
 		} else {
 		    FREE(temp);
 		}
@@ -7758,7 +7765,7 @@ HTStructured *HTML_new(HTParentAnchor *anchor,
 	atexit(free_Style_className);
     }
 #endif
-    addClassName("", "", 0);
+    addClassName("", "", (size_t) 0);
     class_string[0] = '\0';
 #endif
 
@@ -7911,7 +7918,7 @@ static void CacheThru_abort(HTStream *me, HTError e)
 /*
  * FIXME: never used!
  */
-static void CacheThru_put_character(HTStream *me, char c_in)
+static void CacheThru_put_character(HTStream *me, int c_in)
 {
     if (me->status == HT_OK) {
 	if (me->fp) {
@@ -7946,9 +7953,10 @@ static void CacheThru_write(HTStream *me, const char *str, int l)
 {
     if (me->status == HT_OK && l != 0) {
 	if (me->fp) {
-	    fwrite(str, 1, (unsigned) l, me->fp);
-	    if (ferror(me->fp))
+	    if (fwrite(str, (size_t) 1, (size_t) l, me->fp) < (size_t) l
+		|| ferror(me->fp)) {
 		me->status = HT_ERROR;
+	    }
 	} else if (me->chunk) {
 	    me->last_chunk = HTChunkPutb2(me->last_chunk, str, l);
 	    if (me->last_chunk == NULL || me->last_chunk->allocated == 0)

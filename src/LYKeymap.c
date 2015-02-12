@@ -1,4 +1,4 @@
-/* $LynxId: LYKeymap.c,v 1.69 2009/11/21 17:05:33 Bela.Lubkin Exp $ */
+/* $LynxId: LYKeymap.c,v 1.72 2010/09/25 12:44:34 tom Exp $ */
 #include <HTUtils.h>
 #include <LYUtils.h>
 #include <LYGlobalDefs.h>
@@ -1127,8 +1127,8 @@ Kcmd *LYKeycodeToKcmd(LYKeymapCode code)
  */
 Kcmd *LYStringToKcmd(const char *name)
 {
-    unsigned need = strlen(name);
-    unsigned j;
+    size_t need = strlen(name);
+    size_t j;
     BOOL exact = FALSE;
     Kcmd *result = 0;
     Kcmd *maybe = 0;
@@ -1156,7 +1156,7 @@ Kcmd *LYStringToKcmd(const char *name)
 }
 
 char *LYKeycodeToString(int c,
-			BOOLEAN upper8)
+			int upper8)
 {
     static char buf[30];
     unsigned n;
@@ -1203,13 +1203,13 @@ int LYStringToKeycode(char *src)
     } else if (len > 2 && !strncasecomp(src, "0x", 2)) {
 	char *dst = 0;
 
-	key = strtol(src, &dst, 0);
+	key = (int) strtol(src, &dst, 0);
 	if (non_empty(dst))
 	    key = -1;
     } else if (len > 6 && !strncasecomp(src, "key-", 4)) {
 	char *dst = 0;
 
-	key = strtol(src + 4, &dst, 0);
+	key = (int) strtol(src + 4, &dst, 0);
 	if (isEmpty(dst))
 	    key = -1;
     }
@@ -1264,7 +1264,7 @@ static char *pretty_html(int c)
 		*dst++ = (char) c;
 	    }
 	}
-	adj -= (dst - buf) - PRETTY_LEN;
+	adj -= (int) (dst - buf) - PRETTY_LEN;
 	while (adj-- > 0)
 	    *dst++ = ' ';
 	*dst = 0;
@@ -1296,8 +1296,7 @@ static char *format_binding(LYKeymap_t * table, int i)
 
 /* if both is true, produce an additional line for the corresponding
    uppercase key if its binding is different. - kw */
-static void print_binding(HTStream *target, int i,
-			  BOOLEAN both)
+static void print_binding(HTStream *target, int i, int both)
 {
     char *buf;
     LYKeymapCode lac1 = LYK_UNKNOWN;	/* 0 */
@@ -1473,7 +1472,7 @@ GLOBALDEF HTProtocol LYLynxKeymap =
  */
 int remap(char *key,
 	  const char *func,
-	  BOOLEAN for_dired)
+	  int for_dired)
 {
     Kcmd *mp;
     int c;
@@ -1521,12 +1520,12 @@ typedef struct {
 /*
  * Save the given keys in the table, setting them to the map'd value.
  */
-static void set_any_keys(ANY_KEYS * table, int size)
+static void set_any_keys(ANY_KEYS * table, size_t size)
 {
-    int j, k;
+    size_t j, k;
 
     for (j = 0; j < size; ++j) {
-	k = table[j].code + 1;
+	k = (size_t) (table[j].code + 1);
 	table[j].save = keymap[k];
 	keymap[k] = table[j].map;
     }
@@ -1535,12 +1534,12 @@ static void set_any_keys(ANY_KEYS * table, int size)
 /*
  * Restore the given keys from the table.
  */
-static void reset_any_keys(ANY_KEYS * table, int size)
+static void reset_any_keys(ANY_KEYS * table, size_t size)
 {
-    int j, k;
+    size_t j, k;
 
     for (j = 0; j < size; ++j) {
-	k = table[j].code + 1;
+	k = (size_t) (table[j].code + 1);
 	keymap[k] = table[j].save;
     }
 }

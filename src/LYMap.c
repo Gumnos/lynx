@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMap.c,v 1.37 2009/01/01 22:30:15 tom Exp $
+ * $LynxId: LYMap.c,v 1.40 2010/09/24 22:31:41 tom Exp $
  *			Lynx Client-side Image MAP Support	       LYMap.c
  *			==================================
  *
@@ -215,7 +215,7 @@ BOOL LYAddMapElement(char *map,
 		     char *address,
 		     char *title,
 		     HTParentAnchor *node_anchor,
-		     BOOL intern_flag GCC_UNUSED)
+		     int intern_flag GCC_UNUSED)
 {
     LYMapElement *tmp = NULL;
     LYImageMap *theMap = NULL;
@@ -617,7 +617,7 @@ static int LYLoadIMGmap(const char *arg,
 void LYPrintImgMaps(FILE *fp)
 {
     const char *only = HTLoadedDocumentURL();
-    unsigned only_len = strlen(only);
+    size_t only_len = strlen(only);
     HTList *outer = LynxMaps;
     HTList *inner;
     LYImageMap *map;
@@ -627,7 +627,7 @@ void LYPrintImgMaps(FILE *fp)
     if (HTList_count(outer) > 0) {
 	while (NULL != (map = (LYImageMap *) HTList_nextObject(outer))) {
 	    if (only_len != 0) {
-		if (strncmp(only, map->address, only_len)
+		if (StrNCmp(only, map->address, only_len)
 		    || (map->address[only_len] != '\0'
 			&& map->address[only_len] != '#')) {
 		    continue;
