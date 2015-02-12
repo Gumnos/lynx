@@ -1,4 +1,6 @@
-/* $LynxId: LYUtils.c,v 1.167 2008/02/17 18:30:19 ravenexp Exp $ */
+/*
+ * $LynxId: LYUtils.c,v 1.175 2008/09/07 17:58:37 tom Exp $
+ */
 #include <HTUtils.h>
 #include <HTTCP.h>
 #include <HTParse.h>
@@ -89,7 +91,9 @@ extern int kbhit(void);		/* FIXME: use conio.h */
 #ifdef __UTMPX_FILE
 #define UTMP_FILE __UTMPX_FILE	/* at least in OS/390  S/390 -- gil -- 2100 */
 #else
+#ifndef UTMP_FILE
 #define UTMP_FILE "/var/adm/utmpx"	/* Digital Unix 4.0 */
+#endif
 #endif
 #endif /* UTMPX_FILE */
 #else
@@ -428,7 +432,7 @@ static BOOL show_whereis_targets(int flag,
 		      (LYcolLimit - LYGetHilitePos(cur, count)),
 		      utf_flag);
 	hlen = strlen(buffer);
-	hLen = ((HTCJK != NOCJK || utf_flag) ?
+	hLen = ((IS_CJK_TTY || utf_flag) ?
 		LYmbcsstrlen(buffer, utf_flag, YES) : hlen);
 
 	/*
@@ -495,7 +499,7 @@ static BOOL show_whereis_targets(int flag,
 		    tmp[1] = '\0';
 		    written += (utf_extra + 1);
 		    utf_extra = 0;
-		} else if (HTCJK != NOCJK && is8bits(tmp[0])) {
+		} else if (IS_CJK_TTY && is8bits(tmp[0])) {
 		    /*
 		     * For CJK strings, by Masanobu Kimura.
 		     */
@@ -569,7 +573,7 @@ static BOOL show_whereis_targets(int flag,
 			tmp[1] = '\0';
 			written += (utf_extra + 1);
 			utf_extra = 0;
-		    } else if (HTCJK != NOCJK && is8bits(tmp[0])) {
+		    } else if (IS_CJK_TTY && is8bits(tmp[0])) {
 			/*
 			 * For CJK strings, by Masanobu Kimura.
 			 */
@@ -696,7 +700,7 @@ static BOOL show_whereis_targets(int flag,
 		    tmp[1] = '\0';
 		    written += (utf_extra + 1);
 		    utf_extra = 0;
-		} else if (HTCJK != NOCJK && is8bits(tmp[0])) {
+		} else if (IS_CJK_TTY && is8bits(tmp[0])) {
 		    /*
 		     * For CJK strings, by Masanobu Kimura.
 		     */
@@ -771,7 +775,7 @@ static BOOL show_whereis_targets(int flag,
 			tmp[1] = '\0';
 			written += (utf_extra + 1);
 			utf_extra = 0;
-		    } else if (HTCJK != NOCJK && is8bits(tmp[0])) {
+		    } else if (IS_CJK_TTY && is8bits(tmp[0])) {
 			/*
 			 * For CJK strings, by Masanobu Kimura.
 			 */
@@ -892,7 +896,7 @@ static BOOL show_whereis_targets(int flag,
 				tmp[1] = '\0';
 				written += (utf_extra + 1);
 				utf_extra = 0;
-			    } else if (HTCJK != NOCJK && is8bits(tmp[0])) {
+			    } else if (IS_CJK_TTY && is8bits(tmp[0])) {
 				/*
 				 * For CJK strings, by Masanobu Kimura.
 				 */
@@ -982,16 +986,17 @@ static int find_cached_style(int cur,
 		    s = GetCachedStyle(LYP, x);
 		    if (s != 0) {
 			SetCachedStyle(LYP, LXP, s);
-			CTRACE((tfp, "found %d, x_offset=%d.\n", s, x - LXP));
+			CTRACE2(TRACE_STYLE,
+				(tfp, "found %d, x_offset=%d.\n", s, x - LXP));
 			break;
 		    }
 		}
 		if (s == 0) {
-		    CTRACE((tfp, "not found, assume <a>.\n"));
+		    CTRACE2(TRACE_STYLE, (tfp, "not found, assume <a>.\n"));
 		    s = s_a;
 		}
 	    } else {
-		CTRACE((tfp, "found %d.\n", s));
+		CTRACE2(TRACE_STYLE, (tfp, "found %d.\n", s));
 	    }
 	} else {
 	    CTRACE2(TRACE_STYLE,
@@ -1024,7 +1029,7 @@ void LYhighlight(int flag,
     BOOL TargetEmphasisON = FALSE;
     BOOL target1_drawn = NO;
 #endif
-    BOOL utf_flag = (BOOL) (LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8);
+    BOOL utf_flag = (BOOL) IS_UTF8_TTY;
     BOOL hl1_drawn = NO;
 
 #ifdef USE_COLOR_STYLE
@@ -1045,7 +1050,8 @@ void LYhighlight(int flag,
 	cur = 0;
     }
 
-    CTRACE((tfp, "LYhighlight %s %d [%d]:%s\n",
+    CTRACE((tfp, "LYhighlight at(%2d,%2d) %s %d [%d]:%s\n",
+	    links[cur].ly, links[cur].lx,
 	    (flag
 	     ? "on"
 	     : "off"),
@@ -1085,12 +1091,15 @@ void LYhighlight(int flag,
 	    int avail_space = (LYcolLimit - LXP) + (LYcolLimit * (LYlines - LYP));
 	    const char *text = LYGetHiliteStr(cur, 0);
 
+	    if (text == 0)
+		text = "";
+
 	    if (avail_space > links[cur].l_form->size)
 		avail_space = links[cur].l_form->size;
 
-	    gllen = LYmbcsstrlen(NonNull(text), utf_flag, NO);
-	    len = LYmbcs_skip_glyphs(NonNull(text), avail_space, utf_flag) - text;
-	    LYwaddnstr(LYwin, NonNull(text), len);
+	    gllen = LYmbcsstrlen(text, utf_flag, YES);
+	    len = LYmbcs_skip_cells(text, avail_space, utf_flag) - text;
+	    LYwaddnstr(LYwin, text, len);
 	    while (gllen++ < avail_space)
 		LYaddch('_');
 
@@ -1148,7 +1157,7 @@ void LYhighlight(int flag,
 			/*
 			 * For CJK strings, by Masanobu Kimura.
 			 */
-			if (HTCJK != NOCJK && is8bits(tmp[0])) {
+			if (IS_CJK_TTY && is8bits(tmp[0])) {
 			    tmp[1] = hi_string[++i];
 			    LYaddstr(tmp);
 			    tmp[1] = '\0';
@@ -1430,7 +1439,7 @@ void statusline(const char *text)
     if (buffer[0] != '\0') {
 	BOOLEAN has_CJK = FALSE;
 
-	if (HTCJK != NOCJK) {
+	if (IS_CJK_TTY) {
 	    for (i = 0; buffer[i] != '\0'; i++) {
 		if (buffer[i] & 0x80) {
 		    has_CJK = TRUE;
@@ -1441,7 +1450,7 @@ void statusline(const char *text)
 
 	if (has_CJK
 #ifdef HAVE_UTF8_STATUSLINES
-	    || (LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8)
+	    || IS_UTF8_TTY
 #endif
 	    ) {
 	    LYrefresh();
@@ -1587,7 +1596,7 @@ int LYReopenInput(void)
 	    frp = freopen(term_name, "r", stdin);
 	    CTRACE((tfp,
 		    "LYReopenInput freopen(%s,\"r\",stdin) returned %p, stdin is now %p with fd %d.\n",
-		    term_name, frp, stdin, fileno(stdin)));
+		    term_name, (void *) frp, (void *) stdin, fileno(stdin)));
 	    result = 1;
 	} else {
 	    result = -1;
@@ -5524,259 +5533,6 @@ char *LYAddPathToSave(char *fname)
 	}
     }
     return result;
-}
-
-/*
- * This function takes a string in the format
- *	"Mon, 01-Jan-96 13:45:35 GMT" or
- *	"Mon,  1 Jan 1996 13:45:35 GMT"" or
- *	"dd-mm-yyyy"
- * as an argument, and returns its conversion to clock format (seconds since
- * 00:00:00 Jan 1 1970), or 0 if the string doesn't match the expected pattern. 
- * It also returns 0 if the time is in the past and the "absolute" argument is
- * FALSE.  It is intended for handling 'expires' strings in Version 0 cookies
- * homologously to 'max-age' strings in Version 1 cookies, for which 0 is the
- * minimum, and greater values are handled as '[max-age seconds] + time(NULL)'. 
- * If "absolute" if TRUE, we return the clock format value itself, but if
- * anything goes wrong when parsing the expected patterns, we still return 0. 
- * - FM
- */
-time_t LYmktime(char *string,
-		BOOL absolute)
-{
-    char *s;
-    time_t now, clock2;
-    int day, month, year, hour, minutes, seconds;
-    char *start;
-    char temp[8];
-
-    /*
-     * Make sure we have a string to parse.  - FM
-     */
-    if (!non_empty(string))
-	return (0);
-    s = string;
-    CTRACE((tfp, "LYmktime: Parsing '%s'\n", s));
-
-    /*
-     * Skip any lead alphabetic "Day, " field and seek a numeric day field.  -
-     * FM
-     */
-    while (*s != '\0' && !isdigit(UCH(*s)))
-	s++;
-    if (*s == '\0')
-	return (0);
-
-    /*
-     * Get the numeric day and convert to an integer.  - FM
-     */
-    start = s;
-    while (*s != '\0' && isdigit(UCH(*s)))
-	s++;
-    if (*s == '\0' || (s - start) > 2)
-	return (0);
-    LYstrncpy(temp, start, (int) (s - start));
-    day = atoi(temp);
-    if (day < 1 || day > 31)
-	return (0);
-
-    /*
-     * Get the month string and convert to an integer.  - FM
-     */
-    while (*s != '\0' && !isalnum(UCH(*s)))
-	s++;
-    if (*s == '\0')
-	return (0);
-    start = s;
-    while (*s != '\0' && isalnum(UCH(*s)))
-	s++;
-    if ((*s == '\0') ||
-	(s - start) < (isdigit(UCH(*(s - 1))) ? 2 : 3) ||
-	(s - start) > (isdigit(UCH(*(s - 1))) ? 2 : 9))
-	return (0);
-    LYstrncpy(temp, start, (isdigit(UCH(*(s - 1))) ? 2 : 3));
-    switch (TOUPPER(temp[0])) {
-    case '0':
-    case '1':
-	month = atoi(temp);
-	if (month < 1 || month > 12) {
-	    return (0);
-	}
-	break;
-    case 'A':
-	if (!strcasecomp(temp, "Apr")) {
-	    month = 4;
-	} else if (!strcasecomp(temp, "Aug")) {
-	    month = 8;
-	} else {
-	    return (0);
-	}
-	break;
-    case 'D':
-	if (!strcasecomp(temp, "Dec")) {
-	    month = 12;
-	} else {
-	    return (0);
-	}
-	break;
-    case 'F':
-	if (!strcasecomp(temp, "Feb")) {
-	    month = 2;
-	} else {
-	    return (0);
-	}
-	break;
-    case 'J':
-	if (!strcasecomp(temp, "Jan")) {
-	    month = 1;
-	} else if (!strcasecomp(temp, "Jun")) {
-	    month = 6;
-	} else if (!strcasecomp(temp, "Jul")) {
-	    month = 7;
-	} else {
-	    return (0);
-	}
-	break;
-    case 'M':
-	if (!strcasecomp(temp, "Mar")) {
-	    month = 3;
-	} else if (!strcasecomp(temp, "May")) {
-	    month = 5;
-	} else {
-	    return (0);
-	}
-	break;
-    case 'N':
-	if (!strcasecomp(temp, "Nov")) {
-	    month = 11;
-	} else {
-	    return (0);
-	}
-	break;
-    case 'O':
-	if (!strcasecomp(temp, "Oct")) {
-	    month = 10;
-	} else {
-	    return (0);
-	}
-	break;
-    case 'S':
-	if (!strcasecomp(temp, "Sep")) {
-	    month = 9;
-	} else {
-	    return (0);
-	}
-	break;
-    default:
-	return (0);
-    }
-
-    /*
-     * Get the numeric year string and convert to an integer.  - FM
-     */
-    while (*s != '\0' && !isdigit(UCH(*s)))
-	s++;
-    if (*s == '\0')
-	return (0);
-    start = s;
-    while (*s != '\0' && isdigit(UCH(*s)))
-	s++;
-    if ((s - start) == 4) {
-	LYstrncpy(temp, start, 4);
-    } else if ((s - start) == 2) {
-	now = time(NULL);
-	/*
-	 * Assume that received 2-digit dates >= 70 are 19xx; others
-	 * are 20xx.  Only matters when dealing with broken software
-	 * (HTTP server or web page) which is not Y2K compliant.  The
-	 * line is drawn on a best-guess basis; it is impossible for
-	 * this to be completely accurate because it depends on what
-	 * the broken sender software intends.  (This totally breaks
-	 * in 2100 -- setting up the next crisis...) - BL
-	 */
-	if (atoi(start) >= 70)
-	    LYstrncpy(temp, "19", 2);
-	else
-	    LYstrncpy(temp, "20", 2);
-	strncat(temp, start, 2);
-	temp[4] = '\0';
-    } else {
-	return (0);
-    }
-    year = atoi(temp);
-
-    /*
-     * Get the numeric hour string and convert to an integer.  - FM
-     */
-    while (*s != '\0' && !isdigit(UCH(*s)))
-	s++;
-    if (*s == '\0') {
-	hour = 0;
-	minutes = 0;
-	seconds = 0;
-    } else {
-	start = s;
-	while (*s != '\0' && isdigit(UCH(*s)))
-	    s++;
-	if (*s != ':' || (s - start) > 2)
-	    return (0);
-	LYstrncpy(temp, start, (int) (s - start));
-	hour = atoi(temp);
-
-	/*
-	 * Get the numeric minutes string and convert to an integer.  - FM
-	 */
-	while (*s != '\0' && !isdigit(UCH(*s)))
-	    s++;
-	if (*s == '\0')
-	    return (0);
-	start = s;
-	while (*s != '\0' && isdigit(UCH(*s)))
-	    s++;
-	if (*s != ':' || (s - start) > 2)
-	    return (0);
-	LYstrncpy(temp, start, (int) (s - start));
-	minutes = atoi(temp);
-
-	/*
-	 * Get the numeric seconds string and convert to an integer.  - FM
-	 */
-	while (*s != '\0' && !isdigit(UCH(*s)))
-	    s++;
-	if (*s == '\0')
-	    return (0);
-	start = s;
-	while (*s != '\0' && isdigit(UCH(*s)))
-	    s++;
-	if (*s == '\0' || (s - start) > 2)
-	    return (0);
-	LYstrncpy(temp, start, (int) (s - start));
-	seconds = atoi(temp);
-    }
-
-    /*
-     * Convert to clock format (seconds since 00:00:00 Jan 1 1970), but then
-     * zero it if it's in the past and "absolute" is not TRUE.  - FM
-     */
-    month -= 3;
-    if (month < 0) {
-	month += 12;
-	year--;
-    }
-    day += (year - 1968) * 1461 / 4;
-    day += ((((month * 153) + 2) / 5) - 672);
-    clock2 = (time_t) ((day * 60 * 60 * 24) +
-		       (hour * 60 * 60) +
-		       (minutes * 60) +
-		       seconds);
-    if (absolute == FALSE && (long) (time((time_t *) 0) - clock2) >= 0)
-	clock2 = (time_t) 0;
-    if (clock2 > 0)
-	CTRACE((tfp, "LYmktime: clock=%ld, ctime=%s",
-		(long) clock2,
-		ctime(&clock2)));
-
-    return (clock2);
 }
 
 #if !defined(HAVE_PUTENV) && !defined(_WINDOWS)

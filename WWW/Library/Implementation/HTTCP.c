@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTTCP.c,v 1.93 2007/05/22 23:54:43 tom Exp $
+ * $LynxId: HTTCP.c,v 1.97 2008/09/20 14:32:29 tom Exp $
  *
  *			Generic Communication Code		HTTCP.c
  *			==========================
@@ -380,7 +380,7 @@ static void dump_hostent(const char *msgprefix,
 	int i;
 	char **pcnt;
 
-	CTRACE((tfp, "%s: %p ", msgprefix, phost));
+	CTRACE((tfp, "%s: %p ", msgprefix, (const void *) phost));
 	if (phost) {
 	    CTRACE((tfp, "{ h_name = %p", phost->h_name));
 	    if (phost->h_name) {
@@ -388,7 +388,7 @@ static void dump_hostent(const char *msgprefix,
 	    } else {
 		CTRACE((tfp, ","));
 	    }
-	    CTRACE((tfp, "\n\t h_aliases = %p", phost->h_aliases));
+	    CTRACE((tfp, "\n\t h_aliases = %p", (void *) phost->h_aliases));
 	    if (phost->h_aliases) {
 		CTRACE((tfp, " {"));
 		for (pcnt = phost->h_aliases; *pcnt; pcnt++) {
@@ -403,7 +403,7 @@ static void dump_hostent(const char *msgprefix,
 	    }
 	    CTRACE((tfp, " h_addrtype = %d,", phost->h_addrtype));
 	    CTRACE((tfp, " h_length = %d,\n\t", phost->h_length));
-	    CTRACE((tfp, " h_addr_list = %p", phost->h_addr_list));
+	    CTRACE((tfp, " h_addr_list = %p", (void *) phost->h_addr_list));
 	    if (phost->h_addr_list) {
 		CTRACE((tfp, " {"));
 		for (pcnt = phost->h_addr_list; *pcnt; pcnt++) {
@@ -2091,8 +2091,9 @@ int HTDoRead(int fildes,
 #endif /* UCX && VAXC */
     }
 #ifdef USE_READPROGRESS
-    CTRACE2(TRACE_TIMING, (tfp, "...HTDoRead returns %d (%ld seconds)\n",
-			   result, (long) (time((time_t *) 0) - start)));
+    CTRACE2(TRACE_TIMING, (tfp, "...HTDoRead returns %d (%" PRI_time_t
+			   " seconds)\n",
+			   result, CAST_time_t(time((time_t *) 0) - start)));
 #endif
     return result;
 }

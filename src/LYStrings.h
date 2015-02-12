@@ -1,3 +1,6 @@
+/*
+ * $LynxId: LYStrings.h,v 1.69 2008/09/07 22:59:14 tom Exp $
+ */
 #ifndef LYSTRINGS_H
 #define LYSTRINGS_H
 
@@ -12,6 +15,9 @@ extern "C" {
 	,RECALL_CMD
 	,RECALL_MAIL
     } RecallType;
+
+#define IS_UTF8_TTY (LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8)
+#define IS_CJK_TTY  (HTCJK != NOCJK)
 
 #define is8bits(ch) (UCH(ch) >= 128)	/* isascii(ch) is not POSIX */
 
@@ -50,6 +56,9 @@ extern "C" {
 			       int n_bytes,
 			       int n_glyphs,
 			       BOOL utf_flag);
+    extern const char *LYmbcs_skip_cells(const char *data,
+					 int n_cells,
+					 BOOL utf_flag);
     extern const char *LYmbcs_skip_glyphs(const char *data,
 					  int n_glyphs,
 					  BOOL utf_flag);
@@ -183,6 +192,8 @@ extern "C" {
 #define ENHANCED_LINEEDIT
 #endif
 
+#define MAX_EDIT 1024
+
 /* EditFieldData preserves state between calls to LYEdit1
  */
     typedef struct _EditFieldData {
@@ -207,7 +218,10 @@ extern "C" {
 				   unactive mark.  */
 #endif
 
-	char buffer[1024];	/* String buffer                          */
+	char buffer[MAX_EDIT];	/* String buffer                          */
+
+	int offset2col[MAX_EDIT * 2];
+	int col2offset[MAX_EDIT * 2];
 
     } EditFieldData;
 
@@ -322,8 +336,7 @@ extern "C" {
 				 int width,
 				 int i_length,
 				 int disabled,
-				 BOOLEAN for_mouse,
-				 BOOLEAN numbered);
+				 BOOLEAN for_mouse);
 
     typedef unsigned char LYEditCode;
 
@@ -331,6 +344,8 @@ extern "C" {
     extern const char *LYLineeditNames[];
     extern LYEditCode *LYLineEditors[];
     extern const char *LYLineeditHelpURLs[];
+
+#define CurrentLineEditor() LYLineEditors[current_lineedit]
 
     extern const char *LYLineeditHelpURL(void);
 

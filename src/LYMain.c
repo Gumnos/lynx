@@ -1,4 +1,6 @@
-/* $LynxId: LYMain.c,v 1.183 2008/03/18 00:38:37 Paul.B.Mahol Exp $ */
+/*
+ * $LynxId: LYMain.c,v 1.186 2008/09/10 23:05:36 tom Exp $
+ */
 #include <HTUtils.h>
 #include <HTTP.h>
 #include <HTParse.h>
@@ -191,6 +193,7 @@ BOOLEAN LYinternal_flag = FALSE;	/* override no-cache b/c internal link */
 BOOLEAN LYoverride_no_cache = FALSE;	/*override no-cache b/c history etc */
 BOOLEAN LYresubmit_posts = ALWAYS_RESUBMIT_POSTS;
 BOOLEAN LYtrimInputFields = FALSE;
+BOOLEAN LYxhtml_parsing = FALSE;
 BOOLEAN bold_H1 = FALSE;
 BOOLEAN bold_headers = FALSE;
 BOOLEAN bold_name_anchors = FALSE;
@@ -447,16 +450,16 @@ char *proxyauth_info[2] =
 {NULL, NULL};			/* Id:Password for protected proxy servers */
 
 #ifdef USE_SESSIONS
-BOOLEAN LYAutoSession = FALSE;	/* enable/disable auto saving/restoring of
+BOOLEAN LYAutoSession = FALSE;	/* enable/disable auto saving/restoring of */
 
-				   session */
+				/* session */
 char *LYSessionFile = NULL;	/* the session file from lynx.cfg */
 char *session_file = NULL;	/* the current session file */
 char *sessionin_file = NULL;	/* only resume session from this file */
 char *sessionout_file = NULL;	/* only save session to this file */
-short session_limit = 250;	/* maximal number of entries saved for
+short session_limit = 250;	/* maximal number of entries saved per */
 
-				   session file, rest will be ignored */
+				/* session file, rest will be ignored */
 #endif /* USE_SESSIONS */
 char *startfile = NULL;		/* the first file */
 char *startrealm = NULL;	/* the startfile realm */
@@ -1087,11 +1090,33 @@ int main(int argc,
     }
 
     /*
+     * Set up trace, the anonymous account defaults, validate restrictions,
+     * and/or the nosocks flag, if requested, and an alternate configuration
+     * file, if specified, NOW.  Also, if we only want the help menu, output
+     * that and exit.  - FM
+     */
+#ifndef NO_LYNX_TRACE
+    if (LYGetEnv("LYNX_TRACE") != 0) {
+	WWW_TraceFlag = TRUE;
+    }
+#endif
+
+    /*
+     * Set up the TRACE log path, and logging if appropriate.  - FM
+     */
+    if ((cp = LYGetEnv("LYNX_TRACE_FILE")) == 0)
+	cp = FNAME_LYNX_TRACE;
+    LYTraceLogPath = typeMallocn(char, LY_MAXPATH);
+
+    LYAddPathToHome(LYTraceLogPath, LY_MAXPATH, cp);
+
+    /*
      * Act on -help NOW, so we only output the help and exit.  - FM
      */
     for (i = 1; i < argc; i++) {
 	parse_arg(&argv[i], 1, &i);
     }
+    LYOpenTraceLog();
 
 #ifdef LY_FIND_LEAKS
     /*
@@ -1286,17 +1311,6 @@ int main(int argc,
     no_newspost = (BOOL) (LYNewsPosting == FALSE);
 #endif
 
-    /*
-     * Set up trace, the anonymous account defaults, validate restrictions,
-     * and/or the nosocks flag, if requested, and an alternate configuration
-     * file, if specified, NOW.  Also, if we only want the help menu, output
-     * that and exit.  - FM
-     */
-#ifndef NO_LYNX_TRACE
-    if (LYGetEnv("LYNX_TRACE") != 0) {
-	WWW_TraceFlag = TRUE;
-    }
-#endif
     for (i = 1; i < argc; i++) {
 	parse_arg(&argv[i], 2, &i);
     }
@@ -1387,18 +1401,6 @@ int main(int argc,
 	LYRestricted = TRUE;
 	LYUseTraceLog = FALSE;
     }
-
-    /*
-     * Set up the TRACE log path, and logging if appropriate.  - FM
-     */
-    if ((cp = LYGetEnv("LYNX_TRACE_FILE")) == 0)
-	cp = FNAME_LYNX_TRACE;
-    LYTraceLogPath = typeMallocn(char, LY_MAXPATH);
-
-    LYAddPathToHome(LYTraceLogPath, LY_MAXPATH, cp);
-
-    LYOpenTraceLog();
-
 #ifdef EXP_CMD_LOGGING
     /*
      * Open command-script, if specified
@@ -3918,11 +3920,11 @@ bug which treated '>' as a co-terminator for\ndouble-quotes and tags"
 #endif
 #ifndef NO_LYNX_TRACE
    PARSE_SET(
-      "trace",		2|SET_ARG,		WWW_TraceFlag,
+      "trace",		1|SET_ARG,		WWW_TraceFlag,
       "turns on Lynx trace mode"
    ),
    PARSE_INT(
-      "trace_mask",	2|INT_ARG,		WWW_TraceMask,
+      "trace_mask",	1|INT_ARG,		WWW_TraceMask,
       "customize Lynx trace mode"
    ),
 #endif
@@ -3987,6 +3989,10 @@ with filenames of these images"
       "emit backspaces in output if -dumping or -crawling\n(like 'man' does)"
    ),
 #endif
+   PARSE_SET(
+      "xhtml-parsing",	4|SET_ARG,		LYxhtml_parsing,
+      "enable XHTML 1.0 parsing"
+   ),
    PARSE_NIL
 };
 /* *INDENT-ON* */

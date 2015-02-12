@@ -1,5 +1,5 @@
 /*
- * $LynxId: SGML.c,v 1.92 2007/07/22 21:52:43 Rado.Smiljanic Exp $
+ * $LynxId: SGML.c,v 1.117 2008/09/21 18:34:39 tom Exp $
  *
  *			General SGML Parser code		SGML.c
  *			========================
@@ -13,13 +13,6 @@
  */
 
 #include <HTUtils.h>
-
-/* Remove the following to disable the experimental HTML DTD parsing.
-   Currently only used in this source file. - kw */
-
-#ifndef NO_EXTENDED_HTMLDTD
-#define EXTENDED_HTMLDTD
-#endif
 
 #include <SGML.h>
 #include <HTMLDTD.h>
@@ -91,8 +84,6 @@ static void fake_put_character(void *p GCC_UNUSED,
 #define PUTUTF8(code) (UCPutUtf8_charstring((HTStream *)context->target, \
 		      (putc_func_t*)(context->actions->put_character), code))
 
-#define OPT 1
-
 /*the following macros are used for pretty source view. */
 #define IS_C(attr) (attr.type == HTMLA_CLASS)
 
@@ -145,7 +136,6 @@ typedef enum {
     ,S_exclamation
     ,S_in_kanji
     ,S_incro
-    ,S_junk_pi
     ,S_junk_tag
     ,S_litteral
     ,S_marked
@@ -156,6 +146,7 @@ typedef enum {
     ,S_paren_dq
     ,S_paren_sq
     ,S_pcdata
+    ,S_pi
     ,S_script
     ,S_sgmlatt
     ,S_sgmlele
@@ -181,6 +172,8 @@ struct _HTStream {
     HTTag *current_tag;
     HTTag *slashedtag;
     const HTTag *unknown_tag;
+    BOOL extended_html;		/* xhtml */
+    BOOL strict_xml;		/* xml */
     BOOL inSELECT;
     BOOL no_lynx_specialcodes;
     int current_attribute_number;
@@ -227,7 +220,6 @@ struct _HTStream {
 #ifdef USE_PRETTYSRC
     BOOL cur_attr_is_href;
     BOOL cur_attr_is_name;
-    BOOL seen_nonwhite_in_junk_tag;
 #endif
 };
 
@@ -261,7 +253,7 @@ static const char *state_name(sgml_state n)
     case S_exclamation:         result = "S_exclamation";       break;
     case S_in_kanji:            result = "S_in_kanji";          break;
     case S_incro:               result = "S_incro";             break;
-    case S_junk_pi:             result = "S_junk_pi";           break;
+    case S_pi:                  result = "S_pi";                break;
     case S_junk_tag:            result = "S_junk_tag";          break;
     case S_litteral:            result = "S_litteral";          break;
     case S_marked:              result = "S_marked";            break;
@@ -312,7 +304,9 @@ static void pool_free(HTElement * e)
 
 #ifdef USE_PRETTYSRC
 
-static void HTMLSRC_apply_markup(HTStream *context, HTlexeme lexeme, BOOL start)
+static void HTMLSRC_apply_markup(HTStream *context,
+				 HTlexeme lexeme,
+				 BOOL start)
 {
     HT_tagspec *ts = *((start ? lexeme_start : lexeme_end) + lexeme);
 
@@ -341,14 +335,15 @@ static void HTMLSRC_apply_markup(HTStream *context, HTlexeme lexeme, BOOL start)
     }
 }
 
-#define PSRCSTART(x)	HTMLSRC_apply_markup(context,HTL_##x,START)
+#define PSRCSTART(x)  HTMLSRC_apply_markup(context,HTL_##x,START)
 #define PSRCSTOP(x)   HTMLSRC_apply_markup(context,HTL_##x,STOP)
 
 #define attr_is_href context->cur_attr_is_href
 #define attr_is_name context->cur_attr_is_name
 #endif
 
-static void set_chartrans_handling(HTStream *context, HTParentAnchor *anchor,
+static void set_chartrans_handling(HTStream *context,
+				   HTParentAnchor *anchor,
 				   int chndl)
 {
     if (chndl < 0) {
@@ -400,7 +395,7 @@ static void set_chartrans_handling(HTStream *context, HTParentAnchor *anchor,
      * its HTStructured object, itself, if this were needed.  - FM
      */
 #ifndef EXP_JAPANESEUTF8_SUPPORT
-    if (HTCJK != NOCJK) {
+    if (IS_CJK_TTY) {
 	context->current_tag_charset = -1;
     } else
 #endif
@@ -460,7 +455,7 @@ static int current_is_class = 0;
 static void handle_attribute_name(HTStream *context, const char *s)
 {
     HTTag *tag = context->current_tag;
-    attr *attributes = tag->attributes;
+    const attr *attributes = tag->attributes;
     int high, low, i, diff;
 
 #ifdef USE_PRETTYSRC
@@ -514,7 +509,7 @@ static void handle_attribute_name(HTStream *context, const char *s)
     }				/* for */
 
     CTRACE((tfp, "SGML: Unknown attribute %s for tag %s\n",
-	    s, context->current_tag->name));
+	    s, NonNull(context->current_tag->name)));
     context->current_attribute_number = INVALID;	/* Invalid */
 }
 
@@ -788,7 +783,7 @@ static void handle_entity(HTStream *context, char term)
     if (psrc_view)
 	PSRCSTART(badseq);
 #endif
-    CTRACE((tfp, "SGML: Unknown entity '%s' %ld %ld\n", s, (long) code, uck));	/* S/390 -- gil -- 0695 */
+    CTRACE((tfp, "SGML: Unknown entity '%s' %" PRI_UCode_t " %ld\n", s, code, uck));	/* S/390 -- gil -- 0695 */
     PUTC('&');
     PUTS(s);
     if (term != '\0')
@@ -839,12 +834,13 @@ static void handle_doctype(HTStream *context)
     const char *s = context->string->data;
 
     CTRACE((tfp, "SGML Doctype:\n<%s>\n", s));
+    if (strstr(s, "DTD XHTML ") != 0) {
+	CTRACE((tfp, "...processing extended HTML\n"));
+	context->extended_html = TRUE;
+    }
 
     return;
 }
-
-static void SGML_write(HTStream *me, const char *s,
-		       int l);
 
 /*	Handle marked
  *	-------------
@@ -868,6 +864,41 @@ static void handle_marked(HTStream *context)
 					context->string->size - 11);
 
     }
+    return;
+}
+
+/*	Handle processing instruction
+ *	-----------------------------
+ */
+static void handle_processing_instruction(HTStream *context)
+{
+    const char *s = context->string->data;
+
+    CTRACE((tfp, "SGML Processing instruction:\n<%s>\n", s));
+
+    if (!strncmp(s, "?xml ", 5)) {
+	int flag = context->T.decode_utf8;
+
+	context->strict_xml = TRUE;
+	/*
+	 * Switch to UTF-8 if the encoding is explicitly "utf-8".
+	 */
+	if (!flag) {
+	    char *t = strstr(s, "encoding=");
+
+	    if (t != 0) {
+		t += 9;
+		if (*t == '"')
+		    ++t;
+		flag = !strncmp(t, "utf-8", 5);
+	    }
+	    if (flag) {
+		CTRACE((tfp, "...Use UTF-8 for XML\n"));
+		context->T.decode_utf8 = TRUE;
+	    }
+	}
+    }
+
     return;
 }
 
@@ -934,8 +965,6 @@ static void handle_sgmlatt(HTStream *context)
 
 #define ALT_TAGP(t) ALT_TAGP_OF_TAGNUM(TAGNUM_OF_TAGP(t))
 #define NORMAL_TAGP(t) NORMAL_TAGP_OF_TAGNUM(TAGNUM_OF_TAGP(t))
-
-#ifdef EXTENDED_HTMLDTD
 
 static BOOL element_valid_within(HTTag * new_tag, HTTag * stacked_tag, BOOL direct)
 {
@@ -1007,15 +1036,12 @@ static int is_on_stack(HTStream *context, HTTag * old_tag)
     }
     return 0;
 }
-#endif /* EXTENDED_HTMLDTD */
 
 /*	End element
  *	-----------
  */
 static void end_element(HTStream *context, HTTag * old_tag)
 {
-#ifdef EXTENDED_HTMLDTD
-
     BOOL extra_action_taken = NO;
     canclose_t canclose_check = close_valid;
     int stackpos = is_on_stack(context, old_tag);
@@ -1061,8 +1087,6 @@ static void end_element(HTStream *context, HTTag * old_tag)
 	}
     }
     /* Now let the non-extended code deal with the rest. - kw */
-
-#endif /* EXTENDED_HTMLDTD */
 
     /*
      * If we are in a SELECT block, ignore anything but a SELECT end tag.  - FM
@@ -1116,7 +1140,7 @@ static void end_element(HTStream *context, HTTag * old_tag)
 	}
 
 	e = NORMAL_TAGNUM(TAGNUM_OF_TAGP(t));
-	CTRACE2(TRACE_SGML, (tfp, "tagnum(%p) = %d\n", t, (int) e));
+	CTRACE2(TRACE_SGML, (tfp, "tagnum(%p) = %d\n", (void *) t, (int) e));
 #ifdef USE_PRETTYSRC
 	if (!psrc_view)		/* Don't actually pass call on if viewing psrc - kw */
 #endif
@@ -1161,8 +1185,6 @@ static void start_element(HTStream *context)
     HTTag *new_tag = context->current_tag;
     HTMLElement e = TAGNUM_OF_TAGP(new_tag);
     BOOL ok = FALSE;
-
-#ifdef EXTENDED_HTMLDTD
 
     BOOL valid = YES;
     BOOL direct_container = YES;
@@ -1236,8 +1258,6 @@ static void start_element(HTStream *context)
 	}
     }
     /* Fall through to the non-extended code - kw */
-
-#endif /* EXTENDED_HTMLDTD */
 
     /*
      * If we are not in a SELECT block, check if this is a SELECT start tag. 
@@ -1349,8 +1369,12 @@ HTTag *SGMLFindTag(const SGML_dtd * dtd,
     {NULL};			/*optimize using the previous results */
     HTTag **res = last + (UCH(*s) % 64);	/*pointer arithmetic */
 
-    if (*res && !strcasecomp((*res)->name, s))
-	return *res;
+    if (*res) {
+	if ((*res)->name == NULL)
+	    return NULL;
+	if (!strcasecomp((*res)->name, s))
+	    return *res;
+    }
 
     for (low = 0, high = dtd->number_of_tags;
 	 high > low;
@@ -1489,6 +1513,85 @@ void SGML_setCallerData(HTStream *context, void *data)
     context->callerData = data;
 }
 #endif /* CALLERDATA */
+
+#ifdef USE_PRETTYSRC
+static void transform_tag(HTStream *context, HTChunk *string)
+{
+    if (!context->strict_xml) {
+	if (tagname_transform != 1) {
+	    if (tagname_transform == 0)
+		LYLowerCase(string->data);
+	    else
+		LYUpperCase(string->data);
+	}
+    }
+}
+#endif /* USE_PRETTYSRC */
+
+static BOOL ignore_when_empty(HTTag * tag)
+{
+    BOOL result = FALSE;
+
+    if (!LYPreparsedSource
+	&& LYxhtml_parsing
+	&& tag->name != 0
+	&& !(tag->flags & Tgf_mafse)
+	&& tag->contents != SGML_EMPTY
+	&& tag->tagclass != Tgc_Plike
+	&& (tag->tagclass == Tgc_SELECTlike
+	    || (tag->contains && tag->icontains))) {
+	result = TRUE;
+    }
+    CTRACE((tfp, "SGML Do%s ignore_when_empty:%s\n",
+	    result ? "" : " not",
+	    NonNull(tag->name)));
+    return result;
+}
+
+static void discard_empty(HTStream *context)
+{
+    static HTTag empty_tag;
+
+    CTRACE((tfp, "SGML discarding empty %s\n",
+	    NonNull(context->current_tag->name)));
+    CTRACE_FLUSH(tfp);
+
+    memset(&empty_tag, 0, sizeof(empty_tag));
+    context->current_tag = &empty_tag;
+    context->string->size = 0;
+
+    /* do not call end_element() if start_element() was not called */
+}
+
+#ifdef USE_PRETTYSRC
+static BOOL end_if_prettysrc(HTStream *context, HTChunk *string, int end_ch)
+{
+    BOOL result = psrc_view;
+
+    if (psrc_view) {
+	if (attr_is_name) {
+	    HTStartAnchor(context->target, string->data, NULL);
+	    (*context->actions->end_element) (context->target,
+					      HTML_A,
+					      &context->include);
+	} else if (attr_is_href) {
+	    PSRCSTART(href);
+	    HTStartAnchor(context->target, NULL, string->data);
+	}
+	PUTS_TR(string->data);
+	if (attr_is_href) {
+	    (*context->actions->end_element) (context->target,
+					      HTML_A,
+					      &context->include);
+	    PSRCSTOP(href);
+	}
+	if (end_ch)
+	    PUTC(end_ch);
+	PSRCSTOP(attrval);
+    }
+    return result;
+}
+#endif
 
 static void SGML_character(HTStream *context, char c_in)
 {
@@ -1714,7 +1817,7 @@ static void SGML_character(HTStream *context, char c_in)
  *  We jump up to here from below if we have
  *  stuff in the recover, insert, or csi buffers
  *  to process.	 We zero saved_char_in, in effect
- *  as a flag that the octet in not that of the
+ *  as a flag that the octet is not that of the
  *  actual call to this function.  This may be OK
  *  for now, for the stuff this function adds to
  *  its recover buffer, but it might not be for
@@ -1752,10 +1855,11 @@ static void SGML_character(HTStream *context, char c_in)
      */
     /*
      * Works for both ASCII and EBCDIC. -- gil
- *//* S/390 -- gil -- 0811 */
+     * S/390 -- gil -- 0811
+     */
     if (TOASCII(unsign_c) < 32 &&
 	c != '\t' && c != '\n' && c != '\r' &&
-	HTCJK == NOCJK)
+	!IS_CJK_TTY)
 	goto after_switch;
 
     /*
@@ -1764,7 +1868,7 @@ static void SGML_character(HTStream *context, char c_in)
 #define PASSHICTRL (context->T.transp || \
 		    unsign_c >= LYlowest_eightbit[context->inUCLYhndl])
     if (TOASCII(c) == 127 &&	/* S/390 -- gil -- 0830 */
-	!(PASSHICTRL || HTCJK != NOCJK))
+	!(PASSHICTRL || IS_CJK_TTY))
 	goto after_switch;
 
     /*
@@ -1772,12 +1876,12 @@ static void SGML_character(HTStream *context, char c_in)
      * nor HTCJK is set.  - FM
      */
     if (TOASCII(unsign_c) > 127 && TOASCII(unsign_c) < 160 &&	/* S/390 -- gil -- 0847 */
-	!(PASSHICTRL || HTCJK != NOCJK))
+	!(PASSHICTRL || IS_CJK_TTY))
 	goto after_switch;
 
     /* Almost all CJK characters are double byte but only Japanese
      * JIS X0201 Kana is single byte. To prevent to fail SGML parsing
-     * we have to care them here. -- TH
+     * we have to take care of them here. -- TH
      */
     if ((HTCJK == JAPANESE) && (context->state == S_in_kanji) &&
 	!IS_JAPANESE_2BYTE(context->kanji_buf, UCH(c))
@@ -1825,7 +1929,7 @@ static void SGML_character(HTStream *context, char c_in)
     case S_tagname_slash:
 	/*
 	 * We had something link "<name/" so far, set state to S_text but keep
-	 * context->slashedtag as as a flag; except if we get '>' directly
+	 * context->slashedtag as a flag; except if we get '>' directly
 	 * after the "<name/", and really have a tag for that name in
 	 * context->slashedtag, in which case keep state as is and let code
 	 * below deal with it.  - kw
@@ -1835,7 +1939,7 @@ static void SGML_character(HTStream *context, char c_in)
 	}
 	/* fall through in any case! */
     case S_text:
-	if ((HTCJK != NOCJK) && ((TOASCII(c) & 0200) != 0)
+	if (IS_CJK_TTY && ((TOASCII(c) & 0200) != 0)
 #ifdef EXP_JAPANESEUTF8_SUPPORT
 	    && !context->T.decode_utf8
 #endif
@@ -1851,7 +1955,7 @@ static void SGML_character(HTStream *context, char c_in)
 	    context->state = S_in_kanji;
 	    context->kanji_buf = c;
 	    break;
-	} else if (HTCJK != NOCJK && TOASCII(c) == '\033') {	/* S/390 -- gil -- 0881 */
+	} else if (IS_CJK_TTY && TOASCII(c) == '\033') {	/* S/390 -- gil -- 0881 */
 	    /*
 	     * Setting up for CJK escape sequence handling (based on Takuya
 	     * ASADA's (asada@three-a.co.jp) CJK Lynx).  - FM
@@ -1904,6 +2008,7 @@ static void SGML_character(HTStream *context, char c_in)
 	    }
 	    context->slashedtag = NULL;
 	} else if (context->slashedtag &&
+		   context->slashedtag->name &&
 		   (c == '/' ||
 		    (c == '>' && context->state == S_tagname_slash)) &&
 		   TOASCII(unsign_c) < 127) {
@@ -1948,7 +2053,7 @@ static void SGML_character(HTStream *context, char c_in)
 		PUTS(context->utf_buf);
 		context->utf_buf_p = context->utf_buf;
 		*(context->utf_buf_p) = '\0';
-	    } else if (HTCJK == NOCJK &&
+	    } else if (!IS_CJK_TTY &&
 		       (context->T.output_utf8 ||
 			context->T.trans_from_uni)) {
 		if (LYIsASCII(clong)) {
@@ -1974,7 +2079,7 @@ static void SGML_character(HTStream *context, char c_in)
 	     */
 	} else if (unsign_c == CH_NBSP &&	/* S/390 -- gil -- 0932 */
 		   !context->no_lynx_specialcodes &&
-		   !(PASS8859SPECL || HTCJK != NOCJK)) {
+		   !(PASS8859SPECL || IS_CJK_TTY)) {
 	    PUTC(HT_NON_BREAK_SPACE);
 	    /*
 	     * Convert 173 (shy) to Lynx special character if neither
@@ -1982,7 +2087,7 @@ static void SGML_character(HTStream *context, char c_in)
 	     */
 	} else if (unsign_c == CH_SHY &&	/* S/390 -- gil -- 0949 */
 		   !context->no_lynx_specialcodes &&
-		   !(PASS8859SPECL || HTCJK != NOCJK)) {
+		   !(PASS8859SPECL || IS_CJK_TTY)) {
 	    PUTC(LY_SOFT_HYPHEN);
 	    /*
 	     * Handle the case in which we think we have a character which
@@ -2046,7 +2151,7 @@ static void SGML_character(HTStream *context, char c_in)
 		    (context->T.do_8bitraw && !context->T.trans_from_uni))
 
 	} else if (unsign_c > 160 && unsign_c < 256 &&
-		   !(PASSHI8BIT || HTCJK != NOCJK) &&
+		   !(PASSHI8BIT || IS_CJK_TTY) &&
 		   !IncludesLatin1Enc) {
 #ifdef USE_PRETTYSRC
 	    int psrc_view_backup = 0;
@@ -2057,7 +2162,7 @@ static void SGML_character(HTStream *context, char c_in)
 	    HTChunkPuts(string, EntityName);
 	    HTChunkTerminate(string);
 #ifdef USE_PRETTYSRC
-	    /* we need to disable it temporary */
+	    /* we need to disable it temporarily */
 	    if (psrc_view) {
 		psrc_view_backup = 1;
 		psrc_view = 0;
@@ -2065,7 +2170,7 @@ static void SGML_character(HTStream *context, char c_in)
 #endif
 	    handle_entity(context, '\0');
 #ifdef USE_PRETTYSRC
-	    /* we need to disable it temporary */
+	    /* we need to disable it temporarily */
 	    if (psrc_view_backup)
 		psrc_view = TRUE;
 #endif
@@ -2145,10 +2250,9 @@ static void SGML_character(HTStream *context, char c_in)
 		    PSRCSTART(abracket);
 		    PUTS("<?");
 		    PSRCSTOP(abracket);
-		    context->seen_nonwhite_in_junk_tag = TRUE;	/* show all */
 		}
 #endif
-		context->state = S_junk_pi;
+		context->state = S_pi;
 		break;
 	    }
 	}
@@ -2181,17 +2285,20 @@ static void SGML_character(HTStream *context, char c_in)
 	 * with old servers, and for Lynx).  - FM
 	 */
       case_S_litteral:
-    case S_litteral:		/*PSRC:this case not understood completely by HV, not done */
+    case S_litteral:
+	/*PSRC:this case not understood completely by HV, not done */
 	HTChunkPutc(string, c);
 #ifdef USE_PRETTYSRC
-	if (psrc_view) {	/*there is nothing useful in the element_stack */
+	if (psrc_view) {
+	    /* there is nothing useful in the element_stack */
 	    testtag = context->current_tag;
 	} else
 #endif
-	    testtag = context->element_stack ?
-		context->element_stack->tag : NULL;
+	    testtag = (context->element_stack
+		       ? context->element_stack->tag
+		       : NULL);
 
-	if (testtag == NULL) {
+	if (testtag == NULL || testtag->name == NULL) {
 	    string->size--;
 	    context->state = S_text;
 	    goto top1;
@@ -2222,12 +2329,7 @@ static void SGML_character(HTStream *context, char c_in)
 		    PSRCSTOP(abracket);
 		    PSRCSTART(tag);
 		    strcpy(string->data, context->current_tag->name);
-		    if (tagname_transform != 1) {
-			if (tagname_transform == 0)
-			    LYLowerCase(string->data);
-			else
-			    LYUpperCase(string->data);
-		    }
+		    transform_tag(context, string);
 		    PUTS(string->data);
 		    PSRCSTOP(tag);
 		    PSRCSTART(abracket);
@@ -2439,8 +2541,7 @@ static void SGML_character(HTStream *context, char c_in)
 	 * Handle a numeric entity.
 	 */
     case S_incro:
-/* S/390 -- gil -- 1075 *//* CTRACE((tfp, "%s: %d: numeric %d %d\n",
-   __FILE__, __LINE__, unsign_c, c)); */
+	/* S/390 -- gil -- 1075 */
 	if ((TOASCII(unsign_c) < 127) &&
 	    (context->isHex ? isxdigit(UCH(c)) :
 	     isdigit(UCH(c)))) {
@@ -2756,9 +2857,9 @@ static void SGML_character(HTStream *context, char c_in)
 		} else if ((code > 255) ||
 			   (code < ' ' &&	/* S/390 -- gil -- 1140 */
 			    code != '\t' && code != '\n' && code != '\r' &&
-			    HTCJK == NOCJK) ||
+			    !IS_CJK_TTY) ||
 			   (TOASCII(code) == 127 &&
-			    !(HTPassHighCtrlRaw || HTCJK != NOCJK)) ||
+			    !(HTPassHighCtrlRaw || IS_CJK_TTY)) ||
 			   (TOASCII(code) > 127 && code < 160 &&
 			    !HTPassHighCtrlNum)) {
 		    /*
@@ -2991,16 +3092,17 @@ static void SGML_character(HTStream *context, char c_in)
 	    }
 	    if (!t) {
 		if (c == '?' && string->size <= 1) {
-		    CTRACE((tfp, "SGML: Found PI, junking it until '>'\n"));
+		    CTRACE((tfp, "SGML: Found PI, looking for '>'\n"));
 #ifdef USE_PRETTYSRC
 		    if (psrc_view) {
 			PSRCSTART(abracket);
 			PUTS("<?");
 			PSRCSTOP(abracket);
-			context->seen_nonwhite_in_junk_tag = TRUE;	/*show all */
 		    }
 #endif
-		    context->state = S_junk_pi;
+		    string->size = 0;
+		    context->state = S_pi;
+		    HTChunkPutc(string, c);
 		    break;
 		}
 		CTRACE((tfp, "SGML: *** Invalid element %s\n",
@@ -3012,12 +3114,7 @@ static void SGML_character(HTStream *context, char c_in)
 		    PUTC('<');
 		    PSRCSTOP(abracket);
 		    PSRCSTART(badtag);
-		    if (tagname_transform != 1) {
-			if (tagname_transform == 0)
-			    LYLowerCase(string->data);
-			else
-			    LYUpperCase(string->data);
-		    }
+		    transform_tag(context, string);
 		    PUTS(string->data);
 		    if (c == '>') {
 			PSRCSTOP(badtag);
@@ -3051,12 +3148,7 @@ static void SGML_character(HTStream *context, char c_in)
 		    PSRCSTART(tag);
 		else
 		    PSRCSTART(badtag);
-		if (tagname_transform != 1) {
-		    if (tagname_transform == 0)
-			LYLowerCase(string->data);
-		    else
-			LYUpperCase(string->data);
-		}
+		transform_tag(context, string);
 		PUTS(string->data);
 		if (t != context->unknown_tag)
 		    PSRCSTOP(tag);
@@ -3279,7 +3371,7 @@ static void SGML_character(HTStream *context, char c_in)
 	    HTChunkPuts(string, context->utf_buf);
 	    context->utf_buf_p = context->utf_buf;
 	    *(context->utf_buf_p) = '\0';
-	} else if (HTCJK == NOCJK &&
+	} else if (!IS_CJK_TTY &&
 		   (context->T.output_utf8 ||
 		    context->T.trans_from_uni)) {
 	    if (clong == 0xfffd && saved_char_in &&
@@ -3500,8 +3592,17 @@ static void SGML_character(HTStream *context, char c_in)
 	/* accumulating value */
     case S_attr:
 	if (WHITE(c) || (c == '>') || (c == '=')) {	/* End of word */
-	    HTChunkTerminate(string);
-	    handle_attribute_name(context, string->data);
+	    if ((c == '>')
+		&& (string->size == 1)
+		&& (string->data[0] == '/')) {
+		if (context->extended_html
+		    && ignore_when_empty(context->current_tag)) {
+		    discard_empty(context);
+		}
+	    } else {
+		HTChunkTerminate(string);
+		handle_attribute_name(context, string->data);
+	    }
 #ifdef USE_PRETTYSRC
 	    if (!psrc_view) {
 #endif
@@ -3640,42 +3741,25 @@ static void SGML_character(HTStream *context, char c_in)
 	if (WHITE(c) || (c == '>')) {	/* End of word */
 	    HTChunkTerminate(string);
 #ifdef USE_PRETTYSRC
-	    if (psrc_view) {
-		/*PSRCSTART(attrval); */
-		if (attr_is_name) {
-		    HTStartAnchor(context->target, string->data, NULL);
-		    (*context->actions->end_element) (context->target,
-						      HTML_A,
-						      &context->include);
-		} else if (attr_is_href) {
-		    PSRCSTART(href);
-		    HTStartAnchor(context->target, NULL, string->data);
-		}
-		PUTS_TR(string->data);
-		if (attr_is_href) {
-		    (*context->actions->end_element) (context->target,
-						      HTML_A,
-						      &context->include);
-		    PSRCSTOP(href);
-		}
-		PSRCSTOP(attrval);
-	    } else
+	    if (!end_if_prettysrc(context, string, 0))
 #endif
-#ifdef CJK_EX			/* Quick hack. - JH7AYN */
 	    {
-		char jis_buf[512];
+#ifdef CJK_EX			/* Quick hack. - JH7AYN */
+		if (IS_CJK_TTY) {
+		    if (string->data[0] == '$') {
+			if (string->data[1] == 'B' || string->data[1] == '@') {
+			    char *jis_buf = 0;
 
-		if (string->data[0] == '$') {
-		    if (string->data[1] == 'B' || string->data[1] == '@') {
-			jis_buf[0] = '\033';
-			strcpy(jis_buf + 1, string->data);
-			TO_EUC((const unsigned char *) jis_buf,
-			       (unsigned char *) string->data);
+			    HTSprintf0(&jis_buf, "\033%s", string->data);
+			    TO_EUC((const unsigned char *) jis_buf,
+				   (unsigned char *) string->data);
+			    FREE(jis_buf);
+			}
 		    }
 		}
-	    }
 #endif
-	    handle_attribute_value(context, string->data);
+		handle_attribute_value(context, string->data);
+	    }
 	    string->size = 0;
 	    if (c == '>') {	/* End of tag */
 #ifdef USE_PRETTYSRC
@@ -3696,7 +3780,7 @@ static void SGML_character(HTStream *context, char c_in)
 	    HTChunkPuts(string, context->utf_buf);
 	    context->utf_buf_p = context->utf_buf;
 	    *(context->utf_buf_p) = '\0';
-	} else if (HTCJK == NOCJK &&
+	} else if (!IS_CJK_TTY &&
 		   (context->T.output_utf8 ||
 		    context->T.trans_from_uni)) {
 	    if (clong == 0xfffd && saved_char_in &&
@@ -3719,27 +3803,7 @@ static void SGML_character(HTStream *context, char c_in)
 	if (c == '\'') {	/* End of attribute value */
 	    HTChunkTerminate(string);
 #ifdef USE_PRETTYSRC
-	    if (psrc_view) {
-		/*PSRCSTART(attrval); */
-		if (attr_is_name) {
-		    HTStartAnchor(context->target, string->data, NULL);
-		    (*context->actions->end_element) (context->target,
-						      HTML_A,
-						      &context->include);
-		} else if (attr_is_href) {
-		    PSRCSTART(href);
-		    HTStartAnchor(context->target, NULL, string->data);
-		}
-		PUTS_TR(string->data);
-		if (attr_is_href) {
-		    (*context->actions->end_element) (context->target,
-						      HTML_A,
-						      &context->include);
-		    PSRCSTOP(href);
-		}
-		PUTC('\'');
-		PSRCSTOP(attrval);
-	    } else
+	    if (!end_if_prettysrc(context, string, '\''))
 #endif
 		handle_attribute_value(context, string->data);
 	    string->size = 0;
@@ -3756,7 +3820,7 @@ static void SGML_character(HTStream *context, char c_in)
 	    HTChunkPuts(string, context->utf_buf);
 	    context->utf_buf_p = context->utf_buf;
 	    *(context->utf_buf_p) = '\0';
-	} else if (HTCJK == NOCJK &&
+	} else if (!IS_CJK_TTY &&
 		   (context->T.output_utf8 ||
 		    context->T.trans_from_uni)) {
 	    if (clong == 0xfffd && saved_char_in &&
@@ -3781,29 +3845,8 @@ static void SGML_character(HTStream *context, char c_in)
 	     c == '>')) {	/*  as a co-terminator of dquoted and tag    */
 	    HTChunkTerminate(string);
 #ifdef USE_PRETTYSRC
-	    if (psrc_view) {
-		/*PSRCSTART(attrval); */
-		if (attr_is_name) {
-		    HTStartAnchor(context->target, string->data, NULL);
-		    (*context->actions->end_element) (context->target,
-						      HTML_A,
-						      &context->include);
-		} else if (attr_is_href) {
-		    PSRCSTART(href);
-		    HTStartAnchor(context->target, NULL, string->data);
-		}
-		PUTS_TR(string->data);
-		if (attr_is_href) {
-		    (*context->actions->end_element) (context->target,
-						      HTML_A,
-						      &context->include);
-		    PSRCSTOP(href);
-		}
-		PUTC(c);
-		PSRCSTOP(attrval);
-	    } else
+	    if (!end_if_prettysrc(context, string, c))
 #endif
-
 		handle_attribute_value(context, string->data);
 	    string->size = 0;
 	    context->state = S_tag_gap;
@@ -3821,7 +3864,7 @@ static void SGML_character(HTStream *context, char c_in)
 	    HTChunkPuts(string, context->utf_buf);
 	    context->utf_buf_p = context->utf_buf;
 	    *(context->utf_buf_p) = '\0';
-	} else if (HTCJK == NOCJK &&
+	} else if (!IS_CJK_TTY &&
 		   (context->T.output_utf8 ||
 		    context->T.trans_from_uni)) {
 	    if (clong == 0xfffd && saved_char_in &&
@@ -3866,12 +3909,7 @@ static void SGML_character(HTStream *context, char c_in)
 		    PUTS("</");
 		    PSRCSTOP(abracket);
 		    PSRCSTART(badtag);
-		    if (tagname_transform != 1) {
-			if (tagname_transform == 0)
-			    LYLowerCase(string->data);
-			else
-			    LYUpperCase(string->data);
-		    }
+		    transform_tag(context, string);
 		    PUTS(string->data);
 		    if (c != '>') {
 			PUTC(c);
@@ -3887,22 +3925,16 @@ static void SGML_character(HTStream *context, char c_in)
 #endif
 	    } else {
 		BOOL tag_OK = (BOOL) (c == '>' || WHITE(c));
-
-#if OPT
 		HTMLElement e = TAGNUM_OF_TAGP(t);
 		int branch = 2;	/* it can be 0,1,2 */
-#endif
+
 		context->current_tag = t;
 		if (HAS_ALT_TAGNUM(TAGNUM_OF_TAGP(t)) &&
 		    context->element_stack &&
 		    ALT_TAGP(t) == context->element_stack->tag)
 		    context->element_stack->tag = NORMAL_TAGP(context->element_stack->tag);
-#if OPT
-		if (tag_OK
-#ifdef EXTENDED_HTMLDTD
-		    && Old_DTD
-#endif
-		    ) {
+
+		if (tag_OK && Old_DTD) {
 		    switch (e) {
 		    case HTML_DD:
 		    case HTML_DT:
@@ -3936,34 +3968,13 @@ static void SGML_character(HTStream *context, char c_in)
 			break;
 		    }
 		}
-#endif
 
-#ifdef EXTENDED_HTMLDTD
 		/*
 		 * Just handle ALL end tags normally :-) - kw
 		 */
 		if (!Old_DTD) {
 		    end_element(context, context->current_tag);
-		} else
-#endif /* EXTENDED_HTMLDTD */
-
-		    if (tag_OK &&
-#if OPT
-			(branch == 0)
-#else
-			(!strcasecomp(string->data, "DD") ||
-			 !strcasecomp(string->data, "DT") ||
-			 !strcasecomp(string->data, "LI") ||
-			 !strcasecomp(string->data, "LH") ||
-			 !strcasecomp(string->data, "TD") ||
-			 !strcasecomp(string->data, "TH") ||
-			 !strcasecomp(string->data, "TR") ||
-			 !strcasecomp(string->data, "THEAD") ||
-			 !strcasecomp(string->data, "TFOOT") ||
-			 !strcasecomp(string->data, "TBODY") ||
-			 !strcasecomp(string->data, "COLGROUP"))
-#endif
-		    ) {
+		} else if (tag_OK && (branch == 0)) {
 		    /*
 		     * Don't treat these end tags as invalid, nor act on them. 
 		     * - FM
@@ -3979,24 +3990,7 @@ static void SGML_character(HTStream *context, char c_in)
 			context->state = S_text;
 		    }
 		    break;
-		} else if (tag_OK &&
-#if OPT
-			   (branch == 1)
-#else
-			   (!strcasecomp(string->data, "A") ||
-			    !strcasecomp(string->data, "B") ||
-			    !strcasecomp(string->data, "BLINK") ||
-			    !strcasecomp(string->data, "CITE") ||
-			    !strcasecomp(string->data, "EM") ||
-			    !strcasecomp(string->data, "FONT") ||
-			    !strcasecomp(string->data, "FORM") ||
-			    !strcasecomp(string->data, "I") ||
-			    !strcasecomp(string->data, "P") ||
-			    !strcasecomp(string->data, "STRONG") ||
-			    !strcasecomp(string->data, "TT") ||
-			    !strcasecomp(string->data, "U"))
-#endif
-		    ) {
+		} else if (tag_OK && (branch == 1)) {
 		    /*
 		     * Handle end tags for container elements declared as
 		     * SGML_EMPTY to prevent "expected tag substitution" but
@@ -4264,8 +4258,9 @@ static void SGML_character(HTStream *context, char c_in)
 	break;
 
     case S_junk_tag:
-    case S_junk_pi:
+    case S_pi:
 	if (c == '>') {
+	    HTChunkTerminate(string);
 #ifdef USE_PRETTYSRC
 	    if (psrc_view) {
 		if (context->state == S_junk_tag) {
@@ -4274,24 +4269,21 @@ static void SGML_character(HTStream *context, char c_in)
 		PSRCSTART(abracket);
 		PUTC('>');
 		PSRCSTOP(abracket);
-		context->seen_nonwhite_in_junk_tag = FALSE;
 	    }
 #endif
+	    if (context->state == S_pi)
+		handle_processing_instruction(context);
+	    string->size = 0;
 	    context->current_tag = NULL;
 	    context->state = S_text;
-	}
+	} else {
+	    HTChunkPutc(string, c);
 #ifdef USE_PRETTYSRC
-	else if (psrc_view) {
-	    /*pack spaces until first non-space is seen */
-	    if (!context->seen_nonwhite_in_junk_tag) {
-		if (!WHITE(c)) {
-		    context->seen_nonwhite_in_junk_tag = TRUE;
-		    PUTC(c);
-		}
-	    } else
+	    if (psrc_view) {
 		PUTC(c);
-	}
+	    }
 #endif
+	}
 
     }				/* switch on context->state */
     CTRACE2(TRACE_SGML, (tfp, "SGML after  %s|%.*s|%c|\n",
@@ -4398,8 +4390,7 @@ static void SGML_string(HTStream *context, const char *str)
 	SGML_character(context, *p);
 }
 
-static void SGML_write(HTStream *context, const char *str,
-		       int l)
+static void SGML_write(HTStream *context, const char *str, int l)
 {
     const char *p;
     const char *e = str + l;
@@ -4437,16 +4428,13 @@ HTStream *SGML_new(const SGML_dtd * dtd,
 		   HTParentAnchor *anchor,
 		   HTStructured * target)
 {
-    int i;
-    HTStream *context = (HTStream *) malloc(sizeof(*context));
+    HTStream *context = typecalloc(struct _HTStream);
 
     if (!context)
 	outofmem(__FILE__, "SGML_begin");
 
     context->isa = &SGMLParser;
     context->string = HTChunkCreate(128);	/* Grow by this much */
-    context->leading_spaces = 0;
-    context->trailing_spaces = 0;
     context->dtd = dtd;
     context->target = target;
     context->actions = (const HTStructuredClass *) (((HTStream *) target)->isa);
@@ -4454,28 +4442,11 @@ HTStream *SGML_new(const SGML_dtd * dtd,
     context->unknown_tag = &HTTag_unrecognized;
     context->current_tag = context->slashedtag = NULL;
     context->state = S_text;
-    context->kanji_buf = '\0';
-    context->element_stack = 0;	/* empty */
-    context->inSELECT = FALSE;
-    context->no_lynx_specialcodes = NO;		/* special codes normally generated */
 #ifdef CALLERDATA
     context->callerData = (void *) callerData;
 #endif /* CALLERDATA */
-    for (i = 0; i < MAX_ATTRIBUTES; i++)
-	context->value[i] = 0;
-
-    context->lead_exclamation = FALSE;
-    context->first_dash = FALSE;
-    context->end_comment = FALSE;
-    context->doctype_bracket = FALSE;
-    context->first_bracket = FALSE;
-    context->second_bracket = FALSE;
-    context->isHex = FALSE;
 
     context->node_anchor = anchor;	/* Could be NULL? */
-    context->utf_count = 0;
-    context->utf_char = 0;
-    context->utf_buf[0] = context->utf_buf[6] = '\0';
     context->utf_buf_p = context->utf_buf;
     UCTransParams_clear(&context->T);
     context->inUCLYhndl = HTAnchor_getUCLYhndl(anchor,
@@ -4523,7 +4494,6 @@ HTStream *SGML_new(const SGML_dtd * dtd,
 	psrc_view = TRUE;
 	psrc_convert_string = FALSE;
 	sgml_in_psrc_was_initialized = TRUE;
-	context->seen_nonwhite_in_junk_tag = FALSE;
     }
 #endif
 

@@ -1,7 +1,83 @@
--- $LynxId: CHANGES,v 1.271 2008/04/27 23:03:14 tom Exp $
+-- $LynxId: CHANGES,v 1.308 2008/09/21 21:12:42 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2008-09-21 (2.8.7dev.10)
+* remove rw.po, since the translation project no longer supplies it -TD
+* implement "readonly" attribute for TEXTAREA and TEXT fields -TD
+* update Lynx's tables of HTML attributes to cover (except for events) the
+  keywords from HTML 4.01 -TD
+* modify initial active link in download-page to be the first download
+  action rather than the "help" link which is provided in Novice mode
+  (Debian #376259) -PBM, TD
+* implement "chunked" transfer-encoding to work with servers that ignore the
+  version number in HTTP get's -TD
+* change initialization of trace file, handing this during the first part of
+  argument parsing along with -help and -version, to show steps done for
+  initialization of presentors, etc -TD
+* minor fix to LYstartPopup() to handle a case where the popup menu was too
+  large for the screen -TD
+* fixes for srcdir!=objdir (report by FLWM) -TD
+* modify man2hlp.sh to work from subdirectory, e.g., its parameter would be
+  "../lynx.man" -TD
+* set POSIX locale for install-cfg.sh and man2hlp.sh since they use character
+  ranges -TD
+* add switch -xhtml-parsing and lynx.cfg XHTML_PARSING setting to control
+  whether the extensions for XHTML 1.0 are used (prompted by bug report by
+  FLWM, as well as discussion on lynx-dev) -TD
+* modify external editing of TEXTAREA to not do tab-conversion -TD
+* modify LYhighlight() to limit display of multicolumn characters -TD
+* rewrite LYRefreshEdit(), to display multibyte/multicolumn characters properly
+  when using wide-character curses -TD
+* revise introductory comment written to ".lynxrc" (Debian #461158) -TD
+* discard anchor's post_data field in HTLoadDocument() if Lynx is about to
+  reload a document.  That would happen if the result of the form includes a
+  link back to the form.  Removing the data causes Lynx to prompt the user,
+  e.g.,
+    Resubmit POST content to http://localhost/cgi-bin/lynxtest.pl ? (y/n)
+  to offer the user the choice between revisiting form or re-POST'ing the
+  data that was on the form (report by Andreas K Foerster) -TD 
+* fixes for LYHighlight() when the highlighted text is empty -TD
+* translate named entities, etc., for "content" field of refresh-URL, cf:
+  2.8.5dev.13 (report by Ivan Shmakov) -TD
+* suppress computation in TrimmedLength() for source-view, which is not needed
+  for Debian #204515 (patch by Mike Knight)
+* add check-po rule to po/makefile -TD
+* modify top-level makefile to work with configure --srcdir -TD
+* add update-po rule to top-level makefile -TD
+* update fr.po, nl.po, tr.po, vi.po, zh_TW.po,sv.po from
+    http://translationproject.org/latest/lynx/
+* parse doctype for xhtml, to tell when empty tags such as "<textarea />" can
+  be discarded (report by Nils Dagsson Moskopp) -TD
+* parse xml processing-instruction to turn on UTF-8 decoding, as well as
+  disable upper/lower case transforming in source view (discussion on
+  lynx-dev) -TD
+* fix typo in Lynx_users_guide.html (report by Kristof Zelechovski)
+* minor fix to documentation in lynx.cfg -PW
+* use off_t rather than long for representing file sizes, e.g., when used to
+  print progress messages (reports by LP, Tomas Liska, TG, PG) -TD
+* use dtd_util to replace most of HTMLDTD.h and HTMLDTD.c with source generated
+  from the existing tables in those files -TD
+* add program dtd_util which can be used to dump the SGML tables in readable
+  form -TD
+* change calls to LYhandlePopupList() to turn on (or off) numbering when
+  keypad_mode is not NUMBERS_AS_ARROWS -PBM
+* move close of session-file outside ifdef for VLINK_IN_SESSION, closing
+  session file properly if that ifdef is disabled.  Add a null-pointer check
+  for visited links that are saved -PBM
+* make auto_session and session_file configurable with ENABLE_LYNXRC -PBM
+* separate configure "--enable-sessions" option from "--enable-session-cache"
+  option -PBM
+* add ncurses scroll-wheel support, which requires the extended-mouse configure
+  option of ncurses (Debian #476394) -TD
+  Caveat:  if running on a local terminal, setting the ESCDELAY environment
+  variable to 0 (zero) helps, since the event rate is rather high.  That would
+  not help on a network with delays (this is true of all text applications that
+  use xterm's mouse protocol, such as gpm and ncurses).
+* adapt/extend parsdate.y from tin to improve parsing of cookie expiration
+  times (Debian #480144) -TD
+* update de.po (patch by Fabian Fingerle)
 
 2008-04-27 (2.8.7dev.9)
 * update nl.po, vi.po from

@@ -1,4 +1,7 @@
-/*		Plain text object		HTWrite.c
+/*
+ * $LynxId: HTPlain.c,v 1.42 2008/09/06 14:45:09 tom Exp $
+ *
+ *		Plain text object		HTWrite.c
  *		=================
  *
  *	This version of the stream object just writes to a socket.
@@ -28,6 +31,7 @@
 #include <UCAux.h>
 
 #include <LYCharSets.h>
+#include <LYStrings.h>
 #include <LYLeaks.h>
 
 static int HTPlain_lastraw = -1;
@@ -134,7 +138,7 @@ static void HTPlain_put_character(HTStream *me, char c)
 	 * For now, don't repeat everything here that has been done below - KW
 	 */
 	HTPlain_write(me, &c, 1);
-    } else if (HTCJK != NOCJK) {
+    } else if (IS_CJK_TTY) {
 	HText_appendCharacter(me->text, c);
     } else if (TOASCII(UCH(c)) >= 127 && TOASCII(UCH(c)) < 161 &&
 	       HTPassHighCtrlRaw) {
@@ -470,7 +474,7 @@ static void HTPlain_write(HTStream *me, const char *s, int l)
 	 * display character set, and if not, the user should toggle off
 	 * raw/CJK mode to reload.  - FM
 	 */
-	if (HTCJK != NOCJK) {
+	if (IS_CJK_TTY) {
 	    HText_appendCharacter(me->text, c);
 
 #define PASSHICTRL (me->T.transp || \
@@ -616,12 +620,12 @@ static void HTPlain_write(HTStream *me, const char *s, int l)
 		/*
 		 * Ignore 8204 (zwnj) or 8205 (zwj), if we get to here.  - FM
 		 */
-		CTRACE((tfp, "HTPlain_write: Ignoring '%ld'.\n", code));
+		CTRACE((tfp, "HTPlain_write: Ignoring '%" PRI_UCode_t "'.\n", code));
 	    } else if (code == 8206 || code == 8207) {
 		/*
 		 * Ignore 8206 (lrm) or 8207 (rlm), if we get to here.  - FM
 		 */
-		CTRACE((tfp, "HTPlain_write: Ignoring '%ld'.\n", code));
+		CTRACE((tfp, "HTPlain_write: Ignoring '%" PRI_UCode_t "'.\n", code));
 	    } else {
 		/*
 		 * Out of luck, so use the UHHH notation (ugh).  - FM

@@ -1,4 +1,4 @@
-/* $LynxId: LYStrings.c,v 1.131 2008/02/17 19:18:44 tom Exp $ */
+/* $LynxId: LYStrings.c,v 1.157 2008/09/07 22:09:02 tom Exp $ */
 #include <HTUtils.h>
 #include <HTCJK.h>
 #include <UCAux.h>
@@ -45,6 +45,12 @@
 #if defined(WIN_EX)
 #undef  BUTTON_CTRL
 #define BUTTON_CTRL	0	/* Quick hack */
+#endif
+
+#ifdef DEBUG_EDIT
+#define CTRACE_EDIT(p) CTRACE(p)
+#else
+#define CTRACE_EDIT(p)		/*nothing */
 #endif
 
 /*
@@ -120,8 +126,8 @@ int fancy_mouse(WINDOW * win, int row,
     request_mouse_pos();
 
     if (BUTTON_STATUS(1)
-	&& (MOUSE_X_POS >= getbegx(win)
-	    && (MOUSE_X_POS < (getbegx(win) + getmaxx(win))))) {
+	&& (MOUSE_X_POS >= getbegx(win) &&
+	    MOUSE_X_POS < (getbegx(win) + getmaxx(win)))) {
 	int mypos = MOUSE_Y_POS - getbegy(win);
 	int delta = mypos - row;
 
@@ -172,17 +178,19 @@ int fancy_mouse(WINDOW * win, int row,
     }
 #else
 #if defined(NCURSES)
+#define ButtonModifiers (BUTTON_ALT | BUTTON_SHIFT | BUTTON_CTRL)
     MEVENT event;
 
     getmouse(&event);
-    if ((event.bstate & (BUTTON1_CLICKED
-			 | BUTTON1_DOUBLE_CLICKED
-			 | BUTTON1_TRIPLE_CLICKED))) {
+    if ((event.bstate & (BUTTON1_CLICKED |
+			 BUTTON1_DOUBLE_CLICKED |
+			 BUTTON1_TRIPLE_CLICKED))) {
 	int mypos = event.y - getbegy(win);
 	int delta = mypos - row;
 
-	if ((event.x < getbegx(win) || event.x >= (getbegx(win) + getmaxx(win)))
-	    && !(event.bstate & (BUTTON_ALT | BUTTON_SHIFT | BUTTON_CTRL)))
+	if ((event.x < getbegx(win) ||
+	     event.x >= (getbegx(win) + getmaxx(win)))
+	    && !(event.bstate & ButtonModifiers))
 	    return LYK_QUIT;	/* User clicked outside, wants to quit? */
 	if (mypos + 1 == getmaxy(win)) {
 	    /* At the decorative border: scroll forward */
@@ -193,8 +201,8 @@ int fancy_mouse(WINDOW * win, int row,
 	    else
 		cmd = LYK_NEXT_LINK;
 	} else if (mypos >= getmaxy(win)) {
-	    if (event.bstate & (BUTTON1_DOUBLE_CLICKED
-				| BUTTON1_TRIPLE_CLICKED))
+	    if (event.bstate & (BUTTON1_DOUBLE_CLICKED |
+				BUTTON1_TRIPLE_CLICKED))
 		cmd = LYK_END;
 	    else
 		cmd = LYK_NEXT_PAGE;
@@ -207,8 +215,8 @@ int fancy_mouse(WINDOW * win, int row,
 	    else
 		cmd = LYK_PREV_LINK;
 	} else if (mypos < 0) {
-	    if (event.bstate & (BUTTON1_DOUBLE_CLICKED
-				| BUTTON1_TRIPLE_CLICKED))
+	    if (event.bstate & (BUTTON1_DOUBLE_CLICKED |
+				BUTTON1_TRIPLE_CLICKED))
 		cmd = LYK_HOME;
 	    else
 		cmd = LYK_PREV_PAGE;
@@ -225,7 +233,7 @@ int fancy_mouse(WINDOW * win, int row,
 	     */
 	    *position += delta;
 	    cmd = -1;
-	} else if (event.bstate & (BUTTON_ALT | BUTTON_SHIFT | BUTTON_CTRL)) {
+	} else if (event.bstate & ButtonModifiers) {
 	    /* Probably some unrelated activity, such as selecting some text.
 	     * Select, but do nothing else.
 	     */
@@ -621,7 +629,7 @@ char *LYmbcsstrncpy(char *dst,
 }
 
 /*
- * LYmbcs_skip_glyphs() skips a given number of display positions in a string
+ * LYmbcs_skip_glyphs() skips a given number of character positions in a string
  * and returns the resulting pointer.  It takes account of UTF-8 encoded
  * characters.  - KW
  */
@@ -634,20 +642,44 @@ const char *LYmbcs_skip_glyphs(const char *data,
     if (n_glyphs < 0)
 	n_glyphs = 0;
 
-    if (!data)
-	return NULL;
-    if (!utf_flag)
-	return (data + n_glyphs);
-
-    while (*data) {
-	if (IS_NEW_GLYPH(*data)) {
-	    if (i_glyphs++ >= n_glyphs) {
-		return data;
+    if (!isEmpty(data)) {
+	if (!utf_flag) {
+	    while (n_glyphs-- > 0) {
+		if (!*++data)
+		    break;
+	    }
+	} else {
+	    while (*data) {
+		if (IS_NEW_GLYPH(*data)) {
+		    if (i_glyphs++ >= n_glyphs) {
+			break;
+		    }
+		}
+		data++;
 	    }
 	}
-	data++;
     }
     return data;
+}
+
+/*
+ * LYmbcs_skip_cells() skips a given number of display positions in a string
+ * and returns the resulting pointer.  It takes account of UTF-8 encoded
+ * characters.  - TD
+ */
+const char *LYmbcs_skip_cells(const char *data,
+			      int n_cells,
+			      BOOL utf_flag)
+{
+    const char *result;
+    int actual;
+    int target = n_cells;
+
+    do {
+	result = LYmbcs_skip_glyphs(data, target--, utf_flag);
+	actual = LYstrExtent2(data, result - data);
+    } while ((actual > 0) && (actual > n_cells));
+    return result;
 }
 
 /*
@@ -682,7 +714,7 @@ int LYmbcsstrlen(const char *str,
 			    i++;
 			    j++;
 			}
-		    } else if (!utf_flag && HTCJK != NOCJK && !count_gcells &&
+		    } else if (!utf_flag && IS_CJK_TTY && !count_gcells &&
 			       is8bits(str[i]) &&
 			       IsNormalChar(str[(i + 1)])) {
 			i++;
@@ -1730,7 +1762,7 @@ static int LYgetch_for(int code)
 
 	CTRACE((tfp,
 		"nozap: Got EOF, curses %s, stdin is %p, LYNoZapKey reduced from %d to 0.\n",
-		LYCursesON ? "on" : "off", stdin, LYNoZapKey));
+		LYCursesON ? "on" : "off", (void *) stdin, LYNoZapKey));
 	LYNoZapKey = 0;		/* 2 -> 0 */
 	if (LYReopenInput() > 0) {
 	    if (LYCursesON) {
@@ -2274,6 +2306,13 @@ static int LYgetch_for(int code)
 		    LYrefresh();
 #endif
 		}
+#if NCURSES_MOUSE_VERSION > 1
+		else if (event.bstate & BUTTON4_PRESSED) {
+		    c = LAC_TO_LKC(LYK_UP_HALF);
+		} else if (event.bstate & BUTTON5_PRESSED) {
+		    c = LAC_TO_LKC(LYK_DOWN_HALF);
+		}
+#endif
 		if (code == FOR_INPUT && mouse_link == -1 &&
 		    lac != LYK_REFRESH && lac != LYK_SUBMIT) {
 		    ungetmouse(&event);		/* Caller will process this. */
@@ -2795,21 +2834,27 @@ void LYTrimAllStartfile(char *buffer)
 #define EDREC	 EditFieldData
 
 /*
- * Shorthand to get rid of all most of the "edit->suchandsos".
+ * Shorthand to get rid of the "edit->suchandsos".
  */
+#define IsDirty  edit->dirty
+#define IsHidden edit->hidden
+#define StartX	 edit->sx
+#define StartY	 edit->sy
 #define Buf	 edit->buffer
-#define Pos	 edit->pos
-#define StrLen	 edit->strlen
+#define Pos	 edit->pos	/* current editing position (bytes) */
+#define StrLen	 edit->strlen	/* length (bytes) */
 #define MaxLen	 edit->maxlen
 #define DspWdth  edit->dspwdth
-#define DspStart edit->xpan
+#define DspStart edit->xpan	/* display-start (columns) */
 #define Margin	 edit->margin
+#define PanOn	 edit->panon
+#define PadChar  edit->pad
 #ifdef ENHANCED_LINEEDIT
 #define Mark	 edit->mark
 #endif
 
 #ifdef ENHANCED_LINEEDIT
-static char killbuffer[1024] = "\0";
+static char killbuffer[MAX_EDIT] = "\0";
 #endif
 
 void LYSetupEdit(EDREC * edit, char *old,
@@ -2819,10 +2864,10 @@ void LYSetupEdit(EDREC * edit, char *old,
     /*
      * Initialize edit record
      */
-    LYGetYX(edit->sy, edit->sx);
-    edit->pad = ' ';
-    edit->dirty = TRUE;
-    edit->panon = FALSE;
+    LYGetYX(StartY, StartX);
+    PadChar = ' ';
+    IsDirty = TRUE;
+    PanOn = FALSE;
     edit->current_modifiers = 0;
 
     MaxLen = maxstr;
@@ -2836,7 +2881,7 @@ void LYSetupEdit(EDREC * edit, char *old,
 
     if (maxstr > maxdsp) {	/* Need panning? */
 	if (DspWdth > 4)	/* Else "{}" take up precious screen space */
-	    edit->panon = TRUE;
+	    PanOn = TRUE;
 
 	/*
 	 * Figure out margins.  If too big, we do a lot of unnecessary
@@ -2848,8 +2893,8 @@ void LYSetupEdit(EDREC * edit, char *old,
 	    Margin = 10;
     }
 
-    LYstrncpy(edit->buffer, old, maxstr);
-    StrLen = strlen(edit->buffer);
+    LYstrncpy(Buf, old, maxstr);
+    StrLen = strlen(Buf);
 }
 
 #ifdef SUPPORT_MULTIBYTE_EDIT
@@ -2861,14 +2906,11 @@ void LYSetupEdit(EDREC * edit, char *old,
  *
  * LYmbcs* functions don't look very convenient to use here...
  * Do we really need utf_flag as an argument?
- * It is set LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8 for every
- * invocation out there, and they use HTCJK flag internally anyway.
- * Something like LYmbcsstrnlen == mbcs_glyphs would be useful to work
- * with string slices.
+ *
+ * It is set (see IS_UTF8_TTY) for every invocation out there, and they use
+ * HTCJK flag internally anyway.  Something like LYmbcsstrnlen == mbcs_glyphs
+ * would be useful to work with string slices -Sergej Kvachonok 
  */
-
-#define IS_UTF8_TTY (LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8)
-#define IS_CJK_TTY (HTCJK != NOCJK)
 
 #define IS_UTF8_EXTRA(x) (((unsigned char)(x) & 0300) == 0200)
 
@@ -2888,8 +2930,9 @@ static int mbcs_glyphs(char *s, int len)
 	for (i = 0; s[i] && i < len; i++, glyphs++)
 	    if (is8bits(s[i]))
 		i++;
-    } else
+    } else {
 	glyphs = len;
+    }
     return glyphs;
 }
 
@@ -2911,10 +2954,38 @@ static int mbcs_skip(char *s, int pos)
 	for (p = i = 0; s[i] && p < pos; p++, i++)
 	    if (is8bits(s[i]))
 		i++;
-    } else
+    } else {
 	i = pos;
+    }
 
     return i;
+}
+
+/*
+ * Given a string that would display (at least) the given number of cells,
+ * determine the number of multibyte characters that comprised those cells.
+ */
+static int cell2char(char *s, int cells)
+{
+    int result = 0;
+    int len = strlen(s);
+    int pos;
+    int have;
+
+    CTRACE_EDIT((tfp, "cell2char(%d) %d:%s\n", cells, len, s));
+    /* FIXME - make this a binary search */
+    for (pos = 0; pos <= len; ++pos) {
+	have = LYstrExtent2(s, pos);
+	CTRACE_EDIT((tfp, "  %2d:%2d:%.*s\n", pos, have, pos, s));
+	if (have >= cells) {
+	    break;
+	}
+    }
+    if (pos > len)
+	pos = len;
+    result = mbcs_glyphs(s, pos);
+    CTRACE_EDIT((tfp, "->%d\n", result));
+    return result;
 }
 
 #endif /* SUPPORT_MULTIBYTE_EDIT */
@@ -2952,7 +3023,7 @@ int LYEditInsert(EDREC * edit, unsigned const char *s,
 #ifdef EXP_KEYBOARD_LAYOUT
     if (map < 0)
 	map = map_active;
-    if (map && LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8) {
+    if (map && IS_UTF8_TTY) {
 	int off = Pos;
 	unsigned const char *e = s + len;
 	char *tail = 0;
@@ -3022,7 +3093,7 @@ int LYEditInsert(EDREC * edit, unsigned const char *s,
     Pos += len;
     StrLen += len;
     if (edited)
-	edit->dirty = TRUE;
+	IsDirty = TRUE;
     if (overflow && maxMessage)
 	_statusline(MAXLEN_REACHED_DEL_OR_MOV);
 #ifdef ENHANCED_LINEEDIT
@@ -3036,13 +3107,14 @@ int LYEditInsert(EDREC * edit, unsigned const char *s,
     return edited;
 }
 
+/* returns 0    character processed
+ *         -ch  if action should be performed outside of line-editing mode
+ *         ch   otherwise
+ */
 int LYEdit1(EDREC * edit, int ch,
 	    int action,
 	    BOOL maxMessage)
-{				/* returns 0    character processed
-				 *         -ch  if action should be performed outside of line-editing mode
-				 *         ch   otherwise
-				 */
+{
     int i;
     int length;
     unsigned char uch;
@@ -3071,7 +3143,7 @@ int LYEdit1(EDREC * edit, int ch,
 	 * in the current display character set.  Otherwise, we treat this as
 	 * LYE_ENTER.
 	 */
-	if (HTCJK == NOCJK && LYlowest_eightbit[current_char_set] > 0x97)
+	if (!IS_CJK_TTY && LYlowest_eightbit[current_char_set] > 0x97)
 	    return (ch);
 	/* FALLTHRU */
 #endif
@@ -3121,14 +3193,14 @@ int LYEdit1(EDREC * edit, int ch,
 	 * Definition of word is very naive:  1 or more a/n characters.
 	 */
 #ifndef SUPPORT_MULTIBYTE_EDIT
-	while (Pos && !isalnum(Buf[Pos - 1]))
+	while (Pos && !isalnum(UCH(Buf[Pos - 1])))
 	    Pos--;
-	while (Pos && isalnum(Buf[Pos - 1]))
+	while (Pos && isalnum(UCH(Buf[Pos - 1])))
 	    Pos--;
 #else
-	while (Pos && !(isalnum(Buf[Pos - 1]) || is8bits(Buf[Pos - 1])))
+	while (Pos && !(isalnum(UCH(Buf[Pos - 1])) || is8bits(Buf[Pos - 1])))
 	    Pos--;
-	while (Pos && (isalnum(Buf[Pos - 1]) || is8bits(Buf[Pos - 1])))
+	while (Pos && (isalnum(UCH(Buf[Pos - 1])) || is8bits(Buf[Pos - 1])))
 	    Pos--;
 #endif
 	break;
@@ -3138,14 +3210,14 @@ int LYEdit1(EDREC * edit, int ch,
 	 * Word forward.
 	 */
 #ifndef SUPPORT_MULTIBYTE_EDIT
-	while (isalnum(Buf[Pos]))
+	while (isalnum(UCH(Buf[Pos])))
 	    Pos++;		/* '\0' is not a/n */
-	while (!isalnum(Buf[Pos]) && Buf[Pos])
+	while (!isalnum(UCH(Buf[Pos])) && Buf[Pos])
 	    Pos++;
 #else
-	while (isalnum(Buf[Pos]) || is8bits(Buf[Pos]))
+	while (isalnum(UCH(Buf[Pos])) || is8bits(Buf[Pos]))
 	    Pos++;		/* '\0' is not a/n */
-	while (!(isalnum(Buf[Pos]) || is8bits(Buf[Pos])) && Buf[Pos])
+	while (!(isalnum(UCH(Buf[Pos])) || is8bits(Buf[Pos])) && Buf[Pos])
 	    Pos++;
 #endif
 	break;
@@ -3430,7 +3502,7 @@ int LYEdit1(EDREC * edit, int ch,
     default:
 	return (ch);
     }
-    edit->dirty = TRUE;
+    IsDirty = TRUE;
     StrLen = strlen(&Buf[0]);
     return (0);
 }
@@ -3508,40 +3580,92 @@ int get_popup_number(const char *msg,
 #  define TmpStyleOff(s)
 #endif /* defined USE_COLOR_STYLE */
 
-void LYRefreshEdit(EDREC * edit)
+static void remember_column(EDREC * edit, int offset)
+{
+    int y0, x0;
+
+#if defined(USE_SLANG)
+    y0 = 0;
+    x0 = SLsmg_get_column();
+#elif defined(USE_CURSES_PADS)
+    getyx(LYwin, y0, x0);
+#else
+    getyx(stdscr, y0, x0);
+#endif
+    edit->offset2col[offset] = x0;
+}
+
+static void fill_edited_line(int prompting GCC_UNUSED, int length, int ch)
 {
     int i;
-    int length;
-    int nrdisplayed;
-    int padsize;
-    char *str;
 
-#ifdef SUPPORT_MULTIBYTE_EDIT
+    TmpStyleOn(prompting ? s_prompt_edit_pad : s_aedit_pad);
+
+    for (i = 0; i < length; i++) {
+	LYaddch(UCH(ch));
+    }
+
+    TmpStyleOff(prompting ? s_prompt_edit_pad : s_aedit_pad);
+}
+
 /*
- * Multibyte string display code.
- * EDREC fields retain their values as byte offsets,
- * while glXXXX variables hold corresponding glyph counts.
+ * Multibyte string display subroutine.
+ * EDREC fields retain their values as byte offsets.
  * All external logic still works fine with byte values.
  */
-    int glDspStart, glPos, gllength;
-    int glnrdisplayed;
-#endif
+void LYRefreshEdit(EDREC * edit)
+{
+    /* bytes and characters are not the same thing */
+    int all_bytes;
+    int pos_bytes = Pos;
+    int dpy_bytes;
+    int lft_bytes;		/* base of string which is displayed */
 
-#ifdef USE_COLOR_STYLE
-    int estyle, prompting = 0;
-#endif
-
-    if (!edit->dirty || (DspWdth == 0))
-	return;
-    edit->dirty = FALSE;
-
-    length = strlen(&Buf[0]);
-    edit->strlen = length;
+    /* cells refer to display-columns on the screen */
+    int all_cells;		/* total of display-cells in Buf */
+    int dpy_cells;		/* number of cells which are displayed */
+    int lft_cells;		/* number of cells before display (on left) */
+    int pos_cells;		/* number of display-cells up to Pos */
 
 #ifdef SUPPORT_MULTIBYTE_EDIT
-    glDspStart = mbcs_glyphs(Buf, DspStart);
-    glPos = mbcs_glyphs(Buf, Pos);
-    gllength = mbcs_glyphs(Buf, length);
+    int all_chars;
+    int dpy_chars;
+    int lft_chars;
+    int pos_chars;
+#endif
+
+    /* other data */
+    int i;
+    int padsize;
+    char *str;
+    int lft_shift = 0;
+    int rgt_shift = 0;
+
+#ifdef USE_COLOR_STYLE
+    int estyle;
+#endif
+    int prompting = 0;
+
+    (void) pos_bytes;
+
+    /*
+     * If we've made no changes, or if there is nothing to display, just leave.
+     */
+    if (!IsDirty || (DspWdth == 0))
+	return;
+
+    IsDirty = FALSE;
+
+    all_bytes = strlen(&Buf[0]);
+    StrLen = all_bytes;
+
+    all_cells = LYstrCells(Buf);
+    pos_cells = LYstrExtent2(Buf, Pos);
+
+#ifdef SUPPORT_MULTIBYTE_EDIT
+    lft_chars = mbcs_glyphs(Buf, DspStart);
+    pos_chars = mbcs_glyphs(Buf, Pos);
+    all_chars = mbcs_glyphs(Buf, all_bytes);
 #endif
 
     /*
@@ -3550,7 +3674,7 @@ void LYRefreshEdit(EDREC * edit)
      *      +---------+=============+-----------+
      *      |         |M           M|           |   (M=margin)
      *      +---------+=============+-----------+
-     *      0         DspStart                   length
+     *      0         DspStart                   StrLen
      *
      * Insertion point can be anywhere between 0 and stringlength.  Figure out
      * new display starting point.
@@ -3560,47 +3684,93 @@ void LYRefreshEdit(EDREC * edit)
      * data entry at low baudrates.
      */
 
-#ifndef SUPPORT_MULTIBYTE_EDIT
-    if ((DspStart + DspWdth) <= length)
-	if (Pos >= (DspStart + DspWdth) - Margin)
-	    DspStart = (Pos - DspWdth) + Margin;
+    lft_bytes = DspStart;
+    lft_cells = LYstrExtent2(Buf, DspStart);
+
+    if ((lft_cells + DspWdth) <= all_cells) {
+	if (pos_cells >= (lft_cells + DspWdth) - Margin) {
+	    lft_cells = (pos_cells - DspWdth) + Margin;
+#ifdef SUPPORT_MULTIBYTE_EDIT
+	    lft_chars = cell2char(Buf, lft_cells);
+	    lft_bytes = mbcs_skip(Buf, lft_chars);
 #else
-    if ((glDspStart + DspWdth) <= gllength)
-	if (glPos >= (glDspStart + DspWdth) - Margin) {
-	    glDspStart = (glPos - DspWdth) + Margin;
-	    DspStart = mbcs_skip(Buf, glDspStart);
+	    lft_bytes = lft_cells;
+#endif /* SUPPORT_MULTIBYTE_EDIT */
 	}
-#endif /* SUPPORT_MULTIBYTE_EDIT */
-
-#ifndef SUPPORT_MULTIBYTE_EDIT
-    if (Pos < DspStart + Margin) {
-	DspStart = Pos - Margin;
-	if (DspStart < 0)
-	    DspStart = 0;
     }
-#else /* SUPPORT_MULTIBYTE_EDIT */
-    if (glPos < glDspStart + Margin) {
-	glDspStart = glPos - Margin;
-	if (glDspStart < 0)
-	    glDspStart = 0;
-	DspStart = mbcs_skip(Buf, glDspStart);
-    }
-#endif /* SUPPORT_MULTIBYTE_EDIT */
 
-    str = &Buf[DspStart];
-
-#ifndef SUPPORT_MULTIBYTE_EDIT
-    nrdisplayed = length - DspStart;
-    if (nrdisplayed > DspWdth)
-	nrdisplayed = DspWdth;
+    if (pos_cells < lft_cells + Margin) {
+	lft_cells = pos_cells - Margin;
+	if (lft_cells < 0)
+	    lft_cells = 0;
+#ifdef SUPPORT_MULTIBYTE_EDIT
+	lft_chars = cell2char(Buf, lft_cells);
+	lft_bytes = mbcs_skip(Buf, lft_chars);
 #else
-    glnrdisplayed = gllength - glDspStart;
-    if (glnrdisplayed > DspWdth)
-	glnrdisplayed = DspWdth;
-    nrdisplayed = mbcs_skip(Buf + DspStart, glnrdisplayed);
+	lft_bytes = lft_cells;
 #endif /* SUPPORT_MULTIBYTE_EDIT */
+    }
 
-    LYmove(edit->sy, edit->sx);
+    LYmove(StartY, StartX);
+
+    /*
+     * Draw the left scrolling-indicator now, to avoid the complication of
+     * overwriting part of a multicolumn character which may lie in the first
+     * position.
+     */
+    if (PanOn && lft_cells) {
+	CTRACE_EDIT((tfp, "Draw left scroll-indicator\n"));
+	TmpStyleOn(prompting ? s_prompt_edit_arr : s_aedit_arr);
+	LYmove(StartY, StartX);
+	LYaddch(ACS_LARROW);
+	TmpStyleOff(prompting ? s_prompt_edit_arr : s_aedit_arr);
+	lft_shift = 1;
+    }
+
+    str = &Buf[lft_bytes];
+    DspStart = lft_bytes;
+
+    dpy_cells = all_cells - lft_cells;
+    CTRACE_EDIT((tfp, "Comparing dpy_cells %d > (%d - %d)\n",
+		 dpy_cells, DspWdth, lft_shift));
+    if (dpy_cells > (DspWdth - lft_shift)) {
+	rgt_shift = 1;
+	dpy_cells = (DspWdth - lft_shift - rgt_shift);
+    }
+    for (;;) {
+#ifdef SUPPORT_MULTIBYTE_EDIT
+	dpy_chars = cell2char(str, dpy_cells);
+	dpy_bytes = mbcs_skip(str, dpy_chars);
+#else
+	dpy_bytes = dpy_cells;
+#endif /* SUPPORT_MULTIBYTE_EDIT */
+	/*
+	 * The last character on the display may be multicolumn, and if we take
+	 * away a single cell for the right scroll-indicator, that would force
+	 * us to display fewer characters.  Check for that, and recompute.
+	 */
+	if (rgt_shift) {
+	    int old_cells = dpy_cells;
+
+	    dpy_cells = LYstrExtent2(str, dpy_bytes);
+	    if (dpy_cells > old_cells)
+		dpy_cells = old_cells - 1;
+
+	    CTRACE_EDIT((tfp, "Comparing cells %d vs %d\n", dpy_cells, old_cells));
+	    if (dpy_cells < old_cells) {
+		CTRACE_EDIT((tfp, "Recomputing...\n"));
+		continue;
+	    }
+	}
+	break;
+    }
+
+    CTRACE_EDIT((tfp, "BYTES left %2d pos %2d dpy %2d all %2d\n",
+		 lft_bytes, pos_bytes, dpy_bytes, all_bytes));
+    CTRACE_EDIT((tfp, "CELLS left %2d pos %2d dpy %2d all %2d\n",
+		 lft_cells, pos_cells, dpy_cells, all_cells));
+    CTRACE_EDIT((tfp, "CHARS left %2d pos %2d dpy %2d all %2d\n",
+		 lft_chars, pos_chars, dpy_chars, all_chars));
 
 #ifdef USE_COLOR_STYLE
     /*
@@ -3608,34 +3778,47 @@ void LYRefreshEdit(EDREC * edit)
      * be needed for color styles.  The curses function may be used directly to
      * avoid complications.  - kw
      */
-    if (edit->sy == (LYlines - 1))
+    if (StartY == (LYlines - 1))
 	prompting = 1;
-    if (prompting)
+    if (prompting) {
 	estyle = s_prompt_edit;
-    else
+    } else {
 	estyle = s_aedit;
+    }
     CTRACE2(TRACE_STYLE,
 	    (tfp, "STYLE.getstr: switching to <edit.%s>.\n",
 	     prompting ? "prompt" : "active"));
-    if (estyle != NOSTYLE)
+    if (estyle != NOSTYLE) {
 	curses_style(estyle, STACK_ON);
-    else
+    } else {
 	wattrset(LYwin, A_NORMAL);	/* need to do something about colors? */
+    }
 #endif
-    if (edit->hidden) {
-#ifndef SUPPORT_MULTIBYTE_EDIT
-	for (i = 0; i < nrdisplayed; i++)
-	    LYaddch('*');
-#else
-	for (i = 0; i < glnrdisplayed; i++)
-	    LYaddch('*');
-#endif
+    if (IsHidden) {
+	BOOL utf_flag = IS_UTF8_TTY;
+	int cell = 0;
+
+	fill_edited_line(0, dpy_cells, '*');
+
+	i = 0;
+	do {
+	    const char *last = str + i;
+	    const char *next = LYmbcs_skip_glyphs(last, 1, utf_flag);
+	    int j = (next - str);
+
+	    while (i < j) {
+		edit->offset2col[i++] = cell + StartX;
+	    }
+	    cell += LYstrExtent2(last, (next - last));
+	} while (i < dpy_bytes);
+	edit->offset2col[i] = cell + StartX;
     } else {
 #if defined(ENHANCED_LINEEDIT) && defined(USE_COLOR_STYLE)
 	if (Mark >= 0 && DspStart > Mark)
 	    TmpStyleOn(prompting ? s_prompt_sel : s_aedit_sel);
 #endif
-	for (i = 0; i < nrdisplayed; i++) {
+	remember_column(edit, 0);
+	for (i = 0; i < dpy_bytes; i++) {
 #if defined(ENHANCED_LINEEDIT) && defined(USE_COLOR_STYLE)
 	    if (Mark >= 0 && ((DspStart + i == Mark && Pos > Mark)
 			      || (DspStart + i == Pos && Pos < Mark)))
@@ -3646,64 +3829,58 @@ void LYRefreshEdit(EDREC * edit)
 #endif
 	    if (str[i] == 1 || str[i] == 2 ||
 		(UCH(str[i]) == 160 &&
-		 !(HTPassHighCtrlRaw || HTCJK != NOCJK ||
+		 !(HTPassHighCtrlRaw || IS_CJK_TTY ||
 		   (LYCharSet_UC[current_char_set].enc != UCT_ENC_8859 &&
 		    !(LYCharSet_UC[current_char_set].like8859
 		      & UCT_R_8859SPECL))))) {
 		LYaddch(' ');
-	    } else
+	    } else if (str[i] == '\t') {
+		int col = edit->offset2col[i] - StartX;
+
+		/*
+		 * Like LYwaddnstr(), expand tabs from the beginning of the
+		 * field.
+		 */
+		while (++col % 8)
+		    LYaddch(' ');
+		LYaddch(' ');
+	    } else {
 		LYaddch(UCH(str[i]));
+	    }
+	    remember_column(edit, i + 1);
 	}
 #if defined(ENHANCED_LINEEDIT) && defined(USE_COLOR_STYLE)
 	if (Mark >= 0 &&
-	    ((DspStart + nrdisplayed <= Mark && DspStart + nrdisplayed > Pos)
-	     || (DspStart + nrdisplayed > Mark
-		 && DspStart + nrdisplayed <= Pos)))
+	    ((DspStart + dpy_bytes <= Mark && DspStart + dpy_bytes > Pos)
+	     || (DspStart + dpy_bytes > Mark
+		 && DspStart + dpy_bytes <= Pos))) {
 	    TmpStyleOff(prompting ? s_prompt_sel : s_aedit_sel);
+	}
 #endif
     }
 
     /*
      * Erase rest of input area.
      */
-#ifndef SUPPORT_MULTIBYTE_EDIT
-    padsize = DspWdth - nrdisplayed;
-#else
-    padsize = DspWdth - glnrdisplayed;
-#endif
-    if (padsize) {
-	TmpStyleOn(prompting ? s_prompt_edit_pad : s_aedit_pad);
-	while (padsize--)
-	    LYaddch(UCH(edit->pad));
-	TmpStyleOff(prompting ? s_prompt_edit_pad : s_aedit_pad);
-    }
+    padsize = DspWdth - (edit->offset2col[dpy_bytes] - StartX);
+    fill_edited_line(prompting, padsize, PadChar);
 
     /*
      * Scrolling indicators.
      */
-    if (edit->panon) {
-	if ((DspStart + nrdisplayed) < length) {
-	    TmpStyleOn(prompting ? s_prompt_edit_arr : s_aedit_arr);
-#ifndef SUPPORT_MULTIBYTE_EDIT
-	    LYmove(edit->sy, edit->sx + nrdisplayed - 1);
-#else
-	    LYmove(edit->sy, edit->sx + glnrdisplayed - 1);
-#endif
-	    LYaddch(ACS_RARROW);
-	    TmpStyleOff(prompting ? s_prompt_edit_arr : s_aedit_arr);
-	}
-	if (DspStart) {
-	    TmpStyleOn(prompting ? s_prompt_edit_arr : s_aedit_arr);
-	    LYmove(edit->sy, edit->sx);
-	    LYaddch(ACS_LARROW);
-	    TmpStyleOff(prompting ? s_prompt_edit_arr : s_aedit_arr);
-	}
+    if (PanOn && dpy_bytes && rgt_shift) {
+	CTRACE((tfp, "Draw right-scroller offset (%d + %d)\n",
+		dpy_cells, lft_shift));
+	TmpStyleOn(prompting ? s_prompt_edit_arr : s_aedit_arr);
+	LYmove(StartY, StartX + dpy_cells + lft_shift);
+	LYaddch(ACS_RARROW);
+	TmpStyleOff(prompting ? s_prompt_edit_arr : s_aedit_arr);
     }
-#ifndef SUPPORT_MULTIBYTE_EDIT
-    LYmove(edit->sy, edit->sx + Pos - DspStart);
-#else
-    LYmove(edit->sy, edit->sx + glPos - glDspStart);
-#endif
+
+    /*
+     * Finally, move the cursor to the point where the next edit will occur.
+     */
+    LYmove(StartY, edit->offset2col[Pos - DspStart]);
 
 #ifdef USE_COLOR_STYLE
     if (estyle != NOSTYLE)
@@ -3885,9 +4062,9 @@ int LYhandlePopupList(int cur_choice,
 		      int width,
 		      int i_length,
 		      int disabled,
-		      BOOLEAN for_mouse,
-		      BOOLEAN numbered)
+		      BOOLEAN for_mouse)
 {
+    BOOLEAN numbered = (keypad_mode != NUMBERS_AS_ARROWS);
     int c = 0, cmd = 0, i = 0, j = 0, rel = 0;
     int orig_choice;
     WINDOW *form_window;
@@ -4929,8 +5106,7 @@ int LYgetstr(char *inputline,
 						   -1,
 						   -1,
 						   FALSE,
-						   FALSE,
-						   TRUE);
+						   FALSE);
 		    if (cur_choice >= 0) {
 			if (recall == RECALL_CMD)
 			    _statusline(": ");
@@ -4953,7 +5129,7 @@ int LYgetstr(char *inputline,
 	     * LYE_ENTER.
 	     */
 	    if (ch != '\t' &&
-		(HTCJK != NOCJK ||
+		(IS_CJK_TTY ||
 		 LYlowest_eightbit[current_char_set] <= 0x97)) {
 		LYLineEdit(&MyEdit, ch, FALSE);
 		break;
@@ -5062,7 +5238,7 @@ int LYgetstr(char *inputline,
 	    LYLineEdit(&MyEdit, ch, FALSE);
 #else /* SUPPORT_MULTIBYTE_EDIT */
 	    if (LYLineEdit(&MyEdit, ch, FALSE) == 0) {
-		if (refresh_mb && HTCJK != NOCJK && (0x81 <= ch) && (ch <= 0xfe))
+		if (refresh_mb && IS_CJK_TTY && (0x81 <= ch) && (ch <= 0xfe))
 		    refresh_mb = FALSE;
 		else
 		    refresh_mb = TRUE;
@@ -5294,7 +5470,7 @@ const char *LYno_attr_mbcs_case_strstr(const char *chptr,
      * Seek a first target match.  - FM
      */
     for (; *chptr != '\0'; chptr++) {
-	if ((!utf_flag && HTCJK != NOCJK && is8bits(*chptr) &&
+	if ((!utf_flag && IS_CJK_TTY && is8bits(*chptr) &&
 	     *chptr == *tarptr &&
 	     IsNormalChar(*(chptr + 1))) ||
 	    (0 == UPPER8(*chptr, *tarptr))) {
@@ -5319,7 +5495,7 @@ const char *LYno_attr_mbcs_case_strstr(const char *chptr,
 		    *nendp = len;
 		return (chptr);
 	    }
-	    if (!utf_flag && HTCJK != NOCJK && is8bits(*chptr) &&
+	    if (!utf_flag && IS_CJK_TTY && is8bits(*chptr) &&
 		*chptr == *tarptr &&
 		IsNormalChar(*tmpchptr)) {
 		/*
@@ -5359,7 +5535,7 @@ const char *LYno_attr_mbcs_case_strstr(const char *chptr,
 	     */
 	    while (1) {
 		if (!IsSpecialAttrChar(*tmpchptr)) {
-		    if (!utf_flag && HTCJK != NOCJK && is8bits(*tmpchptr)) {
+		    if (!utf_flag && IS_CJK_TTY && is8bits(*tmpchptr)) {
 			if (*tmpchptr == *tmptarptr &&
 			    *(tmpchptr + 1) == *(tmptarptr + 1) &&
 			    !IsSpecialAttrChar(*(tmpchptr + 1))) {
@@ -5396,7 +5572,7 @@ const char *LYno_attr_mbcs_case_strstr(const char *chptr,
 	    }
 	} else if (!(IS_UTF_EXTRA(*chptr) ||
 		     IsSpecialAttrChar(*chptr))) {
-	    if (!utf_flag && HTCJK != NOCJK && is8bits(*chptr) &&
+	    if (!utf_flag && IS_CJK_TTY && is8bits(*chptr) &&
 		IsNormalChar(*(chptr + 1))) {
 		chptr++;
 		if (count_gcells)
@@ -5479,7 +5655,7 @@ const char *LYno_attr_mbcs_strstr(const char *chptr,
 		    *nendp = len;
 		return (chptr);
 	    }
-	    if (!utf_flag && HTCJK != NOCJK && is8bits(*chptr) &&
+	    if (!utf_flag && IS_CJK_TTY && is8bits(*chptr) &&
 		IsNormalChar(*tmpchptr)) {
 		/*
 		 * Check the CJK multibyte.  - FM
@@ -5518,7 +5694,7 @@ const char *LYno_attr_mbcs_strstr(const char *chptr,
 	     */
 	    while (1) {
 		if (!IsSpecialAttrChar(*tmpchptr)) {
-		    if (!utf_flag && HTCJK != NOCJK && is8bits(*tmpchptr)) {
+		    if (!utf_flag && IS_CJK_TTY && is8bits(*tmpchptr)) {
 			if (*tmpchptr == *tmptarptr &&
 			    *(tmpchptr + 1) == *(tmptarptr + 1) &&
 			    !IsSpecialAttrChar(*(tmpchptr + 1))) {
@@ -5554,7 +5730,7 @@ const char *LYno_attr_mbcs_strstr(const char *chptr,
 	    }
 	} else if (!(IS_UTF_EXTRA(*chptr) ||
 		     IsSpecialAttrChar(*chptr))) {
-	    if (!utf_flag && HTCJK != NOCJK && is8bits(*chptr) &&
+	    if (!utf_flag && IS_CJK_TTY && is8bits(*chptr) &&
 		IsNormalChar(*(chptr + 1))) {
 		chptr++;
 		if (count_gcells)

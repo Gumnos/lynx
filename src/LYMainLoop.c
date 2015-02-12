@@ -1,4 +1,6 @@
-/* $LynxId: LYMainLoop.c,v 1.150 2008/02/17 19:14:40 Paul.B.Mahol Exp $ */
+/*
+ * $LynxId: LYMainLoop.c,v 1.153 2008/09/17 22:52:58 tom Exp $
+ */
 #include <HTUtils.h>
 #include <HTAccess.h>
 #include <HTParse.h>
@@ -47,6 +49,10 @@
 #ifdef KANJI_CODE_OVERRIDE
 #include <HTCJK.h>
 #endif
+
+#define LinkIsTextarea(linkNumber) \
+		(links[linkNumber].type == WWW_FORM_LINK_TYPE && \
+		 links[linkNumber].l_form->type == F_TEXTAREA_TYPE)
 
 #ifdef KANJI_CODE_OVERRIDE
 char *str_kcode(HTkcode code)
@@ -2178,7 +2184,7 @@ static int handle_LYK_DOWNLOAD(int *cmd,
 	    newdoc.isHEAD = HDOC(number).isHEAD;
 	    newdoc.safe = HDOC(number).safe;
 	    newdoc.internal_link = FALSE;
-	    newdoc.link = 0;
+	    newdoc.link = (user_mode == NOVICE_MODE) ? 1 : 0;
 	    HTOutputFormat = HTAtom_for("www/download");
 	    LYUserSpecifiedURL = TRUE;
 	    /*
@@ -2252,7 +2258,7 @@ static int handle_LYK_DOWNLOAD(int *cmd,
 		newdoc.safe = FALSE;
 	    }
 	    newdoc.internal_link = FALSE;
-	    newdoc.link = 0;
+	    newdoc.link = (user_mode == NOVICE_MODE) ? 1 : 0;
 	    HTOutputFormat = HTAtom_for("www/download");
 	    /*
 	     * Force the document to be reloaded.
@@ -2342,8 +2348,7 @@ static int handle_LYK_DWIMEDIT(int *cmd,
      * rather than attempting to edit the html source document.  KED
      */
     if (nlinks > 0 &&
-	links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-	links[curdoc.link].l_form->type == F_TEXTAREA_TYPE) {
+	LinkIsTextarea(curdoc.link)) {
 	*cmd = LYK_EDIT_TEXTAREA;
 	return 2;
     }
@@ -2566,8 +2571,7 @@ static void handle_LYK_EDIT_TEXTAREA(BOOLEAN *refresh_screen,
     /*
      * See if the current link is in a form TEXTAREA.
      */
-    else if (links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-	     links[curdoc.link].l_form->type == F_TEXTAREA_TYPE) {
+    else if (LinkIsTextarea(curdoc.link)) {
 
 	/* stop screen */
 	stop_curses();
@@ -2722,32 +2726,27 @@ static BOOLEAN handle_LYK_FASTBACKW_LINK(int *cmd,
 	 * If in textarea, move to first link or textarea group before it if
 	 * there is one on this screen.  - kw
 	 */
-	if (links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-	    links[curdoc.link].l_form->type == F_TEXTAREA_TYPE) {
+	if (LinkIsTextarea(curdoc.link)) {
 	    int thisgroup = links[curdoc.link].l_form->number;
 	    char *thisname = links[curdoc.link].l_form->name;
 
 	    if (curdoc.link > 0 &&
-		!(links[0].type == WWW_FORM_LINK_TYPE &&
-		  links[0].l_form->type == F_TEXTAREA_TYPE &&
+		!(LinkIsTextarea(0) &&
 		  links[0].l_form->number == thisgroup &&
 		  sametext(links[0].l_form->name, thisname))) {
 		do
 		    nextlink--;
 		while
-		    (links[nextlink].type == WWW_FORM_LINK_TYPE &&
-		     links[nextlink].l_form->type == F_TEXTAREA_TYPE &&
+		    (LinkIsTextarea(nextlink) &&
 		     links[nextlink].l_form->number == thisgroup &&
 		     sametext(links[nextlink].l_form->name, thisname));
 		samepage = 1;
 
 	    } else if (!more_text && LYGetNewline() == 1 &&
-		       (links[0].type == WWW_FORM_LINK_TYPE &&
-			links[0].l_form->type == F_TEXTAREA_TYPE &&
+		       (LinkIsTextarea(0) &&
 			links[0].l_form->number == thisgroup &&
 			sametext(links[0].l_form->name, thisname)) &&
-		       !(links[nlinks - 1].type == WWW_FORM_LINK_TYPE &&
-			 links[nlinks - 1].l_form->type == F_TEXTAREA_TYPE &&
+		       !(LinkIsTextarea(nlinks - 1) &&
 			 links[nlinks - 1].l_form->number == thisgroup &&
 			 sametext(links[nlinks - 1].l_form->name, thisname))) {
 		nextlink = nlinks - 1;
@@ -2773,21 +2772,18 @@ static BOOLEAN handle_LYK_FASTBACKW_LINK(int *cmd,
 	 * - kw
 	 */
 	if (nextlink > 0 &&
-	    links[nextlink].type == WWW_FORM_LINK_TYPE &&
-	    links[nextlink].l_form->type == F_TEXTAREA_TYPE) {
+	    LinkIsTextarea(nextlink)) {
 	    int thisgroup = links[nextlink].l_form->number;
 	    char *thisname = links[nextlink].l_form->name;
 
-	    if (links[0].type == WWW_FORM_LINK_TYPE &&
-		links[0].l_form->type == F_TEXTAREA_TYPE &&
+	    if (LinkIsTextarea(0) &&
 		links[0].l_form->number == thisgroup &&
 		sametext(links[0].l_form->name, thisname)) {
 		nextlink = 0;
 	    } else
 		while
 		    (nextlink > 1 &&
-		     links[nextlink - 1].type == WWW_FORM_LINK_TYPE &&
-		     links[nextlink - 1].l_form->type == F_TEXTAREA_TYPE &&
+		     LinkIsTextarea(nextlink - 1) &&
 		     links[nextlink - 1].l_form->number == thisgroup &&
 		     sametext(links[nextlink - 1].l_form->name, thisname)) {
 		    nextlink--;
@@ -2829,21 +2825,18 @@ static void handle_LYK_FASTFORW_LINK(int *old_c,
 	 * If in textarea, move to first link or field after it if there is one
 	 * on this screen.  - kw
 	 */
-	if (links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-	    links[curdoc.link].l_form->type == F_TEXTAREA_TYPE) {
+	if (LinkIsTextarea(curdoc.link)) {
 	    int thisgroup = links[curdoc.link].l_form->number;
 	    char *thisname = links[curdoc.link].l_form->name;
 
 	    if (curdoc.link < nlinks - 1 &&
-		!(links[nlinks - 1].type == WWW_FORM_LINK_TYPE &&
-		  links[nlinks - 1].l_form->type == F_TEXTAREA_TYPE &&
+		!(LinkIsTextarea(nlinks - 1) &&
 		  links[nlinks - 1].l_form->number == thisgroup &&
 		  sametext(links[nlinks - 1].l_form->name, thisname))) {
 		do
 		    nextlink++;
 		while
-		    (links[nextlink].type == WWW_FORM_LINK_TYPE &&
-		     links[nextlink].l_form->type == F_TEXTAREA_TYPE &&
+		    (LinkIsTextarea(nextlink) &&
 		     links[nextlink].l_form->number == thisgroup &&
 		     sametext(links[nextlink].l_form->name, thisname));
 		samepage = 1;
@@ -2953,8 +2946,7 @@ static void handle_LYK_GROW_TEXTAREA(BOOLEAN *refresh_screen)
     /*
      * See if the current link is in a form TEXTAREA.
      */
-    if (links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-	links[curdoc.link].l_form->type == F_TEXTAREA_TYPE) {
+    if (LinkIsTextarea(curdoc.link)) {
 
 	HText_ExpandTextarea(&links[curdoc.link], TEXTAREA_EXPAND_SIZE);
 
@@ -3367,8 +3359,7 @@ static void handle_LYK_INSERT_FILE(BOOLEAN *refresh_screen,
     /*
      * See if the current link is in a form TEXTAREA.
      */
-    if (links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-	links[curdoc.link].l_form->type == F_TEXTAREA_TYPE) {
+    if (LinkIsTextarea(curdoc.link)) {
 
 	/*
 	 * Reject attempts to use this for gaining access to local files when
@@ -3862,8 +3853,7 @@ static void handle_LYK_NEXT_LINK(int c,
 	/*
 	 * Move to different textarea if TAB in textarea.
 	 */
-	if (links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-	    links[curdoc.link].l_form->type == F_TEXTAREA_TYPE &&
+	if (LinkIsTextarea(curdoc.link) &&
 	    c == '\t') {
 	    int thisgroup = links[curdoc.link].l_form->number;
 	    char *thisname = links[curdoc.link].l_form->name;
@@ -3871,8 +3861,7 @@ static void handle_LYK_NEXT_LINK(int c,
 	    do
 		curdoc.link++;
 	    while ((curdoc.link < nlinks - 1) &&
-		   links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-		   links[curdoc.link].l_form->type == F_TEXTAREA_TYPE &&
+		   LinkIsTextarea(curdoc.link) &&
 		   links[curdoc.link].l_form->number == thisgroup &&
 		   sametext(links[curdoc.link].l_form->name, thisname));
 	} else {
@@ -6604,8 +6593,7 @@ int mainloop(void)
 			c = DO_NOTHING;
 		    }
 #ifdef TEXTFIELDS_MAY_NEED_ACTIVATION
-		} else if ((links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-			    links[curdoc.link].l_form->type == F_TEXTAREA_TYPE)
+		} else if (LinkIsTextarea(curdoc.link)
 			   && textfields_need_activation
 			   && !links[curdoc.link].l_form->disabled
 			   && peek_mouse_link() < 0 &&
@@ -6616,8 +6604,7 @@ int mainloop(void)
 			      LKC_TO_LAC(keymap, real_c) == LYK_LPOS_NEXT_LINK ||
 			      LKC_TO_LAC(keymap, real_c) == LYK_DOWN_LINK) &&
 			     ((curdoc.link < nlinks - 1 &&
-			       links[curdoc.link + 1].type == WWW_FORM_LINK_TYPE
-			       && links[curdoc.link + 1].l_form->type == F_TEXTAREA_TYPE
+			       LinkIsTextarea(curdoc.link + 1)
 			       && (links[curdoc.link].l_form->number ==
 				   links[curdoc.link + 1].l_form->number)
 			       && strcmp(links[curdoc.link].l_form->name,
@@ -6629,8 +6616,7 @@ int mainloop(void)
 			      LKC_TO_LAC(keymap, real_c) == LYK_LPOS_PREV_LINK ||
 			      LKC_TO_LAC(keymap, real_c) == LYK_UP_LINK) &&
 			     ((curdoc.link > 0 &&
-			       links[curdoc.link - 1].type == WWW_FORM_LINK_TYPE
-			       && links[curdoc.link - 1].l_form->type == F_TEXTAREA_TYPE
+			       LinkIsTextarea(curdoc.link - 1)
 			       && (links[curdoc.link].l_form->number ==
 				   links[curdoc.link - 1].l_form->number) &&
 			       strcmp(links[curdoc.link].l_form->name,
@@ -6664,19 +6650,16 @@ int mainloop(void)
 			 * "readability" (such as it is).  Caveat emptor to
 			 * anyone trying to change it.]
 			 */
-			if ((links[curdoc.link].type == WWW_FORM_LINK_TYPE &&
-			     links[curdoc.link].l_form->type == F_TEXTAREA_TYPE)
+			if (LinkIsTextarea(curdoc.link)
 			    && ((curdoc.link == nlinks - 1 &&
 				 !(more_text &&
 				   HText_TAHasMoreLines(curdoc.link, 1)))
 				||
 				((curdoc.link < nlinks - 1) &&
-				 !(links[curdoc.link + 1].type == WWW_FORM_LINK_TYPE
-				   && links[curdoc.link + 1].l_form->type == F_TEXTAREA_TYPE))
+				 !LinkIsTextarea(curdoc.link + 1))
 				||
 				((curdoc.link < nlinks - 1) &&
-				 ((links[curdoc.link + 1].type == WWW_FORM_LINK_TYPE
-				   && links[curdoc.link + 1].l_form->type == F_TEXTAREA_TYPE)
+				 (LinkIsTextarea(curdoc.link + 1)
 				  && ((links[curdoc.link].l_form->number !=
 				       links[curdoc.link + 1].l_form->number) ||
 				      (strcmp(links[curdoc.link].l_form->name,

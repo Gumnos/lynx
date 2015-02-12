@@ -1,5 +1,5 @@
 /*
- * $LynxId: GridText.c,v 1.144 2008/02/11 00:07:05 Paul.B.Mahol Exp $
+ * $LynxId: GridText.c,v 1.156 2008/09/21 19:48:41 tom Exp $
  *
  *		Character grid hypertext object
  *		===============================
@@ -57,9 +57,9 @@
 #include <LYJustify.h>
 
 #ifdef CONV_JISX0201KANA_JISX0208KANA
-#define is_CJK2(b) (HTCJK != NOCJK && is8bits(UCH(b)))
+#define is_CJK2(b) (IS_CJK_TTY && is8bits(UCH(b)))
 #else
-#define is_CJK2(b) (HTCJK != NOCJK && is8bits(UCH(b)) && kanji_code != SJIS)
+#define is_CJK2(b) (IS_CJK_TTY && is8bits(UCH(b)) && kanji_code != SJIS)
 #endif
 
 #ifdef USE_CURSES_PADS
@@ -569,7 +569,7 @@ void mark_justify_start_position(void *text)
 #define REALLY_CAN_JUSTIFY(text) ( (wait_for_this_stacked_elt<0) && \
 	( text->style->alignment == HT_LEFT     || \
 	  text->style->alignment == HT_JUSTIFY) && \
-	HTCJK == NOCJK && !in_DT && \
+	!IS_CJK_TTY && !in_DT && \
 	can_justify_here && can_justify_this_line && !form_in_htext )
 
 #endif /* EXP_JUSTIFY_ELTS */
@@ -1010,7 +1010,7 @@ HText *HText_new(HTParentAnchor *anchor)
     if (HTMainText) {
 	if (HText_hasUTF8OutputSet(HTMainText) &&
 	    HTLoadedDocumentEightbit() &&
-	    LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8) {
+	    IS_UTF8_TTY) {
 	    self->had_utf8 = HTMainText->has_utf8;
 	} else {
 	    self->had_utf8 = HTMainText->has_utf8;
@@ -1719,7 +1719,7 @@ static void display_title(HText *text)
      * if appropriate, preceded by the toolbar token if appropriate,
      * and truncated if necessary.  -FM & KW
      */
-    if (HTCJK != NOCJK) {
+    if (IS_CJK_TTY) {
 	if (*title &&
 	    (tmp = typecallocn(unsigned char, (strlen(title) * 2 + 256)))) {
 	    if (kanji_code == EUC) {
@@ -2202,7 +2202,7 @@ static void display_page(HText *text,
 			    tmp[1] = '\0';
 			    written += (utf_extra + 1);
 			    utf_extra = 0;
-			} else if (HTCJK != NOCJK && is8bits(tmp[0])) {
+			} else if (IS_CJK_TTY && is8bits(tmp[0])) {
 			    /*
 			     * For CJK strings, by Masanobu Kimura.
 			     */
@@ -2389,9 +2389,8 @@ static void display_page(HText *text,
 				? checked_box
 				: unchecked_box);
 		} else if (FormInfo_ptr->type == F_PASSWORD_TYPE) {
-		    /* FIXME: use LYstrExtent, not strlen */
 		    LYSetHilite(nlinks,
-				STARS(strlen(FormInfo_ptr->value)));
+				STARS(LYstrCells(FormInfo_ptr->value)));
 		} else {	/* TEXT type */
 		    LYSetHilite(nlinks,
 				FormInfo_ptr->value);
@@ -2475,7 +2474,7 @@ static void display_page(HText *text,
 	 */
 	text->had_utf8 = text->has_utf8;
 	clearok(curscr, TRUE);
-    } else if (HTCJK != NOCJK) {
+    } else if (IS_CJK_TTY) {
 	/*
 	 * For non-multibyte curses.
 	 *
@@ -2754,15 +2753,20 @@ static HTLine *insert_blanks_in_line(HTLine *line, int line_number,
 }
 
 #if defined(USE_COLOR_STYLE)
+/*
+ * Found an OFF change not part of an adjacent matched pair.
+ *
+ * Walk backward looking for the corresponding ON change.
+ * Move everything after split_pos to be at split_pos.
+ *
+ * This can only work correctly if all changes are correctly nested!  If this
+ * fails, assume it is safer to leave whatever comes before the OFF on the
+ * previous line alone.
+ */
 static HTStyleChange *skip_matched_and_correct_offsets(HTStyleChange *end,
 						       HTStyleChange *start,
 						       unsigned split_pos)
-{				/* Found an OFF change not part of an adjacent matched pair.
-				 * Walk backward looking for the corresponding ON change.
-				 * Move everything after split_pos to be at split_pos.
-				 * This can only work correctly if all changes are correctly
-				 * nested!  If this fails, assume it is safer to leave whatever
-				 * comes before the OFF on the previous line alone. */
+{
     int level = 0;
     HTStyleChange *tmp = end;
 
@@ -3750,7 +3754,7 @@ void HText_appendCharacter(HText *text, int ch)
     /*
      * Make sure we don't hang on escape sequences.
      */
-    if (ch == CH_ESC && HTCJK == NOCJK) {	/* decimal 27  S/390 -- gil -- 1504 */
+    if (ch == CH_ESC && !IS_CJK_TTY) {	/* decimal 27  S/390 -- gil -- 1504 */
 	return;
     }
 #ifndef USE_SLANG
@@ -3763,14 +3767,14 @@ void HText_appendCharacter(HText *text, int ch)
      * processing stage anyway.  - kw
      */
 #ifndef   EBCDIC		/* S/390 -- gil -- 1514 */
-    if (is8bits(ch) && HTCJK == NOCJK &&
+    if (is8bits(ch) && !IS_CJK_TTY &&
 	!text->T.transp && !text->T.output_utf8 &&
 	UCH(ch) < LYlowest_eightbit[current_char_set]) {
 	return;
     }
 #endif /* EBCDIC */
 #endif /* !USE_SLANG */
-    if (UCH(ch) == 155 && HTCJK == NOCJK) {	/* octal 233 */
+    if (UCH(ch) == 155 && !IS_CJK_TTY) {	/* octal 233 */
 	if (!HTPassHighCtrlRaw &&
 	    !text->T.transp && !text->T.output_utf8 &&
 	    (155 < LYlowest_eightbit[current_char_set])) {
@@ -3783,7 +3787,7 @@ void HText_appendCharacter(HText *text, int ch)
 
     indent = text->in_line_1 ? (int) style->indent1st : (int) style->leftIndent;
 
-    if (HTCJK != NOCJK) {
+    if (IS_CJK_TTY) {
 	switch (text->state) {
 	case S_text:
 	    if (ch == CH_ESC) {	/* S/390 -- gil -- 1536 */
@@ -3955,7 +3959,7 @@ void HText_appendCharacter(HText *text, int ch)
 	return;
     }
 #ifdef CJK_EX			/* MOJI-BAKE Fix! 1997/10/12 -- 10/31 (Fri) 00:22:57 - JH7AYN */
-    if (HTCJK != NOCJK &&	/* added condition - kw */
+    if (IS_CJK_TTY &&		/* added condition - kw */
 	(ch == LY_BOLD_START_CHAR || ch == LY_BOLD_END_CHAR)) {
 	text->permissible_split = (int) line->size;	/* Can split here */
 	if (HTCJK == JAPANESE)
@@ -3969,7 +3973,7 @@ void HText_appendCharacter(HText *text, int ch)
 	    return;
 	}
 #if defined(USE_COLOR_STYLE) && !defined(NO_DUMP_WITH_BACKSPACES)
-	if (with_backspaces && HTCJK == NOCJK && !text->T.output_utf8) {
+	if (with_backspaces && !IS_CJK_TTY && !text->T.output_utf8) {
 #endif
 	    if (ch == LY_UNDERLINE_START_CHAR) {
 		line->data[line->size++] = LY_UNDERLINE_START_CHAR;
@@ -4229,7 +4233,7 @@ void HText_appendCharacter(HText *text, int ch)
 	int target_cu = target + UTFXTRA_ON_THIS_LINE;
 
 	if (target >= WRAP_COLS(text) - style->rightIndent -
-	    (((HTCJK != NOCJK) && text->kanji_buf) ? 1 : 0) ||
+	    ((IS_CJK_TTY && text->kanji_buf) ? 1 : 0) ||
 	    (text->T.output_utf8 &&
 	     target_cu + UTF_XLEN(ch) >= LYcols_cu(text))) {
 	    int saved_kanji_buf;
@@ -4301,7 +4305,7 @@ void HText_appendCharacter(HText *text, int ch)
     if ((actual
 	 + (int) style->rightIndent
 	 - ctrl_chars_on_this_line
-	 + (((HTCJK != NOCJK) && text->kanji_buf) ? 1 : 0)
+	 + ((IS_CJK_TTY && text->kanji_buf) ? 1 : 0)
 	) >= WRAP_COLS(text)
 	|| (text->T.output_utf8
 	    && ((actual
@@ -4380,7 +4384,7 @@ void HText_appendCharacter(HText *text, int ch)
 
 	line = text->last_line;	/* May have changed */
 
-	if (HTCJK != NOCJK && text->kanji_buf) {
+	if (IS_CJK_TTY && text->kanji_buf) {
 	    hi = UCH(text->kanji_buf);
 	    lo = UCH(ch);
 
@@ -4473,7 +4477,7 @@ void HText_appendCharacter(HText *text, int ch)
 	    line->data[line->size++] = ch;
 	}
 #endif
-	else if (HTCJK != NOCJK) {
+	else if (IS_CJK_TTY) {
 	    line->data[line->size++] = (char) ((kanji_code != NOKANJI) ?
 					       ch :
 					       (font & HT_CAPITALS) ?
@@ -4897,7 +4901,7 @@ static void free_enclosed_stbl(HText *me)
 	STable_info *stbl;
 
 	while (NULL != (stbl = (STable_info *) HTList_nextObject(list))) {
-	    CTRACE((tfp, "endStblTABLE: finally free %p\n", me->stbl));
+	    CTRACE((tfp, "endStblTABLE: finally free %p\n", (void *) me->stbl));
 	    Stbl_free(stbl);
 	}
 	HTList_delete(me->enclosed_stbl);
@@ -4948,7 +4952,7 @@ int HText_endStblTABLE(HText *me)
 	    if (me->enclosed_stbl == NULL)
 		me->enclosed_stbl = HTList_new();
 	    HTList_addObject(me->enclosed_stbl, me->stbl);
-	    CTRACE((tfp, "endStblTABLE: postpone free %p\n", me->stbl));
+	    CTRACE((tfp, "endStblTABLE: postpone free %p\n", (void *) me->stbl));
 	}
 	me->stbl = enclosing;
     } else {
@@ -4961,7 +4965,7 @@ int HText_endStblTABLE(HText *me)
 #endif
 
     CTRACE((tfp, "endStblTABLE: have%s enclosing table (%p)\n",
-	    enclosing == 0 ? " NO" : "", enclosing));
+	    enclosing == 0 ? " NO" : "", (void *) enclosing));
 
     return enclosing != 0;
 }
@@ -6167,7 +6171,7 @@ int HTGetRelLinkNum(int num,
     int curanchor = links[cur].anchor_number;
 
     CTRACE((tfp, "HTGetRelLinkNum(%d,%d,%d) -- HTMainText=%p\n",
-	    num, rel, cur, HTMainText));
+	    num, rel, cur, (void *) HTMainText));
     CTRACE((tfp,
 	    "  scrtop=%d, curline=%d, curanchor=%d, display_lines=%d, %s\n",
 	    scrtop, curline, curanchor, display_lines,
@@ -6200,7 +6204,7 @@ int HTGetRelLinkNum(int num,
 	l = a;
 	curanchor = l->number;
     }
-    CTRACE((tfp, "  a=%p, l=%p, curanchor=%d\n", a, l, curanchor));
+    CTRACE((tfp, "  a=%p, l=%p, curanchor=%d\n", (void *) a, (void *) l, curanchor));
     if (on_screen) {		/* on screen but not a numbered link */
 	for (; a; a = a->next) {
 	    if (a->number) {
@@ -7336,7 +7340,7 @@ BOOL HText_select(HText *text)
 	if (HTMainText) {
 	    if (HText_hasUTF8OutputSet(HTMainText) &&
 		HTLoadedDocumentEightbit() &&
-		LYCharSet_UC[current_char_set].enc == UCT_ENC_UTF8) {
+		IS_UTF8_TTY) {
 		text->had_utf8 = HTMainText->has_utf8;
 	    } else {
 		text->had_utf8 = NO;
@@ -7846,27 +7850,30 @@ static void write_hyphen(FILE *fp)
 static int TrimmedLength(char *string)
 {
     int result = strlen(string);
-    int adjust = result;
-    unsigned ch;
 
-    while (adjust > 0) {
-	ch = UCH(string[adjust - 1]);
-	if (isspace(ch) || IsSpecialAttrChar(ch)) {
-	    --adjust;
-	} else {
-	    break;
-	}
-    }
-    if (result != adjust) {
-	char *dst = string + adjust;
-	char *src = dst;
+    if (!HTisDocumentSource()) {
+	int adjust = result;
+	unsigned ch;
 
-	for (;;) {
-	    src = LYSkipBlanks(src);
-	    if ((*dst++ = *src++) == '\0')
+	while (adjust > 0) {
+	    ch = UCH(string[adjust - 1]);
+	    if (isspace(ch) || IsSpecialAttrChar(ch)) {
+		--adjust;
+	    } else {
 		break;
+	    }
 	}
-	result = (dst - string - 1);
+	if (result != adjust) {
+	    char *dst = string + adjust;
+	    char *src = dst;
+
+	    for (;;) {
+		src = LYSkipBlanks(src);
+		if ((*dst++ = *src++) == '\0')
+		    break;
+	    }
+	    result = (dst - string - 1);
+	}
     }
     return result;
 }
@@ -7894,7 +7901,7 @@ void print_wwwfile_to_fd(FILE *fp,
     BOOL bs = (BOOL) (!is_email && !is_reply
 		      && text != 0
 		      && with_backspaces
-		      && HTCJK == NOCJK
+		      && !IS_CJK_TTY
 		      && !text->T.output_utf8);
 #endif
 
@@ -9558,7 +9565,7 @@ char *HText_setLastOptionValue(HText *text, char *value,
 	    }
 	}
 	cp[j] = '\0';
-	if (HTCJK != NOCJK) {
+	if (IS_CJK_TTY) {
 	    if (cp &&
 		(tmp = typecallocn(unsigned char, strlen(cp) * 2 + 1)) != 0) {
 		if (tmp == NULL)
@@ -9699,7 +9706,7 @@ int HText_beginInput(HText *text, BOOL underline,
     int MaximumSize;
     char marker[16];
 
-    CTRACE((tfp, "GridText: Entering HText_beginInput\n"));
+    CTRACE((tfp, "GridText: Entering HText_beginInput type=%s\n", NonNull(I->type)));
 
     POOLtypecalloc(TextAnchor, a);
 
@@ -9763,7 +9770,7 @@ int HText_beginInput(HText *text, BOOL underline,
 
     f->select_list = 0;
     f->number = HTFormNumber;
-    f->disabled = HTFormDisabled;
+    f->disabled = HTFormDisabled || I->disabled;
     f->no_cache = NO;
 
     HTFormFields++;
@@ -9780,7 +9787,7 @@ int HText_beginInput(HText *text, BOOL underline,
     if (I->value)
 	StrAllocCopy(IValue, I->value);
     if (IValue &&
-	HTCJK != NOCJK &&
+	IS_CJK_TTY &&
 	((I->type == NULL) || strcasecomp(I->type, "hidden"))) {
 	if ((tmp = typecallocn(unsigned char, strlen(IValue) * 2 + 1)) != 0) {
 	    if (kanji_code == EUC) {
@@ -11216,7 +11223,7 @@ int HText_SubmitForm(FormInfo * submit_item, DocInfo *doc, char *link_name,
 			NonNull(my_data[anchor_count].name),
 			my_data[anchor_count].first,
 			NonNull(my_data[anchor_count].value),
-			my_data[anchor_count].data));
+			(void *) my_data[anchor_count].data));
 
 		if (my_data[anchor_count].first) {
 		    if (first_one) {
@@ -11833,7 +11840,7 @@ void HText_setKcode(HText *text, const char *charset,
 	 * it is enabled.  But only if we are quite sure.  -FM & kw
 	 */
 	text->kcode = NOKANJI;
-	if (HTCJK != NOCJK) {
+	if (IS_CJK_TTY) {
 	    if (!p_in || ((p_in->enc != UCT_ENC_CJK)
 #ifdef EXP_JAPANESEUTF8_SUPPORT
 			  && (p_in->enc != UCT_ENC_UTF8)
@@ -11986,102 +11993,6 @@ BOOL HText_AreDifferent(HTParentAnchor *anchor,
 
 #define CanTrimTextArea(c) \
     (LYtrimInputFields ? isspace(c) : ((c) == '\r' || (c) == '\n'))
-
-/*
- * Cleanup new lines coming into a TEXTAREA from an external editor, or a
- * file, such that they are in a suitable format for TEXTAREA rendering,
- * display, and manipulation.  That means trimming off trailing whitespace
- * from the line, expanding TABS into SPACES, and substituting a printable
- * character for control chars, and the like.
- *
- * --KED 02/24/99
- */
-static void cleanup_line_for_textarea(char *line,
-				      int len)
-{
-    char tbuf[MAX_LINE];
-
-    char *cp;
-    char *p;
-    char *s;
-    int i;
-    int n;
-
-    /*
-     * Whack off trailing whitespace from the line.
-     */
-    for (i = len, p = line + (len - 1); i != 0; p--, i--) {
-	if (CanTrimTextArea(UCH(*p)))
-	    *p = '\0';
-	else
-	    break;
-    }
-
-    if (strlen(line) != 0) {
-	/*
-	 * Expand any tab's, since they won't render properly in a TEXTAREA.
-	 *
-	 * [Is that "by spec", or just a "lynxism"?  As may be, it seems that
-	 * such chars may cause other problems, too ...  with cursor movement,
-	 * submit'ing, etc.  Probably needs looking into more deeply.]
-	 */
-	p = line;
-	s = tbuf;
-
-	while (*p) {
-	    if ((cp = strchr(p, '\t')) != 0) {
-		i = cp - p;
-		s = (strncpy(s, p, i)) + i;
-		n = TABSTOP - (i % TABSTOP);
-		s = (strncpy(s, SPACES, n)) + n;
-		p += (i + 1);
-
-	    } else {
-
-		strcpy(s, p);
-		break;
-	    }
-	}
-
-	/*
-	 * Replace control chars with something printable.  Note that char
-	 * substitution above 0x7f is dependent on the charset being used,
-	 * and then only applies to the contiguous run of char values that
-	 * are between 0x80, and the 1st real high-order-bit-set character,
-	 * as specified by the charset.  In general (ie, for many character
-	 * sets), that usually means the so-called "C1 control chars" that
-	 * range from 0x80 thru 0x9f.  For EBCDIC machines, we only trim the
-	 * (control) chars below a space (x'40').
-	 *
-	 * The assumption in all this is that the charset used in the editor,
-	 * is compatible with the charset specified in lynx.
-	 *
-	 * [At some point in time, when/if lynx ever supports multibyte chars
-	 * internally (eg, UCS-2, UCS-4, UTF-16, etc), this kind of thing may
-	 * well cause problems.  But then, supporting such char sets will
-	 * require massive changes in (most) all parts of the lynx code, so
-	 * until then, we do the rational thing with char values that would
-	 * otherwise foul the display, if left alone.  If you're implementing
-	 * multibyte character set support, consider yourself to have been
-	 * warned.]
-	 */
-	for (p = line, s = tbuf; *s != '\0'; p++, s++) {
-#ifndef EBCDIC
-	    *p = ((UCH(*s) < UCH(' ')) ||
-		  (UCH(*s) == UCH('\177')) ||
-		  ((UCH(*s) > UCH('\177')) &&
-		   (UCH(*s) <
-		    UCH(LYlowest_eightbit[current_char_set]))))
-		? (char) SPLAT : *s;
-#else
-	    *p = (UCH(*s) < UCH(' ')) ? SPLAT : *s;
-#endif
-	}
-	*p = '\0';
-    }
-
-    return;
-}
 
 /*
  * Re-render the text of a tagged ("[123]") HTLine (arg1), with the tag
@@ -12623,41 +12534,43 @@ static void update_subsequent_anchors(int newlines,
 }
 
 /*
- * Transfer the initial contents of a TEXTAREA to a temp file, invoke the
- * user's editor on that file, then transfer the contents of the resultant
- * edited file back into the TEXTAREA (expanding the size of the area, if
- * required).
+ * Check if the given anchor is a TEXTAREA belonging to the given form.
  *
- * Returns the number of lines that the cursor should be moved so that it
- * will end up on the 1st blank line of whatever number of trailing blank
- * lines there are in the TEXTAREA (there will *always* be at least one).
+ * KED's note -
+ * [Finding the TEXTAREA we're actually *in* with these attributes isn't
+ * foolproof.  The form number isn't unique to a given TEXTAREA, and there
+ * *could* be TEXTAREA's with the same "name".  If that should ever be true,
+ * we'll actually get the data from the *1st* TEXTAREA in the page that
+ * matches.  We should probably assign a unique id to each TEXTAREA in a page,
+ * and match on that, to avoid this (potential) problem.
  *
- * --KED 02/01/99
+ * Since the odds of "false matches" *actually* happening in real life seem
+ * rather small though, we'll hold off doing this, for a rainy day ...]
  */
-int HText_ExtEditForm(LinkInfo * form_link)
+static BOOLEAN IsFormsTextarea(FormInfo * form, TextAnchor *anchor_ptr)
+{
+    return ((anchor_ptr->link_type == INPUT_ANCHOR) &&
+	    (anchor_ptr->input_field->type == F_TEXTAREA_TYPE) &&
+	    (anchor_ptr->input_field->number == form->number) &&
+	    !strcmp(anchor_ptr->input_field->name, form->name));
+}
+
+static int finish_ExtEditForm(LinkInfo * form_link, TextAnchor *start_anchor,
+			      char *ed_temp,
+			      int orig_cnt)
 {
     struct stat stat_info;
     size_t size;
 
-    char *ed_temp;
     FILE *fp;
 
     TextAnchor *anchor_ptr;
-    TextAnchor *start_anchor = NULL;
     TextAnchor *end_anchor = NULL;
-    BOOLEAN firstanchor = TRUE;
     BOOLEAN wrapalert = FALSE;
 
-    char ed_offset[10];
-    int start_line = 0;
     int entry_line = form_link->anchor_line_num;
     int exit_line = 0;
-    int orig_cnt = 0;
     int line_cnt = 1;
-
-    FormInfo *form = form_link->l_form;
-    char *areaname = form->name;
-    int form_num = form->number;
 
     HTLine *htline = NULL;
 
@@ -12673,75 +12586,6 @@ int HText_ExtEditForm(LinkInfo * form_link)
     int skip_num = 0, i;
 
     CTRACE((tfp, "GridText: entered HText_ExtEditForm()\n"));
-
-    ed_temp = (char *) malloc(LY_MAXPATH);
-    if ((fp = LYOpenTemp(ed_temp, "", "w")) == 0) {
-	FREE(ed_temp);
-	return (0);
-    }
-
-    /*
-     * Begin at the beginning, to find 1st anchor in the TEXTAREA, then
-     * write all of its lines (anchors) out to the edit temp file.
-     *
-     * [Finding the TEXTAREA we're actually *in* with these attributes
-     * isn't foolproof.  The form_num isn't unique to a given TEXTAREA,
-     * and there *could* be TEXTAREA's with the same "name".  If that
-     * should ever be true, we'll actually get the data from the *1st*
-     * TEXTAREA in the page that matches.  We should probably assign
-     * a unique id to each TEXTAREA in a page, and match on that, to
-     * avoid this (potential) problem.
-     *
-     * Since the odds of "false matches" *actually* happening in real
-     * life seem rather small though, we'll hold off doing this, for a
-     * rainy day ...]
-     */
-    anchor_ptr = HTMainText->first_anchor;
-
-    while (anchor_ptr) {
-
-	if ((anchor_ptr->link_type == INPUT_ANCHOR) &&
-	    (anchor_ptr->input_field->type == F_TEXTAREA_TYPE) &&
-	    (anchor_ptr->input_field->number == form_num) &&
-	    !strcmp(anchor_ptr->input_field->name, areaname)) {
-
-	    if (firstanchor) {
-		firstanchor = FALSE;
-		start_anchor = anchor_ptr;
-		start_line = anchor_ptr->line_num;
-	    }
-	    orig_cnt++;
-
-	    /*
-	     * Write the anchors' text to the temp edit file.
-	     */
-	    fputs(anchor_ptr->input_field->value, fp);
-	    fputc('\n', fp);
-
-	} else {
-
-	    if (!firstanchor)
-		break;
-	}
-	anchor_ptr = anchor_ptr->next;
-    }
-    LYCloseTempFP(fp);
-
-    CTRACE((tfp, "GridText: TEXTAREA name=|%s| dumped to tempfile\n", areaname));
-    CTRACE((tfp, "GridText: invoking editor (%s) on tempfile\n", editor));
-
-    /*
-     * Go edit the TEXTAREA temp file, with the initial editor line
-     * corresponding to the TEXTAREA line the cursor is on (if such
-     * positioning is supported by the editor [as lynx knows it]).
-     */
-    ed_offset[0] = 0;		/* pre-ANSI compilers don't initialize aggregates - TD */
-    if (((entry_line - start_line) > 0) && editor_can_position())
-	sprintf(ed_offset, "%d", ((entry_line - start_line) + 1));
-
-    edit_temporary_file(ed_temp, ed_offset, NULL);
-
-    CTRACE((tfp, "GridText: returned from editor (%s)\n", editor));
 
     /*
      * Read back the edited temp file into our buffer.
@@ -12764,7 +12608,6 @@ int HText_ExtEditForm(LinkInfo * form_link)
 	     * to recover the file manually from the temp space while
 	     * the lynx session is not over.  - kw
 	     */
-	    free(ed_temp);
 	    HTAlwaysAlert(NULL, MEMORY_EXHAUSTED_FILE);
 	    return 0;
 	}
@@ -12894,8 +12737,6 @@ int HText_ExtEditForm(LinkInfo * form_link)
 	strncat(line, lp, len);
 	*(line + len0 + len) = '\0';
 
-	cleanup_line_for_textarea(line, len0 + len);
-
 	/*
 	 * If there are more lines in the edit buffer than were in the
 	 * original TEXTAREA, we need to add a new line/anchor, continuing
@@ -12952,6 +12793,106 @@ int HText_ExtEditForm(LinkInfo * form_link)
      */
     FREE(line);
     FREE(ebuf);
+
+    /*
+     * Return the offset needed to move the cursor from its current
+     * (on entry) line number, to the 1st blank line of the trailing
+     * (group of) blank line(s), which is where we want to be.  Let
+     * the caller deal with moving us there, however ...  :-) ...
+     */
+    return (exit_line - entry_line);
+}
+
+/*
+ * Transfer the initial contents of a TEXTAREA to a temp file, invoke the
+ * user's editor on that file, then transfer the contents of the resultant
+ * edited file back into the TEXTAREA (expanding the size of the area, if
+ * required).
+ *
+ * Returns the number of lines that the cursor should be moved so that it
+ * will end up on the 1st blank line of whatever number of trailing blank
+ * lines there are in the TEXTAREA (there will *always* be at least one).
+ *
+ * --KED 02/01/99
+ */
+int HText_ExtEditForm(LinkInfo * form_link)
+{
+    char *ed_temp;
+    FILE *fp;
+
+    TextAnchor *anchor_ptr;
+    TextAnchor *start_anchor = NULL;
+    BOOLEAN firstanchor = TRUE;
+
+    char ed_offset[10];
+    int start_line = 0;
+    int entry_line = form_link->anchor_line_num;
+    int orig_cnt = 0;
+    int offset;
+
+    FormInfo *form = form_link->l_form;
+
+    CTRACE((tfp, "GridText: entered HText_ExtEditForm()\n"));
+
+    ed_temp = (char *) malloc(LY_MAXPATH);
+    if ((fp = LYOpenTemp(ed_temp, "", "w")) == 0) {
+	FREE(ed_temp);
+	return (0);
+    }
+
+    /*
+     * Begin at the beginning, to find 1st anchor in the TEXTAREA, then
+     * write all of its lines (anchors) out to the edit temp file.
+     */
+    anchor_ptr = HTMainText->first_anchor;
+
+    while (anchor_ptr) {
+
+	if (IsFormsTextarea(form, anchor_ptr)) {
+
+	    if (firstanchor) {
+		firstanchor = FALSE;
+		start_anchor = anchor_ptr;
+		start_line = anchor_ptr->line_num;
+	    }
+	    orig_cnt++;
+
+	    /*
+	     * Write the anchors' text to the temp edit file.
+	     */
+	    fputs(anchor_ptr->input_field->value, fp);
+	    fputc('\n', fp);
+
+	} else {
+
+	    if (!firstanchor)
+		break;
+	}
+	anchor_ptr = anchor_ptr->next;
+    }
+    LYCloseTempFP(fp);
+
+    CTRACE((tfp, "GridText: TEXTAREA name=|%s| dumped to tempfile\n", form->name));
+    CTRACE((tfp, "GridText: invoking editor (%s) on tempfile\n", editor));
+
+    /*
+     * Go edit the TEXTAREA temp file, with the initial editor line
+     * corresponding to the TEXTAREA line the cursor is on (if such
+     * positioning is supported by the editor [as lynx knows it]).
+     */
+    ed_offset[0] = 0;		/* pre-ANSI compilers don't initialize aggregates - TD */
+    if (((entry_line - start_line) > 0) && editor_can_position())
+	sprintf(ed_offset, "%d", ((entry_line - start_line) + 1));
+
+    edit_temporary_file(ed_temp, ed_offset, NULL);
+
+    CTRACE((tfp, "GridText: returned from editor (%s)\n", editor));
+
+    if (form->disabled)
+	offset = 0;
+    else
+	offset = finish_ExtEditForm(form_link, start_anchor, ed_temp, orig_cnt);
+
     LYRemoveTemp(ed_temp);
     FREE(ed_temp);
 
@@ -12963,7 +12904,7 @@ int HText_ExtEditForm(LinkInfo * form_link)
      * (group of) blank line(s), which is where we want to be.  Let
      * the caller deal with moving us there, however ...  :-) ...
      */
-    return (exit_line - entry_line);
+    return offset;
 }
 
 /*
@@ -12979,8 +12920,6 @@ void HText_ExpandTextarea(LinkInfo * form_link, int newlines)
     BOOLEAN firstanchor = TRUE;
 
     FormInfo *form = form_link->l_form;
-    char *areaname = form->name;
-    int form_num = form->number;
 
     HTLine *htline = NULL;
 
@@ -12995,27 +12934,12 @@ void HText_ExpandTextarea(LinkInfo * form_link, int newlines)
     /*
      * Begin at the beginning, to find the TEXTAREA, then on to find
      * the last line (anchor) in it.
-     *
-     * [Finding the TEXTAREA we're actually *in* with these attributes
-     * isn't foolproof.  The form_num isn't unique to a given TEXTAREA,
-     * and there *could* be TEXTAREA's with the same "name".  If that
-     * should ever be true, we'll actually expand the *1st* TEXTAREA
-     * in the page that matches.  We should probably assign a unique
-     * id to each TEXTAREA in a page, and match on that, to avoid this
-     * (potential) problem.
-     *
-     * Since the odds of "false matches" *actually* happening in real
-     * life seem rather small though, we'll hold off doing this, for a
-     * rainy day ...]
      */
     anchor_ptr = HTMainText->first_anchor;
 
     while (anchor_ptr) {
 
-	if ((anchor_ptr->link_type == INPUT_ANCHOR) &&
-	    (anchor_ptr->input_field->type == F_TEXTAREA_TYPE) &&
-	    (anchor_ptr->input_field->number == form_num) &&
-	    !strcmp(anchor_ptr->input_field->name, areaname)) {
+	if (IsFormsTextarea(form, anchor_ptr)) {
 
 	    if (firstanchor)
 		firstanchor = FALSE;
@@ -13046,7 +12970,7 @@ void HText_ExpandTextarea(LinkInfo * form_link, int newlines)
     }
 
     CTRACE((tfp, "GridText: %d blank line(s) added to TEXTAREA name=|%s|\n",
-	    newlines, areaname));
+	    newlines, form->name));
 
     /*
      * We need to adjust various things in all anchor bearing lines
@@ -13084,8 +13008,6 @@ int HText_InsertFile(LinkInfo * form_link)
     BOOLEAN truncalert = FALSE;
 
     FormInfo *form = form_link->l_form;
-    char *areaname = form->name;
-    int form_num = form->number;
 
     HTLine *htline = NULL;
 
@@ -13172,28 +13094,12 @@ int HText_InsertFile(LinkInfo * form_link)
     /*
      * Begin at the beginning, to find the TEXTAREA we're in, then
      * the current cursorline.
-     *
-     * [Finding the TEXTAREA we're actually *in* with these attributes
-     * isn't foolproof.  The form_num isn't unique to a given TEXTAREA,
-     * and there *could* be TEXTAREA's with the same "name".  If that
-     * should ever be true, we'll actually insert data into the *1st*
-     * TEXTAREA in the page that matches.  We should probably assign
-     * a unique id to each TEXTAREA in a page, and match on that, to
-     * avoid this (potential) problem.
-     *
-     * Since the odds of "false matches" *actually* happening in real
-     * life seem rather small though, we'll hold off doing this, for a
-     * rainy day ...]
      */
     anchor_ptr = HTMainText->first_anchor;
 
     while (anchor_ptr) {
 
-	if ((anchor_ptr->link_type == INPUT_ANCHOR) &&
-	    (anchor_ptr->input_field->type == F_TEXTAREA_TYPE) &&
-	    (anchor_ptr->input_field->number == form_num) &&
-	    !strcmp(anchor_ptr->input_field->name, areaname)) {
-
+	if (IsFormsTextarea(form, anchor_ptr)) {
 	    if (anchor_ptr->line_num == entry_line)
 		break;
 	}
@@ -13326,8 +13232,6 @@ int HText_InsertFile(LinkInfo * form_link)
 	}
 	strncpy(line, lp, len);
 	*(line + len) = '\0';
-
-	cleanup_line_for_textarea(line, len);
 
 	/*
 	 * If not the first line from the insert file, we need to add
@@ -13948,7 +13852,7 @@ static void move_to_glyph(int YP,
 	    if (incurlink && intarget && flag && i_after_tgt > i) {
 		if (i == last_i - 1) {
 		    i_after_tgt = i;
-		} else if (i == last_i - 2 && HTCJK != NOCJK &&
+		} else if (i == last_i - 2 && IS_CJK_TTY &&
 			   is8bits(buffer[0])) {
 		    i_after_tgt = i;
 		    cp_tgt = NULL;
@@ -14041,7 +13945,7 @@ static void move_to_glyph(int YP,
 		sdata += utf_extra;
 		data += utf_extra;
 		utf_extra = 0;
-	    } else if (HTCJK != NOCJK && is8bits(buffer[0])) {
+	    } else if (IS_CJK_TTY && is8bits(buffer[0])) {
 		/*
 		 * For CJK strings, by Masanobu Kimura.
 		 */

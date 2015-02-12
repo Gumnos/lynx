@@ -1,3 +1,6 @@
+/*
+ * $LynxId: AttrList.h,v 1.15 2008/09/06 15:47:47 tom Exp $
+ */
 #if !defined(__ATTRLIST_H)
 #define __ATTRLIST_H
 
@@ -47,7 +50,7 @@ extern "C" {
 
 /* stack of attributes during page rendering */
 #define MAX_LAST_STYLES 128
-    extern int last_styles[MAX_LAST_STYLES];
+    extern int last_styles[MAX_LAST_STYLES + 1];
     extern int last_colorattr_ptr;
 
 #endif
