@@ -1,23 +1,13 @@
 Changes since Lynx 2.8 release
 ===============================================================================
 
-2007-05-09 (2.8.6rel.5 fix from 2.8.7dev.5)
-* correct loop-limit in print_crawl_to_fd(), which broke
-  "lynx -crawl -dump" from 2.8.6dev.9 changes (Mandriva #29785) -TD
-
-2006-11-15 (2.8.6rel.4 diverges from 2.8.7dev.4)
-* limit files set via PERSONAL_EXTENSION_MAP and PERSONAL_MAILCAP to be found
-  relative to the user's home directory.  This change is less flexible than the
-  development version, but simpler to implement.  The check to ensure that
-  the files are controlled by the user is retained (Redhat #214205) -TD
-
-2006-11-06 (2.8.6rel.3 from 2.8.7dev.2)
-* ensure that the configured values for GLOBAL_EXTENSION_MAP and GLOBAL_MAILCAP
-  are absolute pathnames -TD
-* modify logic for reading PERSONAL_EXTENSION_MAP and PERSONAL_MAILCAP to
-  ensure that they are files that are controlled only by the user.  The
-  default values for these allow lynx to read configuration information
-  from the user's current directory at lynx's startup (Debian #396949) -TD
+2006-10-12 (2.8.7dev.1)
+* update embedded version numbers for starting 2.8.7 development -TD
+* setup locale before writing version-message -TD
+* update version message to reflect the fact that most of Lynx is copyright
+  the Lynx Developers Group (this would have altered message files) -TD
+* update the ".po" files line-numbers (not done during the release cycle since
+  no new messages were added) -TD
 
 2006-10-12 (2.8.6rel.2)
 * update version numbers in documentation -TD

@@ -5789,20 +5789,28 @@ int remove(char *name)
 }
 #endif
 
+/*
+ * Default, for single-user systems such as Cygwin and OS/2 EMX:
+ */
+#define IsOurFile(name) TRUE
+#define OpenHiddenFile(name, mode) fopen(name, mode)
+
 #if defined(MULTI_USER_UNIX)
+
+#undef IsOurFile
+#undef OpenHiddenFile
+
 /*
  * Verify if this is really a file, not accessed by a link, except for the
  * special case of its directory being pointed to by a link from a directory
  * owned by root and not writable by other users.
  */
-BOOL IsOurFile(const char *name)
+static BOOL IsOurFile(const char *name)
 {
-    BOOL result = FALSE;
     struct stat data;
 
     if (lstat(name, &data) == 0
 	&& S_ISREG(data.st_mode)
-	&& (data.st_mode & (S_IWOTH | S_IWGRP)) == 0
 	&& data.st_nlink == 1
 	&& data.st_uid == getuid()) {
 	int linked = FALSE;
@@ -5852,10 +5860,9 @@ BOOL IsOurFile(const char *name)
 	} while (leaf != path);
 	FREE(path);
 #endif
-	result = !linked;
+	return !linked;
     }
-    CTRACE2(TRACE_CFG, (tfp, "IsOurFile(%s) %d\n", name, result));
-    return result;
+    return FALSE;
 }
 
 /*
@@ -5915,8 +5922,6 @@ static FILE *OpenHiddenFile(const char *name, const char *mode)
     }
     return fp;
 }
-#else
-#define OpenHiddenFile(name, mode) fopen(name, mode)
 #endif /* MULTI_USER_UNIX */
 
 FILE *LYNewBinFile(const char *name)
