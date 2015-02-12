@@ -1,7 +1,19 @@
--- $LynxId: CHANGES,v 1.739 2014/02/14 13:32:54 tom Exp $
+-- $LynxId: CHANGES,v 1.743 2014/03/09 19:34:21 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2014-03-09 (2.8.8rel.2)
+* correct errata in test-files which cause broken links in break-out directory
+  in lynx.isc.org server -TD
+* amend change from 2.8.8pre.2, to ensure that MinGW libraries already
+  declaring 'sleep()' will build -TD
+* drop unused save/compress rules from makefile.in, because fixing umask for
+  these is pointless -TD
+* modify makefile.in to establish sane umask value in the "install-doc" rule
+  (report by Rajeev V Pillai) -TD
+* build-fix for NetBSD, whose curses library provides use_default_colors(),
+  but the package turns off the keymap feature (patch by Thomas Klausner).
 
 2014-02-14 (2.8.8rel.1)
 2014-02-14 (2.8.8pre.5)
