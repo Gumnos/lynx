@@ -1,6 +1,10 @@
 Changes since Lynx 2.8 release
 ===============================================================================
 
+2007-05-09 (2.8.6rel.5 fix from 2.8.7dev.5)
+* correct loop-limit in print_crawl_to_fd(), which broke
+  "lynx -crawl -dump" from 2.8.6dev.9 changes (Mandriva #29785) -TD
+
 2006-11-15 (2.8.6rel.4 diverges from 2.8.7dev.4)
 * limit files set via PERSONAL_EXTENSION_MAP and PERSONAL_MAILCAP to be found
   relative to the user's home directory.  This change is less flexible than the
