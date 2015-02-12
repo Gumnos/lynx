@@ -1,5 +1,5 @@
 /*
- * $LynxId: GridText.c,v 1.236 2012/02/13 00:33:15 tom Exp $
+ * $LynxId: GridText.c,v 1.239 2012/08/15 22:20:41 tom Exp $
  *
  *		Character grid hypertext object
  *		===============================
@@ -2801,6 +2801,8 @@ static HTStyleChange *skip_matched_and_correct_offsets(HTStyleChange *end,
 }
 #endif /* USE_COLOR_STYLE */
 
+#define reset_horizpos(value) value = 0, value = ~value
+
 static void split_line(HText *text, unsigned split)
 {
     HTStyle *style = text->style;
@@ -3132,11 +3134,11 @@ static void split_line(HText *text, unsigned split)
 	    for (n = 0; n < line->numstyles; n++)
 		line->styles[n] = to[n + 1];
 	} else if (line->numstyles == 0) {
-	    line->styles[0].sc_horizpos = (~0);		/* ?!!! */
+	    reset_horizpos(line->styles[0].sc_horizpos);
 	}
 	previous->numstyles = (unsigned short) (at_end - previous->styles + 1);
 	if (previous->numstyles == 0) {
-	    previous->styles[0].sc_horizpos = (~0);	/* ?!!! */
+	    reset_horizpos(previous->styles[0].sc_horizpos);
 	}
     }
 #endif /*USE_COLOR_STYLE */
@@ -7785,6 +7787,7 @@ int do_www_search(DocInfo *doc)
 	    HTInfoMsg(CANCELLED);
 	    code = NULLFILE;
 	} else if (!LYforce_no_cache &&
+		   !isBEmpty(temp) &&
 		   !strcmp(temp->str, searchstring->str)) {
 	    /*
 	     * Don't resubmit the same query unintentionally.
@@ -14643,7 +14646,7 @@ static int LYHandleCache(const char *arg,
 #ifdef USE_SOURCE_CACHE
     char *source_cache_file = NULL;
 #endif
-    long Size = 0;
+    off_t Size = 0;
     int x = -1;
 
     /*
@@ -14757,7 +14760,8 @@ static int LYHandleCache(const char *arg,
 		   x, STR_LYNXCACHE, x, title, address, address);
 	PUTS(buf);
 	if (Size > 0) {
-	    HTSprintf0(&buf, "Size: %ld  ", Size);
+	    HTSprintf0(&buf, "Size: %" PRI_off_t "  ", Size);
+
 	    PUTS(buf);
 	}
 	if (cachedoc != NULL && cachedoc->Lines > 0) {

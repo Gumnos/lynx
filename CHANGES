@@ -1,7 +1,54 @@
--- $LynxId: CHANGES,v 1.597 2012/02/23 01:18:46 tom Exp $
+-- $LynxId: CHANGES,v 1.617 2012/08/15 09:47:38 tom Exp $
 ===============================================================================
 Changes since Lynx 2.8 release
 ===============================================================================
+
+2012-08-15 (2.8.8dev.13)
+* make nsl-fork work for the DNS lookup using getaddrinfo, i.e., for IPv6
+  configurations (report by FLWM) -TD
+* add U+0218, U+0219, U+021a, and U+021b to 0x53, 0x73, 0x54, and 0x74,
+  respectively, for Romanian s/t with cedilla in def7_uni.tbl (Ralph Babel)
+* modify handling of "set" in -cmd_script option to try both cfg-file and
+  rc-file settings (prompted by discussion with Andrew Watts) -TD
+* update configure script to add --datarootdir option, which changes the
+  default for man-page from /usr/lib to /usr/share -TD
+* modify configure check for sizeof(time_t), sizeof(off_t) to help recover if
+  it is run in a deficient environment such as busybox -TD
+* limit downloaded files by Content-Length if any, to match behavior of IE,
+  Firefox and some other browsers; this is not addressed in RFC 2616 (Debian
+  #681214) -TD
+  For more information, see "Content-Length in the Real World" by Eric Law:
+  http://blogs.msdn.com/b/ieinternals/archive/2011/03/09/browsers-accommodate-incorrect-http-content-length-and-sites-depressingly-depend-on-it.aspx
+* fix an unbounded loop in restrictions_fun() which could cause a core dump
+  (Debian #616107) -TD
+* add LDFLAGS to top-level makefile.in, for consistency with other recursive
+  options (suggested by Naomasa Maruyama) -TD
+* modify makefile.in and src/makefile.in to pass make-flags, e.g., "-n" for
+  POSIX make -TD
+* updated configure macros (TD):
+  + add check for clang warning options
+  + check for tinfo library, which may be present
+  + omit -Wpointer-arith check for pre-3.0 gcc
+  + add check for 'make' programs ${MAKEFLAGS} versus ${MFLAGS}, for recursive
+    operation.
+* updated list for "$(TABLES)" in src/makefile.in so that parallel builds work
+  properly (patch by Diego Elio Petteno)
+* remove extra "$(LDFLAGS)" from src/makefile.in when linking lynx (patch by
+  Josef Sontgen)
+* correct formatting of large file-sizes in directory listing (Debian
+  #666213) -TD
+* improve checking of certificates in the gnutls_certificate_verify_peers2()
+  (report by Martin Georgiev) -TD
+* update de.po eo.po sv.po vi.po from
+    http://translationproject.org/latest/lynx
+* use PDCurses "wide" variation in makefile.msc -TD
+* modified quoting for parameter values passed to blat mailer to ensure that
+  it handles embedded blanks (report by pfourier) -TD
+* fix regression introduced by changes for Debian #603648 -TD
+* modify makew32.bat and makefile.bcb to use GnuWin32 packages to simplify
+  builds with Borland 5.51 C++ compiler (prompted by discussion with
+  pfourier) -TD
+* add configure check for windres needed for mingw build if cross-compiling -TD
 
 2012-02-22 (2.8.8dev.12)
 * treat charsets ISO-8859-8-E and ISO-8859-8-I as aliases of ISO-8859-8

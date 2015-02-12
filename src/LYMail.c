@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYMail.c,v 1.88 2011/06/04 13:32:51 tom Exp $
+ * $LynxId: LYMail.c,v 1.90 2012/07/07 13:48:13 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTParse.h>
@@ -306,30 +306,54 @@ static void show_addresses(char *addresses)
  * blat's options-file parser (see makeargv.cpp) treats backslash and double
  * quote characters specially.  lynx doesn't.  Do a conversion as we write the
  * option.
+ *
+ * Other quirks (reading blat 3.06):
+ * + Whitespace not in quotes terminates a line.
+ * + Blat allows a comment-character to terminate a line.  By default, that
+ *   is a semicolon.
+ *
+ * Given that, the simplest thing to do is to always quote the string, using
+ * escaping to handle special cases.
  */
 static void blat_option(FILE *fp, const char *option, const char *value)
 {
     if (non_empty(value)) {
-	const char *special = "\\\"";
-	size_t length = strlen(value);
-	size_t reject = strcspn(value, special);
+	char *result = malloc(strlen(option) + 4 + 4 * strlen(value));
+	char *working = result;
 
-	fputs(option, fp);
-	fputc(' ', fp);
-	if (length == reject) {
-	    fputs(value, fp);
-	} else {
-	    fputc('"', fp);
-	    while (*value != '\0') {
-		if (strchr(special, *value)) {
-		    fputc('\\', fp);
+	CTRACE((tfp, "blat_option(opt=\"%s\", value=\"%s\")\n", option, value));
+	sprintf(working, "%s \"", option);
+	working += strlen(working);
+
+	while (*value != '\0') {
+	    unsigned ch = UCH(*value);
+
+	    switch (ch) {
+	    case '\\':
+		*working++ = '\\';
+		*working++ = '\\';
+		break;
+	    case '"':
+		*working++ = '\\';
+		*working++ = '"';
+		break;
+	    default:
+		if (ch < ' ' || ch > '~') {
+		    sprintf(working, "\\%03o", ch);
+		} else {
+		    *working++ = ch;
 		}
-		fputc(UCH(*value), fp);
-		++value;
+		break;
 	    }
-	    fputc('"', fp);
+	    ++value;
 	}
-	fputc('\n', fp);
+	*working++ = '"';
+	*working++ = '\n';
+	*working = 0;
+
+	CTRACE((tfp, "->%s", result));
+	fputs(result, fp);
+	FREE(result);
     }
 }
 

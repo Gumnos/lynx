@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYPrint.c,v 1.95 2012/02/09 18:55:26 tom Exp $
+ * $LynxId: LYPrint.c,v 1.97 2012/08/03 17:39:19 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTAccess.h>
@@ -137,13 +137,12 @@ static void SetupFilename(bstring **filename,
 {
     HTFormat format;
     HTAtom *encoding;
-    char *cp;
 
     BStrCopy0(*filename, sug_filename);		/* add suggestion info */
     BStrAlloc(*filename, LY_MAXPATH);	/* FIXME */
     change_sug_filename((*filename)->str);
     if (!(HTisDocumentSource())
-	&& (cp = strrchr((*filename)->str, '.')) != NULL) {
+	&& strrchr((*filename)->str, '.') != NULL) {
 	format = HTFileFormat((*filename)->str, &encoding, NULL);
 	CTRACE((tfp, "... format %s\n", format->name));
 	if (!strcasecomp(format->name, "text/html") ||
@@ -504,7 +503,7 @@ static void send_file_to_mail(DocInfo *newdoc,
     }
 
     _statusline(MAIL_ADDRESS_PROMPT);
-    BStrCopy0(user_response, personal_mail_address);
+    BStrCopy0(user_response, NonNull(personal_mail_address));
     if (LYgetBString(&user_response, VISIBLE, 0, RECALL_MAIL) < 0 ||
 	isBEmpty(user_response)) {
 	CancelPrint(MAIL_REQUEST_CANCELLED);

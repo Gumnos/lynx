@@ -1,5 +1,5 @@
 /*
- * $LynxId: LYUtils.c,v 1.221 2012/02/10 18:22:50 tom Exp $
+ * $LynxId: LYUtils.c,v 1.227 2012/08/15 23:11:03 tom Exp $
  */
 #include <HTUtils.h>
 #include <HTTCP.h>
@@ -18,11 +18,24 @@ extern int kbhit(void);		/* FIXME: use conio.h */
 
 #ifdef DONT_USE_GETTEXT
 #undef gettext
+#elif defined(HAVE_GETTEXT)
+#undef gettext
+#define gettext conio_gettext
+#else
+#undef gettext
 #endif
 
 #include <conio.h>
 
 #ifdef DONT_USE_GETTEXT
+#define gettext(s) s
+#elif defined(HAVE_GETTEXT)
+#undef gettext
+#ifdef _INTL_REDIRECT_MACROS
+#define gettext libintl_gettext	/* restore definition from libintl.h */
+#endif
+#else
+#undef gettext
 #define gettext(s) s
 #endif
 
@@ -6671,7 +6684,7 @@ BOOLEAN LYValidateFilename(bstring **result,
 	}
 #endif
     } else {
-	if ((cp = FindLeadingTilde((*given)->str, TRUE)) != 0) {
+	if (FindLeadingTilde((*given)->str, TRUE) != 0) {
 	    char *cp1 = NULL;
 
 	    StrAllocCopy(cp1, (*given)->str);
@@ -7952,13 +7965,10 @@ static char *device_list[] =
     NULL
 };
 
-#define IS_SJIS_HI1(hi) ((0x81<=hi)&&(hi<=0x9F))	/* 1st lev. */
-#define IS_SJIS_HI2(hi) ((0xE0<=hi)&&(hi<=0xEF))	/* 2nd lev. */
-
 int unsafe_filename(const char *fname)
 {
     int i, len, sum;
-    unsigned char *cp;
+    char *cp;
     char *save;
 
     i = 0;
@@ -7972,7 +7982,7 @@ int unsafe_filename(const char *fname)
     save = cp = strdup(fname);
 
     while (*cp) {
-	if (IS_SJIS_HI1(*cp) || IS_SJIS_HI2(*cp))
+	if (IS_SJIS_HI1(UCH(*cp)) || IS_SJIS_HI2(UCH(*cp)))
 	    cp += 2;		/* KANJI skip */
 	if (IS_SEP(*cp)) {
 	    *cp = '\0';
@@ -8004,10 +8014,7 @@ int unsafe_filename(const char *fname)
     }
     free(save);
 
-    if (sum != 0)
-	return 1;
-    else
-	return 0;
+    return (sum != 0);
 }
 
 FILE *safe_fopen(const char *fname, const char *mode)

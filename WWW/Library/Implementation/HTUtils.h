@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTUtils.h,v 1.109 2012/02/10 18:44:24 tom Exp $
+ * $LynxId: HTUtils.h,v 1.112 2012/08/15 23:11:48 tom Exp $
  *
  * Utility macros for the W3 code library
  * MACROS FOR GENERAL USE
@@ -52,6 +52,7 @@ char *alloca();
 #include <limits.h>
 #endif /* DJGPP */
 
+#include <sys/types.h>
 #include <stdio.h>
 
 #define DONT_TRACK_INTERNAL_LINKS 1
@@ -185,6 +186,12 @@ extern int ignore_unused;
 #undef small			/* see <w32api/rpcndr.h> */
 #endif
 
+#ifdef HAVE_ATOLL
+#define LYatoll(n) atoll(n)
+#else
+extern off_t LYatoll(const char *value);
+#endif
+
 /* cygwin, mingw32, etc. */
 #ifdef FILE_DOES_NOT_EXIST
 #undef FILE_DOES_NOT_EXIST	/* see <w32api/winnt.h> */
@@ -224,7 +231,7 @@ extern void sleep(unsigned __seconds);
 #define popen _popen
 #define pclose _pclose
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && (_MSC_VER > 0)
 typedef unsigned short mode_t;
 #endif
 

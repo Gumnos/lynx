@@ -1,5 +1,5 @@
 /*
- * $LynxId: HTAnchor.h,v 1.34 2010/06/17 00:13:37 tom Exp $
+ * $LynxId: HTAnchor.h,v 1.36 2012/08/15 10:48:24 tom Exp $
  *
  *	Hypertext "Anchor" Object				     HTAnchor.h
  *	==========================
@@ -114,7 +114,8 @@ extern "C" {
 	char *content_md5;	/* Content-MD5 */
 	char *message_id;	/* Message-ID */
 	char *subject;		/* Subject */
-	long content_length;	/* Content-Length */
+	off_t content_length;	/* Content-Length */
+	off_t actual_length;	/* actual length may differ */
 	char *date;		/* Date */
 	char *expires;		/* Expires */
 	char *last_modified;	/* Last-Modified */
