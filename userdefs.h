@@ -1,5 +1,5 @@
 /*
- * $LynxId: userdefs.h,v 1.246 2009/05/28 21:37:22 tom Exp $
+ * $LynxId: userdefs.h,v 1.253 2009/11/21 16:35:19 tom Exp $
  *
  * Lynx - Hypertext navigation system
  *
@@ -360,13 +360,13 @@
  * Comment this line out to disable code that implements command logging
  * and scripting.
  */
-#define EXP_CMD_LOGGING 1
+#define USE_CMD_LOGGING 1
 
 /********************************
  * Comment this line out to disable code that randomizes the names given to
  * temporary files.
  */
-#define EXP_RAND_TEMPNAME 1
+#define USE_RAND_TEMPNAME 1
 
 /********************************
  * Comment this line out to let the user enter his/her email address
@@ -486,12 +486,12 @@
  *   for this distribution (use SHELL syntax including the device
  *   on VMS systems).
  * The default HELPFILE is:
- * http://lynx.isc.org/release/lynx2-8-6/lynx_help/lynx_help_main.html
+ * http://lynx.isc.org/release/lynx2-8-7/lynx_help/lynx_help_main.html
  *   This should be changed here or in lynx.cfg to the local path.
  * The definition here can be overridden at run time by defining a
  * "LYNX_HELPFILE" environment variable.
  */
-#define HELPFILE "http://lynx.isc.org/release/lynx2-8-6/lynx_help/lynx_help_main.html"
+#define HELPFILE "http://lynx.isc.org/release/lynx2-8-7/lynx_help/lynx_help_main.html"
 /* #define HELPFILE "file://localhost/PATH_TO/lynx_help/lynx_help_main.html" */
 
 /*****************************
@@ -1426,11 +1426,11 @@
  * the version definition with the Project Version on checkout.  Just
  * ignore it. - kw */
 /* $Format: "#define LYNX_VERSION \"$ProjectVersion$\""$ */
-#define LYNX_VERSION "2.8.8dev.1"
+#define LYNX_VERSION "2.8.8dev.2"
 #define LYNX_WWW_HOME "http://lynx.isc.org/"
 #define LYNX_WWW_DIST "http://lynx.isc.org/current/"
 /* $Format: "#define LYNX_DATE \"$ProjectDate$\""$ */
-#define LYNX_DATE "Fri, 28 Aug 2009 14:48:17 -0700"
+#define LYNX_DATE "Wed, 25 Nov 2009 02:56:48 -0800"
 #define LYNX_DATE_OFF 5		/* truncate the automatically-generated date */
 #define LYNX_DATE_LEN 11	/* truncate the automatically-generated date */
 
